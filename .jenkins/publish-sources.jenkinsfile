@@ -1,0 +1,6 @@
+@Library('gematik-jenkins-shared-library') _
+pipelineGitHubPublishSources {
+    GITHUB_PROJECT_NAME = 'zeta-sdk'
+    GEMATIK_PROJECT_NAME = '/zeta/zeta-client/zeta-sdk'
+    GITLAB_MAIN_BRANCH = 'gematik/release'
+}

@@ -1,0 +1,140 @@
+@Library('gematik-jenkins-shared-library') _
+
+def JIRA_PROJECT_ID = 'ZTI'
+def BUILD_GRADLE_FILE = 'build.gradle.kts'
+
+String VERSION_PATTERN = '^ZetaSDK-([0-9])\\.([0-9]){1,2}\\.([0-9]){1,2}$'
+int JIRA_VERSION_DASH_POSITION = 1 // the Position of the dash symbol ("-") in JIRA string
+// To be filled dynamically with the Pipeline execution
+String CURRENT_VERSION = ''
+String GRADLEVERSION = ''
+String DOCKER_IMAGE_NAME = 'zeta-testdriver'
+String DOCKER_SOURCE_REGISTRY = dockerGetGematikRegistry('EUWEST3')
+String DOCKER_SOURCE_REGISTRY_PATH = 'zeta'
+String DOCKER_FULL_IMAGE_NAME = "${DOCKER_SOURCE_REGISTRY}/${DOCKER_SOURCE_REGISTRY_PATH}/${DOCKER_IMAGE_NAME}"
+
+pipeline {
+
+  options {
+    disableConcurrentBuilds()
+    buildDiscarder logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '5')
+  }
+  agent { label 'k8-android' }
+
+  stages {
+    stage('Initialize') {
+      steps {
+        useJdk("OPENJDK21")
+      }
+    }
+
+    stage('Get Jira Version') {
+      steps {
+        script {
+          JIRA_VERSION = jiraCheckAndGetRegexVersion(jiraGetVersions(JIRA_PROJECT_ID), VERSION_PATTERN)
+          CURRENT_VERSION = JIRA_VERSION.split('-')[JIRA_VERSION_DASH_POSITION]
+          GRADLEVERSION = "${CURRENT_VERSION}-SNAPSHOT"
+
+          echo 'Summary of Versions:'
+          echo "JIRA Version: ${JIRA_VERSION}"
+          echo "Current Version: ${CURRENT_VERSION}"
+          echo "Gradle Version: ${GRADLEVERSION}"
+        }
+      }
+    }
+
+    stage('Set Gradle Version') {
+      steps {
+        gradleSetVersion(GRADLEVERSION, BUILD_GRADLE_FILE)
+      }
+    }
+
+    stage('OSPO Guidelines') {
+      steps {
+        // Catch an exception and mark the stage as unstable
+        script {
+          try {
+            openSourceGuidelineCheck()
+          } catch (Exception e) {
+            unstable("OSPO Guidelines check failed: ${e.message}" )
+          }
+        }
+      }
+    }
+
+    stage('Build') {
+      steps {
+        // The Configuration Cache is currently stored locally only. It can be reused by both hot and cold local Gradle daemons, but it cannot be shared between developers or CI machines.
+        //See https://github.com/gradle/gradle/issues/13510.
+        script {
+          sh "./gradlew assemblePullRequest -Dorg.gradle.configuration-cache=false"
+        }
+        //gradleBuild(BUILD_GRADLE_FILE, ".","-Dorg.gradle.configuration-cache=false")
+      }
+    }
+
+    stage('Test') {
+      steps {
+        // The Configuration Cache is currently stored locally only. It can be reused by both hot and cold local Gradle daemons, but it cannot be shared between developers or CI machines.
+        //See https://github.com/gradle/gradle/issues/13510.
+        script {
+          sh "./gradlew testAll -Dorg.gradle.configuration-cache=false"
+        }
+      }
+    }
+
+    /*
+    stage('Sonar') {
+      steps {
+        /*
+        buildFile - Angabe der build.gradle
+        default: gradle.build
+        buildDir - Angabe des Verzeichnis in dem build.gradle liegt
+        default: aktuelles Verzeichnis
+        params - Parameterangabe für den gradle-Build
+        default: ""
+        failedOnError - Angabe, ob der Build abbrechen soll, falls das sonar quality gate failed
+        default: true
+        gradleCheckWithSonarQube(BUILD_GRADLE_FILE, ".", "-Dorg.gradle.configuration-cache=false", false)
+      }
+    }
+    */
+
+    /*
+    stage('Docker Build') {
+        steps {
+            dockerBuild(DOCKER_FULL_IMAGE_NAME, GRADLEVERSION, GRADLEVERSION)
+            dockerRemoveLocalImage(DOCKER_FULL_IMAGE_NAME, GRADLEVERSION)
+        }
+    }
+     */
+  }
+  post {
+    always {
+      showJUnitAsXUnitResult()
+      script {
+        COMMITTER_NAME = sh script: "git --no-pager show -s --format=%an", returnStdout: true
+        IS_SVC_COMITTER = (COMMITTER_NAME == 'svc_gitlab')
+      }
+      createBuildPerformanceReport()
+    }
+    success {
+      script {
+        if(!IS_SVC_COMITTER)
+          sendEMailNotification(gitGetCommitterEMailAddress(), false) // No build log on success
+      }
+    }
+    failure {
+      script {
+        if(!IS_SVC_COMITTER)
+          sendEMailNotification(gitGetCommitterEMailAddress())
+      }
+    }
+    unstable {
+      script {
+        if(!IS_SVC_COMITTER)
+          sendEMailNotification(gitGetCommitterEMailAddress())
+      }
+    }
+  }
+}
