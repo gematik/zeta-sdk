@@ -1,0 +1,76 @@
+# See here for all config options:
+# https://github.com/detekt/detekt/blob/main/detekt-core/src/main/resources/default-detekt-config.yml
+#
+# We disable all buggy and nonsensical or bike-shedding checks.
+
+complexity:
+  active: false
+
+coroutines:
+  InjectDispatcher:
+    active: false
+    dispatcherNames:
+      - 'Main'
+      - 'IO'
+      - 'Default'
+      - 'Unconfined'
+  RedundantSuspendModifier:
+    active: false
+
+empty-blocks:
+  EmptyFunctionBlock:
+    active: false
+
+exceptions:
+  RethrowCaughtException:
+    active: false
+  SwallowedException:
+    active: false
+  TooGenericExceptionCaught:
+    active: false
+
+naming:
+  EnumNaming:
+    active: false
+  FunctionNaming:
+    functionPattern: '[a-zA-Z][a-zA-Z0-9]*'
+  FunctionParameterNaming:
+    active: false
+  MatchingDeclarationName:
+    active: false
+  MemberNameEqualsClassName:
+    active: false
+  TopLevelPropertyNaming:
+    active: false
+  VariableNaming:
+    active: false
+
+potential-bugs:
+  IgnoredReturnValue:
+    active: false
+  UnreachableCode:
+    active: false
+
+style:
+  DestructuringDeclarationWithTooManyEntries:
+    active: false
+  ForbiddenComment:
+    active: false
+  LoopWithTooManyJumpStatements:
+    active: false
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    active: false
+  MayBeConst:
+    active: false
+  ReturnCount:
+    active: false
+  ThrowsCount:
+    active: false
+  UnnecessaryAbstractClass:
+    active: false
+  UnusedPrivateMember:
+    active: false
+  UseOrEmpty:
+    active: false

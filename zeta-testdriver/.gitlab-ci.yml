@@ -1,0 +1,57 @@
+stages:
+  - staticCodeAnalyses
+  - build
+  - publish
+
+default:
+  image: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/eclipse-temurin:21-jdk
+  tags: [zeta]
+  before_script:
+    - chmod +x ./gradlew
+
+staticCodeAnalyses:
+  stage: staticCodeAnalyses
+  only:
+    - merge_requests
+  image: eclipse-temurin:21-jdk
+  script:
+    - ./gradlew ktLint
+    - ./gradlew detekt
+
+build:
+  stage: build
+  only:
+    - merge_requests
+  script:
+    - ./gradlew clean jar copyRuntimeLibs
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - build/libs/*.jar
+      - build/runtime-libs/*.jar
+
+docker-image:
+  image: "docker:24.0.5-dind"
+  stage: publish
+  only:
+    - merge_requests
+  needs: ["build"]
+  services: ["docker:24.0.5-dind"]
+  variables:
+    IMAGE_NAME: "$TESTDRIVER_DOCKER_REGISTRY/zeta-test-driver"
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: /certs
+    DOCKER_CERT_PATH: $DOCKER_TLS_CERTDIR/client
+    DOCKER_TLS_VERIFY: "1"
+  before_script:
+    - echo "$TESTDRIVER_DOCKER_PASSWORD" | docker login -u "$TESTDRIVER_DOCKER_USER" $TESTDRIVER_DOCKER_REGISTRY --password-stdin
+  script:
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        IMAGE_TAG="$CI_COMMIT_TAG"
+      else
+        IMAGE_TAG="$CI_COMMIT_SHORT_SHA"
+      fi
+    - docker build -t "$IMAGE_NAME:latest" -t "$IMAGE_NAME:$IMAGE_TAG" .
+    - docker push "$IMAGE_NAME:latest"
+    - docker push "$IMAGE_NAME:$IMAGE_TAG"
