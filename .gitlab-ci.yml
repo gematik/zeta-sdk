@@ -1,0 +1,87 @@
+spec:
+  inputs:
+    do_dependency_scan:
+      description: "Run the dependency-scan-gradle job"
+      type: boolean
+      default: false
+
+---
+
+include:
+  # adds job dependency-check-gradle
+  - component: $CI_SERVER_FQDN/zeta/zeta-ci-cd-components/dependency-check-gradle@v0.3.2
+    inputs:
+      cli-bin: ./gradlew
+      job-stage: staticCodeAnalyses
+      image: "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/eclipse-temurin:21-jdk"
+    rules:
+      - if: '"$[[ inputs.do_dependency_scan ]]" == "true"'
+      - if: $CI_PIPELINE_SOURCE == "schedule"
+
+variables:
+  ANDROID_COMPILE_SDK: "34"
+  ANDROID_BUILD_TOOLS: "34.0.0"
+  ANDROID_SDK_TOOLS: "11076708"
+  RELEASE_VERSION:
+    value: latest
+    description: "The version of the new release, e.g.:  x.y.z - default tag latest"
+  RUN_IMAGE_ONLY: 
+    description: "Set to true to run image build"
+  CONTAINER_VERSION:
+    value: latest
+    description: "Container image version - default tag latest"
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "web" && $RELEASE_VERSION != null && $RELEASE_VERSION != ""'
+    - when: never
+
+include:
+  - local: '.image-ci.yml'
+
+default:
+  image: $CI_REGISTRY/zeta/zeta-client/zeta-sdk/android-image:latest
+  tags: [ zeta ]
+  before_script:
+    - chmod +x ./gradlew
+
+stages:
+  - image_build
+  - staticCodeAnalyses
+  - build
+  - test
+  - publish
+
+staticCodeAnalyses:
+  stage: staticCodeAnalyses
+  script:
+    - ./gradlew ktLint
+    - ./gradlew lintDebug
+    - ./gradlew detekt
+  artifacts:
+    when: always
+    paths:
+      - "**/ktLint.xml"
+      - "**/detekt.html"
+      - "**/lintDebug.html"
+
+build:
+  stage: build
+  script:
+    - ./gradlew assemblePullRequest
+
+test:
+  stage: test
+  script:
+    - ./gradlew testAll
+  coverage: '/Total.*? ([0-9]{1-3})%/'
+  artifacts:
+    when: always
+    paths:
+      - "**/testDebug.html"
+
+publish:
+  stage: publish
+  script:
+    - ./gradlew publish

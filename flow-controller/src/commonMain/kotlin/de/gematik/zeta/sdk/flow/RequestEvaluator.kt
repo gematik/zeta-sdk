@@ -1,0 +1,71 @@
+/*
+ * #%L
+ * ZETA-Client
+ * %%
+ * (C) EY Strategy & Transactions GmbH, 2025, licensed for gematik GmbH
+ * %%
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * ******
+ *
+ * For additional notes and disclaimer from gematik and in case of changes by gematik find details in the "Readme" file.
+ * #L%
+ */
+
+package de.gematik.zeta.sdk.flow
+
+import de.gematik.zeta.sdk.storage.SdkStorage
+import io.ktor.client.request.HttpRequestBuilder
+
+/**
+* Pre-send request evaluator: decides which [FlowNeed]s must be satisfied
+* before the first network call. Uses [SdkStorage]
+* for current state (e.g., token presence).
+*/
+fun interface RequestEvaluator {
+    suspend fun evaluate(request: HttpRequestBuilder, storage: SdkStorage): List<FlowNeed>
+}
+
+/**
+ * Default request evaluator.
+ *
+ * - Treats paths containing `/health` as public → no pre-send needs.
+ * - It will be extended to add token/config logic , etc.
+ */
+class RequestEvaluatorImpl(
+    private val isPublic: (HttpRequestBuilder) -> Boolean = { req ->
+        val path = req.url.toString().lowercase()
+        path.contains("/health")
+    },
+) : RequestEvaluator {
+    override suspend fun evaluate(
+        request: HttpRequestBuilder,
+        storage: SdkStorage,
+    ): List<FlowNeed> {
+        if (isPublic(request)) return emptyList()
+        val needs = mutableListOf<FlowNeed>()
+        // TODO: uncomment when endpoints are available
+// FlowNeed.ConfigurationFiles
+//        Log.d { "Getting client id from storage" }
+//        val hasClientId = (ClientRegistrationStorage(storage).getClientId() != null)
+//        if (!hasClientId) {
+//            Log.i { "Client id not found. Adding flow for client registration" }
+//            needs += FlowNeed.ClientRegistration
+//        }
+
+        needs += FlowNeed.Authentication
+
+        // return needs based on: hasValidToken, isClientRegistered, hasDiscoveryBeenDone
+        return needs
+    }
+}

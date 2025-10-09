@@ -1,0 +1,29 @@
+*.iml
+.gradle
+.kotlin
+build
+local.properties
+.credentials
+.idea
+.venv*
+.ruby*
+.DS_Store*
+/captures
+.externalNativeBuild
+.cxx
+kotlin-js-store
+
+# ------------
+# iOS projects
+# ------------
+*.podspec
+# Pure iOS projects should commit their podspecs
+!**/ios/*.podspec
+Pods
+# ------------
+
+azure-configs.properties
+
+.jenkins
+.githubignore
+

@@ -1,0 +1,3 @@
+FROM eclipse-temurin:21-jdk
+RUN apt-get update -qq && apt-get install -y maven gradle
+CMD ["/bin/bash"]
