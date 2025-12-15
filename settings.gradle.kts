@@ -22,6 +22,12 @@ pluginManagement {
 
 rootProject.name = "Zero Trust"
 
+buildCache {
+    local {
+        directory = File(rootDir, "build-cache")
+    }
+}
+
 fun autoDetectModules(dir: File) {
     for (file in dir.listFiles()) {
         if (file.name in setOf("src", "build-logic", "build", "gradle", "docs") || file.name.startsWith(".")) {
@@ -38,7 +44,3 @@ fun autoDetectModules(dir: File) {
 }
 
 autoDetectModules(rootDir)
-
-include("flow-controller")
-include("logging")
-include("authentication")

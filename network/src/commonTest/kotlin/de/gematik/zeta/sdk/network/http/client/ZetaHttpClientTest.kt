@@ -24,7 +24,6 @@
 
 package de.gematik.zeta.sdk.network.http.client
 
-import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.HttpRequestTimeoutException
@@ -36,7 +35,6 @@ import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
@@ -164,7 +162,6 @@ class ZetaHttpClientTest {
         val body = client
             .get("/")
             .bodyAsText()
-
         // Assert
         assertEquals("ok", body)
     }
@@ -327,7 +324,7 @@ class ZetaHttpClientTest {
         }
 
         // Act
-        val client: HttpClient =
+        val client: ZetaHttpClient =
             ZetaHttpClientBuilder("")
                 .logging(LogLevel.NONE, logProvider = logger)
                 .build(engine)
@@ -348,7 +345,7 @@ class ZetaHttpClientTest {
         }
 
         // Act
-        val client: HttpClient =
+        val client: ZetaHttpClient =
             ZetaHttpClientBuilder("")
                 .logging(LogLevel.INFO, logProvider = logger)
                 .build(engine)
@@ -369,7 +366,7 @@ class ZetaHttpClientTest {
         val engine = MockEngine {
             respond("""{"ok":true}""", HttpStatusCode.OK)
         }
-        val client: HttpClient =
+        val client: ZetaHttpClient =
             ZetaHttpClientBuilder("")
                 .logging(LogLevel.HEADERS, logProvider = logger)
                 .build(engine)
@@ -392,7 +389,7 @@ class ZetaHttpClientTest {
         val engine = MockEngine {
             respond("""{"resp":"r-123"}""", HttpStatusCode.OK)
         }
-        val client: HttpClient =
+        val client: ZetaHttpClient =
             ZetaHttpClientBuilder("")
                 .logging(LogLevel.ALL, logProvider = logger)
                 .build(engine)
@@ -430,7 +427,7 @@ class ZetaHttpClientTest {
                 )
             }
         }
-        val client: HttpClient =
+        val client: ZetaHttpClient =
             ZetaHttpClientBuilder("")
                 .retry(onlyIdempotent = true, statusCodes = emptySet(), maxRetries = 1)
                 .build(engine)
@@ -457,7 +454,7 @@ class ZetaHttpClientTest {
                 )
             }
         }
-        val client: HttpClient =
+        val client: ZetaHttpClient =
             ZetaHttpClientBuilder("")
                 .retry(onlyIdempotent = true, statusCodes = emptySet(), maxRetries = 1)
                 .build(engine)
@@ -475,7 +472,7 @@ class ZetaHttpClientTest {
         // Arrange
         val hits = intArrayOf(0)
         val engine = MockEngine { hits[0]++; throw IOException("boom") } // always fail
-        val client: HttpClient =
+        val client: ZetaHttpClient =
             ZetaHttpClientBuilder("")
                 .retry(onlyIdempotent = true, statusCodes = emptySet(), maxRetries = 1)
                 .build(engine)
@@ -493,7 +490,7 @@ class ZetaHttpClientTest {
         // Arrange
         val hits = intArrayOf(0)
         val engine = MockEngine { hits[0]++; throw IOException("boom") } // always fail
-        val client: HttpClient =
+        val client: ZetaHttpClient =
             ZetaHttpClientBuilder("")
                 .retry(onlyIdempotent = true, statusCodes = emptySet(), maxRetries = 1)
                 .build(engine)
@@ -519,7 +516,7 @@ class ZetaHttpClientTest {
                 )
             }
         }
-        val client: HttpClient =
+        val client: ZetaHttpClient =
             ZetaHttpClientBuilder("")
                 .retry(onlyIdempotent = false, statusCodes = emptySet(), maxRetries = 1)
                 .build(engine)
@@ -537,7 +534,7 @@ class ZetaHttpClientTest {
         // Arrange
         val hits = intArrayOf(0)
         val engine = MockEngine { hits[0]++; throw IOException("boom") } // always fail
-        val client: HttpClient =
+        val client: ZetaHttpClient =
             ZetaHttpClientBuilder("")
                 .retry(onlyIdempotent = true, statusCodes = emptySet(), maxRetries = 0)
                 .build(engine)
@@ -564,7 +561,7 @@ class ZetaHttpClientTest {
                 )
             }
         }
-        val client: HttpClient =
+        val client: ZetaHttpClient =
             ZetaHttpClientBuilder("")
                 .retry(onlyIdempotent = false, statusCodes = emptySet(), maxRetries = 1)
                 .build(engine)

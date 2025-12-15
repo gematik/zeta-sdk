@@ -25,38 +25,39 @@
 package de.gematik.zeta.sdk.clientregistration
 
 import de.gematik.zeta.logging.Log
+import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationRequest
 import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationResponse
-import de.gematik.zeta.sdk.clientregistration.model.SoftwareClientRegistrationRequest
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
-import io.ktor.client.call.body
-import io.ktor.client.request.post
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.HttpResponse
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 
 interface ClientRegistrationApi {
-    public suspend fun register(request: SoftwareClientRegistrationRequest): ClientRegistrationResponse
+    public suspend fun register(endpoint: String, request: ClientRegistrationRequest): ClientRegistrationResponse
 }
 
 public class ClientRegistrationApiImpl(
-    private val authUrl: String,
+    private val httpClientBuilder: ZetaHttpClientBuilder,
 ) : ClientRegistrationApi {
-    // TODO: get it from well known
-    private val clientRegistrationEndpoint =
-        authUrl + "clients-registrations/openid-connect/"
 
-    override suspend fun register(request: SoftwareClientRegistrationRequest): ClientRegistrationResponse {
+    override suspend fun register(endpoint: String, request: ClientRegistrationRequest): ClientRegistrationResponse {
         Log.d { "Client registration will proceed" }
-        val client = ZetaHttpClientBuilder(clientRegistrationEndpoint).build()
-        val response = client.post(clientRegistrationEndpoint) {
+
+        val client = httpClientBuilder.build(endpoint)
+
+        val response = client.post("") {
+            contentType(ContentType.Application.Json)
             setBody(request)
         }
 
         // [A_27799](06): Handle registration response
+        // TODO: remove also when registration endpoint works.
         return handleResponse(response)
     }
 
-    private suspend fun handleResponse(response: HttpResponse): ClientRegistrationResponse {
+    private suspend fun handleResponse(response: ZetaHttpResponse): ClientRegistrationResponse {
         return if (response.status == HttpStatusCode.Created) {
             Log.d { "Registration succeeded" }
             response.body()

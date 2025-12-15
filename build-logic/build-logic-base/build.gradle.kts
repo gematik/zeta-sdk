@@ -1,6 +1,7 @@
 plugins {
     `kotlin-dsl`
     id("java-gradle-plugin")
+    id("org.jetbrains.kotlinx.kover") version "0.9.2"
 }
 
 dependencies {
@@ -13,6 +14,7 @@ dependencies {
     api(rootLibs.gradle.jetbrains.compose)
     api(rootLibs.gradle.kotlin.jvm)
     api(rootLibs.gradle.maven.publish)
+    api(rootLibs.gradle.kover)
 }
 
 val autoDetectPluginRegex = Regex("""^(?:public\s+)?class\s+(\w+)BuildLogicPlugin\s*:.*$""", RegexOption.MULTILINE)

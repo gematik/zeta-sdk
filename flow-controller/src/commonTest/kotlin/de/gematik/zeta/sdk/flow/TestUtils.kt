@@ -24,14 +24,32 @@
 
 package de.gematik.zeta.sdk.flow
 
+import de.gematik.zeta.sdk.configuration.ConfigurationApi
+import de.gematik.zeta.sdk.configuration.WellKnownSchemaValidation
+import de.gematik.zeta.sdk.configuration.models.ApiVersion
+import de.gematik.zeta.sdk.configuration.models.ApiVersionStatus
+import de.gematik.zeta.sdk.configuration.models.AuthorizationServerMetadata
+import de.gematik.zeta.sdk.configuration.models.BearerMethod
+import de.gematik.zeta.sdk.configuration.models.ProtectedResourceMetadata
+import de.gematik.zeta.sdk.configuration.models.ZetaAslUse
+import de.gematik.zeta.sdk.flow.RequestEvaluatorImplTest.FakeForwardingClient
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
+import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.SdkStorage
+import io.ktor.client.request.HttpRequestBuilder
+import kotlinx.serialization.json.Json
+import kotlin.collections.Map
 
 /**
  * Test util.
  */
-class RecordingDoneHandler(private val needToHandle: FlowNeed) : CapabilityHandler {
+class RecordingDoneHandler(
+    private val needToHandle: FlowNeed,
+) : CapabilityHandler {
     var called: Boolean = false
+
     override fun canHandle(need: FlowNeed): Boolean = need == needToHandle
+
     override suspend fun handle(
         need: FlowNeed,
         ctx: FlowContext,
@@ -41,20 +59,135 @@ class RecordingDoneHandler(private val needToHandle: FlowNeed) : CapabilityHandl
 /**
  * Test util.
  */
-class InMemoryStorageTestImpl : SdkStorage {
-    override suspend fun put(key: String, value: String) {
-        TODO("Not yet implemented")
-    }
+class FakeApi(
+    private val authJson: Map<String, String> = mapOf(),
+    private val resJson: Map<String, String> = mapOf(),
+    private val authSchema: String = "",
+    private val resSchema: String = "",
+) : ConfigurationApi {
+    override suspend fun fetchResourceMetadata(resourceUrl: String): String = resJson[resourceUrl] ?: error("unknown resource $resourceUrl")
+    override suspend fun fetchAuthorizationMetadata(authFqdns: String) = authJson[authFqdns] ?: error("unknown issuer $authFqdns")
+    override suspend fun getResourceSchema(): String = resSchema
+    override suspend fun getAuthorizationSchema(): String = authSchema
+}
 
-    override suspend fun get(key: String): String? {
-        return ""
-    }
+/**
+ * Test util.
+ */
+fun getDummyFlowContext(): FlowContext =
+    FlowContextImpl(
+        "https://api.example.com",
+        object : ForwardingClient {
+            override suspend fun executeOnce(builder: HttpRequestBuilder): ZetaHttpResponse {
+                TODO("Not need for test")
+            }
+        },
+        InMemoryStorage(),
+    )
 
-    override suspend fun remove(key: String) {
-        TODO("Not yet implemented")
-    }
+/**
+ * Test util.
+ */
+class FakeValidator(
+    private var isValid: Boolean = true,
+    private val failAfter: Int = 0,
+    private val throwsException: Boolean = false,
+) : WellKnownSchemaValidation {
+    private var count: Int = 0
 
-    override suspend fun clear() {
-        TODO("Not yet implemented")
+    override suspend fun validate(
+        resource: String,
+        schema: String,
+    ): Boolean {
+        if (throwsException) {
+            error("Unhandled")
+        }
+        if (failAfter > 0) {
+            isValid = !(count == failAfter)
+            count++
+        }
+        return isValid
     }
+}
+
+/**
+ * Test util.
+ */
+fun getDummyAuthServerObject(
+    issuer: String = "",
+    token_endpoint: String = "",
+): AuthorizationServerMetadata =
+    AuthorizationServerMetadata(
+        issuer = issuer,
+        authorizationEndpoint = "",
+        tokenEndpoint = token_endpoint,
+        nonceEndpoint = "",
+        openidProvidersEndpoint = "",
+        jwksUri = "",
+        scopesSupported = listOf(""),
+        responseTypesSupported = listOf("TOKEN"),
+        responseModesSupported = listOf(""),
+        grantTypesSupported = listOf(""),
+        tokenEndpointAuthMethodsSupported = listOf(""),
+        tokenEndpointAuthSigningAlgValuesSupported = listOf(""),
+        serviceDocumentation = "",
+        uiLocalesSupported = listOf(""),
+        codeChallengeMethodsSupported = listOf(""),
+        apiVersionsSupported =
+        listOf(
+            ApiVersion(
+                majorVersion = 1,
+                version = "",
+                status = ApiVersionStatus.STABLE,
+                documentationUri = "",
+            ),
+        ),
+    )
+
+/**
+ * Test util.
+ */
+fun getDummyProtectedResourceObject(
+    resource: String = "",
+    authorizationServers: List<String> = emptyList(),
+): ProtectedResourceMetadata =
+    ProtectedResourceMetadata(
+        resource = resource,
+        authorizationServers = authorizationServers,
+        zetaAslUse = ZetaAslUse.NOT_SUPPORTED,
+        jwksUri = "",
+        scopesSupported = listOf(""),
+        bearerMethodsSupported = listOf(BearerMethod.HEADER, BearerMethod.BODY),
+        resourceSigningAlgValuesSupported = listOf(""),
+        resourceName = "",
+        resourceDocumentation = "",
+        resourcePolicyUri = "",
+        resourceTosUri = "",
+        tlsClientCertificateBoundAccessTokens = true,
+        authorizationDetailsTypesSupported = listOf(""),
+        dpopSigningAlgValuesSupported = listOf(""),
+        dpopBoundAccessTokensRequired = true,
+        signedMetadata = "",
+        apiVersionsSupported =
+        listOf(
+            ApiVersion(
+                majorVersion = 1,
+                version = "",
+                status = ApiVersionStatus.STABLE,
+                documentationUri = "",
+            ),
+            ApiVersion(
+                majorVersion = 2,
+                version = "",
+                status = ApiVersionStatus.BETA,
+            ),
+        ),
+    )
+
+suspend fun getDummyContextWithResource(fwdClient: ForwardingClient = FakeForwardingClient(), storage: SdkStorage = InMemoryStorage()): FlowContext {
+    val ctx = FlowContextImpl("test", fwdClient, storage)
+    val good = getDummyProtectedResourceObject("test", listOf("https://auth.example.com"))
+    ctx.configurationStorage.saveProtectedResource(Json.encodeToString(good))
+
+    return ctx
 }

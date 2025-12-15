@@ -49,7 +49,7 @@ import io.ktor.http.HttpStatusCode
  * Typical usage:
  * ```
  * return ZetaHttpClientBuilder()
- *      .baseUrl("https://base-url.de")
+ *      .baseUrl("https://zeta-dev.testsystem.de")
  *      .timeouts(connectMs = 5_000, requestMs = 15_000)
  *      .retry(
  *          statusCodes = setOf(HttpStatusCode.TooManyRequests, HttpStatusCode.ServiceUnavailable),
@@ -108,6 +108,17 @@ public class ZetaHttpClientBuilder(private val baseUrl: String) {
     }
 
     /**
+     * Disable server certificate and hostname validation
+     *
+     * NOTE: for testing only!
+     *
+     * @return This builder for chaining
+     */
+    public fun disableServerValidation(disableServerValidation: Boolean): ZetaHttpClientBuilder = apply {
+        security = security.copy(disableServerValidation = disableServerValidation)
+    }
+
+    /**
      * Append an additional trusted Certificate Authority (CA) in PEM format.
      *
      * Use this when your server is signed by a private/internal CA not present in
@@ -149,7 +160,7 @@ public class ZetaHttpClientBuilder(private val baseUrl: String) {
      *
      * @return A ready-to-use [HttpClient] instance.
      */
-    public fun build(): HttpClient {
+    public fun build(): ZetaHttpClient {
         return zetaHttpClient(
             configure = {
                 this.baseUrlOverride = baseUrl
@@ -167,7 +178,7 @@ public class ZetaHttpClientBuilder(private val baseUrl: String) {
      * @param addExtras Lambda to add extra custom configuration.
      * @return A ready-to-use [HttpClient] instance.
      */
-    public fun build(addExtras: (HttpClientConfig<*>.() -> Unit)? = null): HttpClient {
+    public fun build(addExtras: (HttpClientConfig<*>.() -> Unit)? = null): ZetaHttpClient {
         return zetaHttpClient(
             configure = {
                 this.baseUrlOverride = baseUrl
@@ -180,13 +191,32 @@ public class ZetaHttpClientBuilder(private val baseUrl: String) {
     }
 
     /**
+     * Build a configured [HttpClient] using the current builder state, but with a different baseUrl
+     * Needed for the internal calls to the PDP endpoints
+     *
+     * Delegates to the internal `zetaHttpClient { ... }` factory to construct and wire the client.
+     * @param addExtras Lambda to add extra custom configuration.
+     * @return A ready-to-use [HttpClient] instance.
+     */
+    public fun build(newUrl: String): ZetaHttpClient {
+        return zetaHttpClient(
+            configure = {
+                this.baseUrlOverride = newUrl
+                this.network = this@ZetaHttpClientBuilder.network
+                this.security = this@ZetaHttpClientBuilder.security
+                this.monitoring = this@ZetaHttpClientBuilder.monitoring
+            },
+        )
+    }
+
+    /**
      * Build a configured [HttpClient] using the current builder state.
      *
      * Delegates to the internal `zetaHttpClient { ... }` factory to construct and wire the client.
      *
      * @return A ready-to-use [HttpClient] instance.
      */
-    public fun build(engine: HttpClientEngine? = null): HttpClient {
+    public fun build(engine: HttpClientEngine? = null): ZetaHttpClient {
         return zetaHttpClient(
             configure = {
                 this.baseUrlOverride = baseUrl

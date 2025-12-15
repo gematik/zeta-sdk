@@ -24,13 +24,15 @@
 
 package de.gematik.zeta.sdk.flow
 
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
+import de.gematik.zeta.sdk.storage.InMemoryStorage
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.request
 import io.ktor.client.request.url
-import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -43,19 +45,23 @@ import kotlin.test.assertTrue
  */
 class FlowOrchestratorTest {
 
-    private val responseEvaluatorWithNoNeeds = RequestEvaluator { request, storage -> emptyList() }
+    private val requestEvaluatorWithNoNeeds = RequestEvaluator { _, _ -> emptyList() }
 
     /** Proceed path: returns the mocked 200 response immediately. */
     @Test
     fun run_proceed_on_200() = runTest {
         // Arrange
         val forwarding = getMockClient(HttpStatusCode.OK)
-        val orchestrator = FlowOrchestrator(listOf(), responseEvaluatorWithNoNeeds)
+        val dummyCtx = getDummyContextWithResource(forwarding)
+        val orchestrator = FlowOrchestrator(
+            listOf(),
+            requestEvaluator = requestEvaluatorWithNoNeeds,
+        )
 
         // Act
         val resp = orchestrator.run(
             HttpRequestBuilder().apply { url("https://test") },
-            FlowContext(forwarding, InMemoryStorageTestImpl()),
+            dummyCtx,
         )
 
         // Assert
@@ -67,14 +73,16 @@ class FlowOrchestratorTest {
     fun run_abort_on_500() = runTest {
         // Arrange
         val forwarding = getMockClient(HttpStatusCode.InternalServerError)
-        val orchestrator = FlowOrchestrator(listOf())
+        val orchestrator = FlowOrchestrator(
+            listOf(),
+        )
 
         // Assert
         assertFailsWith<Exception> {
             // Act
             orchestrator.run(
                 HttpRequestBuilder().apply { url("https://test") },
-                FlowContext(forwarding, InMemoryStorageTestImpl()),
+                FlowContextImpl("", forwarding, InMemoryStorage()),
             )
         }
     }
@@ -84,8 +92,8 @@ class FlowOrchestratorTest {
     fun run_executes_request_needs() = runTest {
         // Arrange
         val forwarding = getMockClient(HttpStatusCode.OK)
+        val dummyCtx = getDummyContextWithResource(forwarding)
         val handler = RecordingDoneHandler(FlowNeed.ConfigurationFiles)
-
         val orchestrator = FlowOrchestrator(
             requestEvaluator = { _, _ -> listOf(FlowNeed.ConfigurationFiles) },
             handlers = listOf(handler),
@@ -94,7 +102,7 @@ class FlowOrchestratorTest {
         // Act
         val resp = orchestrator.run(
             HttpRequestBuilder(),
-            FlowContext(forwarding, InMemoryStorageTestImpl()),
+            dummyCtx,
         )
 
         // Assert
@@ -107,9 +115,10 @@ class FlowOrchestratorTest {
     fun run_executes_response_needs() = runTest {
         // Arrange
         val forwarding = getMockClient(HttpStatusCode.OK)
+        val dummyCtx = getDummyContextWithResource(forwarding)
         val handler = RecordingDoneHandler(FlowNeed.ConfigurationFiles)
 
-        val responseEvaluator = ResponseEvaluator { _, resp ->
+        val responseEvaluator = ResponseEvaluator { resp, _ ->
             if (!handler.called) {
                 FlowDirective.Perform(FlowNeed.ConfigurationFiles)
             } else {
@@ -117,7 +126,7 @@ class FlowOrchestratorTest {
             }
         }
         val orchestrator = FlowOrchestrator(
-            requestEvaluator = responseEvaluatorWithNoNeeds,
+            requestEvaluator = requestEvaluatorWithNoNeeds,
             responseEvaluator = responseEvaluator,
             handlers = listOf(handler),
         )
@@ -125,7 +134,7 @@ class FlowOrchestratorTest {
         // Act
         val resp = orchestrator.run(
             HttpRequestBuilder(),
-            FlowContext(forwarding, InMemoryStorageTestImpl()),
+            dummyCtx,
         )
 
         // Assert
@@ -135,11 +144,13 @@ class FlowOrchestratorTest {
 
     private fun getMockClient(status: HttpStatusCode): ForwardingClient {
         val engine = MockEngine { respond("", status) }
-        val ktor = HttpClient(engine)
+        val ktor = ZetaHttpClient(HttpClient(engine))
 
         return object : ForwardingClient {
-            override suspend fun executeOnce(builder: HttpRequestBuilder): HttpResponse =
-                ktor.request(builder)
+            override suspend fun executeOnce(builder: HttpRequestBuilder): ZetaHttpResponse =
+                ktor.request {
+                    takeFrom(builder)
+                }
         }
     }
 }

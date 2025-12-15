@@ -24,56 +24,123 @@
 
 package de.gematik.zeta.sdk.authentication
 
-import de.gematik.zeta.sdk.authentication.model.AccessTokenClaims
-import de.gematik.zeta.sdk.authentication.model.AccessTokenHeader
+import AttestationApiImpl
+import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.authentication.model.AccessTokenRequest
 import de.gematik.zeta.sdk.authentication.model.AccessTokenResponse
+import de.gematik.zeta.sdk.authentication.model.DPoPTokenClaims
+import de.gematik.zeta.sdk.authentication.model.DPopTokenHeader
 import de.gematik.zeta.sdk.authentication.model.TokenType
-import de.gematik.zeta.sdk.storage.SdkStorage
-import de.gematik.zeta.sdk.tpm.Tpm
-import de.gematik.zeta.sdk.tpm.createLongLiveClientKey
+import de.gematik.zeta.sdk.crypto.hashWithSha256
+import de.gematik.zeta.sdk.tpm.TpmProvider
+import io.ktor.utils.io.core.toByteArray
 import kotlin.io.encoding.Base64
 import kotlin.time.Clock.System
-import kotlin.uuid.Uuid
+
+data class AccessTokenParams(
+    val clientId: String,
+    val productId: String,
+    val productVersion: String,
+    val expiration: Long,
+    val scopes: List<String>,
+    val audience: String,
+)
 
 interface AccessTokenProvider {
-    suspend fun getValidToken(): String
-    suspend fun refreshToken(): String
+    suspend fun getValidToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams): String
+    suspend fun refreshToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams, refreshToken: String): String
+    suspend fun createDpopToken(method: String, url: String, nonceBytes: ByteArray? = null, accessTokenHash: String? = null): String
+    suspend fun hash(token: String): String
 }
 
 @Suppress("FunctionOnlyReturningConstant", "standard:max-line-length")
 class AccessTokenProviderImpl(
-    private val authApi: AuthenticationApi,
+    private val resource: String,
     private val authConfig: AuthConfig,
-    private val storage: SdkStorage,
+    private val authApi: AuthenticationApi,
+    private val authStorage: AuthenticationStorage,
     private val clock: () -> Long = { System.now().epochSeconds },
+    private val tpmProvider: TpmProvider,
 ) : AccessTokenProvider {
-    private val authStorage = AuthenticationStorage(storage)
+    override suspend fun getValidToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams): String {
+        val cached = authStorage.getAccessToken(resource)
+        val exp = authStorage.getTokenExpiration(resource)
 
-    override suspend fun getValidToken(): String {
-        val cached = authStorage.getAccessToken()
-        val exp = authStorage.getTokenExpiration()?.toLong()
-
-        if (cached != null && exp != null && exp - clock() > SAFETY_MARGIN_SECS) {
+        if (cached != null && exp != null && exp != "" && exp.toLong() - clock() > SAFETY_MARGIN_SECS) {
             return cached
         }
-        return issueNewAccessToken()
+
+        val refreshToken = authStorage.getRefreshToken(resource)
+        if (!refreshToken.isNullOrBlank()) {
+            return try {
+                Log.d { "Access token expired, fetching refresh token" }
+                refreshToken(tokenEndpoint, nonceEndpoint, params, refreshToken)
+            } catch (ex: Exception) {
+                Log.d { "Refresh token failed: (${ex.message})" }
+                issueNewAccessToken(tokenEndpoint, nonceEndpoint, params)
+            }
+        }
+
+        Log.d { "No refresh token found, getting new access token" }
+        return issueNewAccessToken(tokenEndpoint, nonceEndpoint, params)
     }
 
-    override suspend fun refreshToken(): String {
-        return issueNewAccessToken()
+    override suspend fun refreshToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams, refreshToken: String): String {
+        require(refreshToken.isNotBlank())
+
+        val nonce = authApi.fetchNonce(nonceEndpoint)
+        val clientAssertion = AttestationApiImpl(tpmProvider).createClientAssertion(
+            params.productId,
+            params.productVersion,
+            nonce,
+            params.clientId,
+            clock() + params.expiration,
+            tokenEndpoint,
+        )
+
+        val dpop = createDpopToken("POST", tokenEndpoint, nonce, null)
+        val request = AccessTokenRequest(
+            grantType = "refresh_token",
+            clientId = params.clientId,
+            requestedTokenType = "urn:ietf:params:oauth:token-type:refresh_token",
+            clientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            clientAssertion = clientAssertion,
+            scope = params.scopes.joinToString(" "),
+            refreshToken = refreshToken,
+            subjectToken = null,
+            subjectTokenType = null,
+        )
+        val resp = authApi.requestAccessToken(tokenEndpoint, request, dpop)
+        persist(resp)
+
+        return resp.accessToken
     }
 
-    private suspend fun issueNewAccessToken(): String {
+    private suspend fun issueNewAccessToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams): String {
         // 1. nonce → attestation challenge
-        // val nonce = authApi.fetchNonce()
+        val nonce = authApi.fetchNonce(nonceEndpoint)
+        Log.d { "issueNewAccessToken: nonce = $nonce" }
         // val attChallenge = calculateAttestationChallenge(nonce)
 
         // 2. client assertion JWT if your AS requires it
-        // val clientAssertion = createClientAssertion()
+        val clientAssertion = AttestationApiImpl(tpmProvider).createClientAssertion(
+            params.productId,
+            params.productVersion,
+            nonce,
+            params.clientId,
+            clock() + params.expiration,
+            tokenEndpoint,
+        )
 
         // 3. self-made access token (SM(C)-B) to be signed/hashed externally
-        // val subjectToken = createSubjectToken(clientId)
+        val subjectToken = authConfig.subjectTokenProvider.createSubjectToken(
+            params.clientId,
+            nonce,
+            params.audience,
+            clock(),
+            authConfig.exp,
+            tpmProvider,
+        )
 
         // 4. external signature / proof
         // val signature = authenticateExternal(smcbAccessToken)
@@ -81,96 +148,74 @@ class AccessTokenProviderImpl(
 
         // 5 Call AS: token-exchange (adjust fields as needed)
 
-        val clientId: String = "zeta-client"
-        val subjectToken: String = "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJXdVo4bFJodHZvb1lxeHExU3A3SHM5ZmU4b2FFSFV6RGNFckRYOUJ2OWhNIn0.eyJleHAiOjE3NTg2MTExNjgsImlhdCI6MTc1ODYxMDg2OCwianRpIjoib25ydHJvOjU5OWNmYjAyLTI0YTktNDViZi0xNDRlLTZjNDg5YTYxMzI2NSIsImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6MTgwODAvcmVhbG1zL3NtYy1iIiwiYXVkIjpbInJlcXVlc3Rlci1jbGllbnQiLCJhY2NvdW50Il0sInN1YiI6ImQwYWFjYzljLTJkOTMtNDM4YS1hNzAzLWI4Nzc4OTIxODNmOCIsInR5cCI6IkJlYXJlciIsImF6cCI6InNtYy1iLWNsaWVudCIsInNpZCI6IjY5ZDgxODA4LTY2ZTYtNDlmMi04OWRiLTdiODBlOGU4OTlmYiIsImFjciI6IjEiLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsiZGVmYXVsdC1yb2xlcy1zbWMtYiIsIm9mZmxpbmVfYWNjZXNzIiwidW1hX2F1dGhvcml6YXRpb24iXX0sInJlc291cmNlX2FjY2VzcyI6eyJhY2NvdW50Ijp7InJvbGVzIjpbIm1hbmFnZS1hY2NvdW50IiwibWFuYWdlLWFjY291bnQtbGlua3MiLCJ2aWV3LXByb2ZpbGUiXX19LCJzY29wZSI6ImVtYWlsIHByb2ZpbGUiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6IlVzZXIgRXh0ZXJuYWwiLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJ1c2VyIiwiZ2l2ZW5fbmFtZSI6IlVzZXIiLCJmYW1pbHlfbmFtZSI6IkV4dGVybmFsIiwiZW1haWwiOiJ1c2VyQGJhci5mb28uY29tIn0.sHewe6f5zk_EslSVtectqb_91U_6YpYhQoQhWNFwLINJd3ryrKNaLOeB196x5fbAfFGSk-Exa9D24K64xzETnoKrXQRrRKi4sSJGxDqtXbkmbxr-fJvyB3Ay_0_lCZAUPNEYH2Sx5caClRnJy60eeKt3pm4JmV5nLFXh-DOYEDc5r1NGcl1bwCt70pQJ1aKlMaiUDuC5N8CXSAuUdRc1IWzB324QNBglW4qpUY2anp-j23bnJBhLmYgVeKa_RBksJ1-jSgwODeuO1gIR96qqc7SqjzQVgteGumr5zfR3qc5GAGGBIxYX3Jndr4lqcW2-mYffDwp7fWf4a5FJ5wgUuw"
-        val scope: String = "audience-target-scope"
-        val clientAssertion: String = "client-jwt"
+        // 26. create DPoP Proof token
+        val dpop = createDpopToken("POST", tokenEndpoint, nonce, null)
 
-        val body = AccessTokenRequest(
+        // 27. request access token
+        val request = AccessTokenRequest(
             grantType = "urn:ietf:params:oauth:grant-type:token-exchange",
-            clientId = clientId,
+            clientId = params.clientId,
             subjectToken = subjectToken,
             subjectTokenType = "urn:ietf:params:oauth:token-type:jwt",
-            scope = scope,
-            requestedTokenType = "urn:ietf:params:oauth:token-type:access_token",
+            requestedTokenType = "urn:ietf:params:oauth:token-type:refresh_token",
             clientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
             clientAssertion = clientAssertion,
+            scope = params.scopes.joinToString(" "),
         )
-
-        val resp: AccessTokenResponse = authApi.requestAccessToken(body)
+        val resp = authApi.requestAccessToken(tokenEndpoint, request, dpop)
         persist(resp)
 
         return resp.accessToken
     }
 
     private suspend fun persist(resp: AccessTokenResponse) {
-        val now = System.now().epochSeconds
-        val exp = now + resp.expiresIn
+        val exp = clock() + resp.expiresIn
 
-        authStorage.saveAccessTokens(resp.accessToken, exp.toInt())
+        authStorage.saveAccessTokens(resource, resp.accessToken, resp.refreshToken, exp)
     }
 
-    private suspend fun createClientAssertion(): String {
-        // TODO: build JWT for client auth if required by your AS
-        // header: alg/kid; claims: iss=sub=clientId, aud=token endpoint, iat/exp/jti
-        // sign with client private key (TPM or Keystore)
-        TODO("client assertion (jwt-bearer)")
-    }
-
-    private fun randomUUID(): ByteArray = Uuid.random().toByteArray()
-
-    private suspend fun createSubjectToken(clientId: String): String {
-        val issuer = clientId
-        val kid = getHashFromPublicKey()
-        val jwk = getSmcbPublicKey()
-        val audience = resourceServerAudiences()
-        val jkt = base64HashOfDpopPublicKey()
-        val scope = effectiveScopes()
+    override suspend fun createDpopToken(method: String, url: String, nonceBytes: ByteArray?, accessTokenHash: String?): String {
+        val dpopKey = tpmProvider.generateDpopKey()
         val now = clock()
-        val exp = now + authConfig.exp
-        val subject = authConfig.sub
-        val jti = randomUUID().toString()
-        val cnf = AccessTokenClaims.Cnf(jkt)
+        val jti = tpmProvider.randomUuid().toHexDashString()
+        val htu = removeUrlQueryParams(url)
+        val nonce = nonceBytes?.let { Base64.encode(nonceBytes) }
 
-        return AccessTokenUtility.create(
-            AccessTokenHeader(TokenType.ACCESS, kid, jwk),
-            AccessTokenClaims(
-                issuer = issuer,
-                exp = exp,
-                audience = audience,
-                subject = subject,
+        val token = AccessTokenUtility.create(
+            DPopTokenHeader(
+                typ = TokenType.DPOP,
+                jwk = dpopKey.jwk,
+                alg = AsymAlg.ES256,
+            ),
+            DPoPTokenClaims(
                 iat = now,
                 jti = jti,
-                scope = scope,
-                cnf = cnf,
+                htm = method,
+                htu = htu,
+                nonce = nonce,
+                ath = accessTokenHash,
             ),
         )
+        return AccessTokenUtility.addSignature(token, signDpopToken(token))
     }
 
-    private suspend fun getHashFromPublicKey(): String {
-        val pubKey: ByteArray = createLongLiveClientKey() // TPM-backed or persisted
-        val digest = Tpm.provider().hash(pubKey)
-        return Base64.encode(digest)
+    /** The base64url-encoded SHA-256 hash of the token. */
+    override suspend fun hash(token: String): String {
+        val hashedToken = hashWithSha256(token.encodeToByteArray())
+
+        return Base64
+            .UrlSafe
+            .withPadding(Base64.PaddingOption.ABSENT)
+            .encode(hashedToken)
     }
 
-    private fun getSmcbPublicKey(): String {
-        // TODO: JWK of your long-lived client key (kty, crv, x, y, kid)
-        return ""
+    private suspend fun signDpopToken(token: String): String {
+        val signature = tpmProvider.signWithDpopKey(token.toByteArray())
+        return Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(signature)
     }
 
-    private fun base64HashOfDpopPublicKey(): String {
-        // TODO: 'jkt' thumbprint for DPoP key (base64url of SHA-256 JWK thumbprint)
-        return ""
-    }
-
-    private fun resourceServerAudiences(): List<String> {
-        // TODO: from discovery / config
-        return emptyList()
-    }
-
-    private fun effectiveScopes(): String {
-        val configured = authConfig.scopes
-        return if (configured.isNotEmpty()) configured.joinToString(" ") else ""
+    fun removeUrlQueryParams(url: String): String {
+        return url.substringBefore('?').substringBefore('#')
     }
 
     companion object {

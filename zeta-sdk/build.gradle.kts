@@ -5,21 +5,11 @@ plugins {
     id("de.gematik.zeta.sdk.build-logic.kmp")
     id("de.gematik.zeta.sdk.build-logic.publish")
     id("de.gematik.zeta.sdk.build-logic.xcframework")
+    id("de.gematik.zeta.sdk.build-logic.sharedlib")
     id("co.touchlab.skie")
 }
 
 setupBuildLogic {
-    android {
-        packaging {
-            resources {
-                excludes += "META-INF/LICENSE.md"
-                excludes += "META-INF/LICENSE-notice.md"
-                excludes += "META-INF/LICENSE"
-                excludes += "META-INF/NOTICE"
-                excludes += "META-INF/NOTICE.txt"
-            }
-        }
-    }
 
     kotlin {
         explicitApi = ExplicitApiMode.Disabled
@@ -34,7 +24,4 @@ setupBuildLogic {
         }
     }
 
-    dependencies {
-        implementation(project(":flow-controller"))
-    }
 }

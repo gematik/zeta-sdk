@@ -1,6 +1,7 @@
 plugins {
     `kotlin-dsl`
     id("java-gradle-plugin")
+    id("org.jetbrains.kotlinx.kover") version "0.9.2"
 }
 
 dependencies {

@@ -49,7 +49,7 @@ fun Project.setupDokka(copyright: String) {
             enableAndroidDocumentationLink.set(true)
             includes.from(
                 *fileTree(projectDir) {
-                    includes.addAll(listOf("index.md", "README.md", "Module.md", "docs/*.md"))
+                    includes.addAll(listOf("index.md", "Module.md"))
                 }.files.toTypedArray(),
             )
         }
@@ -58,7 +58,8 @@ fun Project.setupDokka(copyright: String) {
         }
         if (isRootProject) {
             dokkaPublications.configureEach {
-                includes.from(rootProject.file("docs/README.md"))
+                /* md files need to be in a specific format for dokka to work */
+                /* includes.from(rootProject.file("docs/README.md")) */
                 outputDirectory.set(rootProject.file("build/docs/$name"))
             }
         }

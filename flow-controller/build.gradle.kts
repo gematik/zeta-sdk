@@ -4,20 +4,10 @@ import org.jetbrains.kotlin.gradle.dsl.ExplicitApiMode
 plugins {
     id("de.gematik.zeta.sdk.build-logic.kmp")
     id("de.gematik.zeta.sdk.build-logic.publish")
+    id("de.gematik.zeta.sdk.build-logic.sharedlib")
 }
 
 setupBuildLogic {
-    android {
-        packaging {
-            resources {
-                excludes += "META-INF/LICENSE.md"
-                excludes += "META-INF/LICENSE-notice.md"
-                excludes += "META-INF/LICENSE"
-                excludes += "META-INF/NOTICE"
-                excludes += "META-INF/NOTICE.txt"
-            }
-        }
-    }
 
     kotlin {
         explicitApi = ExplicitApiMode.Disabled
@@ -29,7 +19,7 @@ setupBuildLogic {
             api(project(":authentication"))
             api(project(":tpm"))
             api(project(":storage"))
-            implementation(libs.ktor.client.core)
+            api(project(":asl"))
         }
 
         sourceSets.commonTest.dependencies {
@@ -37,13 +27,5 @@ setupBuildLogic {
             implementation(libs.coroutines.test)
             implementation(libs.ktor.client.mock)
         }
-    }
-
-    dependencies {
-        implementation(project(":network"))
-        implementation(project(":client-registration"))
-        implementation(project(":storage"))
-        implementation(project(":authentication"))
-        implementation(project(":tpm"))
     }
 }

@@ -34,6 +34,12 @@ public sealed class Platform {
         public data object Windows : Jvm()
     }
 
+    public sealed class Native : Platform() {
+        public data object Macos : Native()
+        public data object Linux : Native()
+        public data object Windows : Native()
+    }
+
     public companion object {
         public val current: Platform by lazy {
             platform()

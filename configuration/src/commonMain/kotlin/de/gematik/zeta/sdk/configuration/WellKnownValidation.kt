@@ -24,13 +24,58 @@
 
 package de.gematik.zeta.sdk.configuration
 
-import de.gematik.zeta.sdk.configuration.models.OidcDiscoveryResponse
+import de.gematik.zeta.logging.Log
+import io.github.optimumcode.json.schema.JsonSchema
+import io.github.optimumcode.json.schema.ValidationError
+import kotlinx.serialization.json.Json
 
+/**
+ * Contract for validating a well-known JSON document against a JSON Schema.
+ */
 interface WellKnownSchemaValidation {
-    suspend fun validateAuthorizationServer(authJsonFile: OidcDiscoveryResponse, validationSchema: String): Boolean
-    suspend fun validateProtectedResourcesServer(resourcesJsonFile: String, validationSchema: String): Boolean
+    suspend fun validate(resource: String, schema: String): Boolean
 }
 
+/**
+ * JSON Schema–based validator for well-known documents.
+ *
+ */
+class WellKnownSchemaValidationImpl : WellKnownSchemaValidation {
+    /**
+     * Validates [resource] against [schema] using [JsonSchema].
+     *
+     * - Collects all [ValidationError]s and logs them if validation fails.
+     *
+     * @param resource JSON instance to validate.
+     * @param schema JSON Schema definition.
+     * @return `true` when validation succeeds; `false` otherwise.
+     * @throws Throwable if the schema is invalid or cannot be parsed by the underlying library.
+     */
+    override suspend fun validate(resource: String, schema: String): Boolean {
+        val errors = mutableListOf<ValidationError>()
+        val jsonSchema = JsonSchema.fromDefinition(schema)
+        val instance = json.parseToJsonElement(resource)
+
+        val isValid = jsonSchema.validate(instance, errors::add)
+
+        if (!isValid) {
+            Log.e { "The validation of the well-known failed with following errors:" }
+            errors.forEach { Log.e { it.message } }
+        }
+
+        return isValid
+    }
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        explicitNulls = false
+    }
+}
+
+/**
+ * Identifiers of supported well-known document types.
+ */
 enum class WellKnownTypes {
     AUTHORIZATION_METADATA,
     RESOURCE_METADATA,

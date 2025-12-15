@@ -29,13 +29,13 @@ package de.gematik.zeta.sdk.buildlogic
 import com.android.build.gradle.BaseExtension
 import com.vanniktech.maven.publish.MavenPublishBaseExtension
 import io.gitlab.arturbosch.detekt.extensions.DetektExtension
+import org.gradle.api.Action
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.plugins.JavaPlatformExtension
 import org.gradle.api.plugins.catalog.CatalogPluginExtension
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.tasks.testing.Test
-import org.gradle.internal.os.OperatingSystem
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.findByType
 import org.gradle.kotlin.dsl.get
@@ -49,6 +49,7 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinJvmExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import org.jetbrains.kotlin.gradle.plugin.KotlinDependencyHandler
 import org.jetbrains.kotlin.gradle.plugin.cocoapods.CocoapodsExtension
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTargetWithHostTests
 
 class BaseBuildLogicPlugin : Plugin<Project> {
     override fun apply(target: Project) {}
@@ -92,24 +93,28 @@ fun Project.setupBuildLogic(block: Project.() -> Unit) {
         if (extensions.findByType<JavaPlatformExtension>() != null) {
             setupPlatformProject()
         }
-        if (extensions.findByType<BaseExtension>() != null) {
+        if (extensions.findByType<BaseExtension>() != null && project.isAndroidEnabled) {
             setupAndroid(coreLibraryDesugaring = rootLibs.findLibrary("desugarJdkLibs").get())
         }
         if (extensions.findByType<KotlinMultiplatformExtension>() != null) {
             val arch = System.getProperty("os.arch")
             val onArm64 = "aarch64" in arch || "arm64" in arch
             setupKmp {
-                androidTarget()
+                if (project.isAndroidEnabled) {
+                    androidTarget()
+                }
                 jvm()
                 // TODO: Disable x64 builds once we've migrated to arm64 runners
-                allIos(x64 = isRunningOnCi || !onArm64)
+                if (project.isIOSEnabled) {
+                    allIos(x64 = isRunningOnCi || !onArm64)
+                }
                 compilerOptions {
                     optIn.addAll(commonExtraKotlinOptIns)
                     if (pluginManager.hasPlugin("de.gematik.zeta.sdk.build-logic.compose")) {
                         optIn.add("androidx.compose.material3.ExperimentalMaterial3Api")
                     }
                 }
-                if (pluginManager.hasPlugin("de.gematik.zeta.sdk.build-logic.xcframework") && OperatingSystem.current().isMacOsX) {
+                if (pluginManager.hasPlugin("de.gematik.zeta.sdk.build-logic.xcframework") && project.isIOSEnabled) {
                     configure<CocoapodsExtension> {
                         name = XcFrameworkDefaultName
                         summary = XcFrameworkDefaultName
@@ -123,6 +128,22 @@ fun Project.setupBuildLogic(block: Project.() -> Unit) {
                             binaryOption("bundleVersion", project.version.toString().split("-")[0])
                         }
                     }
+                }
+                if (pluginManager.hasPlugin("de.gematik.zeta.sdk.build-logic.sharedlib") && project.isNativeEnabled) {
+                    val configure = Action<KotlinNativeTargetWithHostTests> {
+                        binaries {
+                            staticLib {
+                                baseName = project.name
+                            }
+                            sharedLib {
+                                baseName = project.name
+                            }
+                        }
+                    }
+                    macosArm64(configure)
+                    macosX64(configure)
+                    linuxX64(configure)
+                    mingwX64(configure)
                 }
                 sourceSets["jvmCommonTest"].dependencies {
                     junit4()
@@ -183,6 +204,7 @@ fun Project.setupBuildLogic(block: Project.() -> Unit) {
                 javadocJar = isRunningOnCi,
                 sourcesJar = true,
             )
+            prepareForMavenCentralPublishing(project)
         }
 
         extensions.findByType<DesktopExtension>()?.apply {
@@ -218,10 +240,10 @@ val isRunningOnCi: Boolean by lazy {
 fun PublishingExtension.addGitlabRepository(project: Project) {
     repositories {
         maven {
-            url = project.uri("https://your-repository-host/api/v4/projects/3/packages/maven")
+            url = project.uri(System.getenv("MAVEN_REPOSITORY_URL") ?: "http://undefined-maven-repo-url/")
             credentials {
-                username = "your-gitlab-token-username"
-                password = project.findProperty("gitLabDeployToken") as String? ?: System.getenv("DEPLOY_TOKEN")
+                username = System.getenv("MAVEN_REPOSITORY_USERNAME")
+                password = project.findProperty("gitLabDeployToken") as String? ?: System.getenv("MAVEN_REPOSITORY_PASSWORD")
             }
         }
     }

@@ -1,3 +1,5 @@
+import de.gematik.zeta.sdk.buildlogic.isAndroidEnabled
+import de.gematik.zeta.sdk.buildlogic.isIOSEnabled
 import de.gematik.zeta.sdk.buildlogic.setupBuildLogic
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
@@ -11,16 +13,12 @@ plugins {
 }
 
 setupBuildLogic {
-    android {
-        namespace = "de.gematik.zeta.client"
-    }
-
     kotlin {
         sourceSets.commonMain.dependencies {
             implementation(project(":zeta-sdk"))
             implementation(project(":common"))
             api(libs.ktor.client.logging)
-            api(libs.ktor.kotlinx.serializable)
+            api(libs.ktor.kotlinx.serialization.json)
 //            api(libs.ktor.content.negotiation)
 //            api(libs.ktor.serialisation)
             api(libs.coroutines.core)
@@ -28,24 +26,30 @@ setupBuildLogic {
             api(compose.material3)
             api(libs.reactivestate.compose)
             api(libs.logger.napier)
+            api(project(":zeta-sdk"))
         }
         sourceSets.jvmMain.dependencies {
             api(libs.coroutines.swing)
             api(compose.desktop.currentOs)
         }
 
-        sourceSets.iosMain.dependencies {
-            api(libs.ktor.client.darwin)
+        if (project.isIOSEnabled) {
+            sourceSets.iosMain.dependencies {
+                api(libs.ktor.client.darwin)
+            }
         }
 
-        sourceSets.androidMain.dependencies {
-            api(libs.ktor.client.android)
-            api(libs.androidx.core.ktx)
-            api(libs.androidx.activity)
-            api(libs.androidx.appcompat)
-            api(libs.androidx.activity.compose)
-            api(compose.material3)
+        if (project.isAndroidEnabled) {
+            sourceSets.androidMain.dependencies {
+                api(libs.ktor.client.android)
+                api(libs.androidx.core.ktx)
+                api(libs.androidx.activity)
+                api(libs.androidx.appcompat)
+                api(libs.androidx.activity.compose)
+                api(compose.material3)
+            }
         }
+
         sourceSets.jvmTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.coroutines.test)
@@ -70,9 +74,5 @@ setupBuildLogic {
                 )
             }
         }
-    }
-
-    dependencies {
-        api(project(":zeta-sdk"))
     }
 }

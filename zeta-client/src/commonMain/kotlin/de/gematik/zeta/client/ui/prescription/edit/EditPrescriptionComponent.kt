@@ -64,12 +64,14 @@ public fun EditPrescriptionComponent(
                 model = (state as EditPrescriptionState.FormUpdated).result,
                 onChanged = viewModel::updateForm,
             )
+
             is EditPrescriptionState.Saved -> LaunchedEffect(Unit) {
                 onSaved()
                 viewModel.clearForm()
             }
 
             is MviState.Loading -> LoadingIndicator()
+
             is MviState.Error -> ErrorMessage((state as MviState.Error).error)
         }
     }

@@ -26,16 +26,12 @@ package de.gematik.zeta.client.data.service
 
 import de.gematik.zeta.client.data.service.http.HttpClientProvider
 import de.gematik.zeta.client.di.DIContainer
+import de.gematik.zeta.client.di.DIContainer.POPP_TOKEN
+import de.gematik.zeta.client.di.POPP_TOKEN_HEADER_NAME
 import de.gematik.zeta.client.model.PrescriptionModel
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.request.delete
-import io.ktor.client.request.get
-import io.ktor.client.request.post
-import io.ktor.client.request.put
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 
@@ -50,25 +46,30 @@ public class PrescriptionServiceImpl(
     private val httpClientProvider: HttpClientProvider = DIContainer.httpClientProvider,
 ) : PrescriptionService {
 
-    private val httpClient: HttpClient get() = httpClientProvider.provideHttpClient()
+    private val httpClient: ZetaHttpClient get() = httpClientProvider.provideHttpClient()
 
     override suspend fun prescriptionList(): List<PrescriptionModel> {
         return httpClient
-            .get("erezept")
+            .get("api/erezept") {
+                POPP_TOKEN?.let { headers.append(POPP_TOKEN_HEADER_NAME, it) }
+            }
             .validateResponseCode()
             .body()
     }
 
     override suspend fun prescription(id: Long): PrescriptionModel {
         return httpClient
-            .get("erezept/$id")
+            .get("api/erezept/$id") {
+                POPP_TOKEN?.let { headers.append(POPP_TOKEN_HEADER_NAME, it) }
+            }
             .validateResponseCode()
             .body<PrescriptionModel>()
     }
 
     override suspend fun addPrescription(model: PrescriptionModel) {
         return httpClient
-            .post("erezept") {
+            .post("api/erezept") {
+                POPP_TOKEN?.let { headers.append(POPP_TOKEN_HEADER_NAME, it) }
                 contentType(ContentType.Application.Json)
                 setBody(model)
             }
@@ -78,7 +79,8 @@ public class PrescriptionServiceImpl(
 
     override suspend fun putPrescription(id: Long, model: PrescriptionModel) {
         return httpClient
-            .put("erezept/$id") {
+            .put("api/erezept/$id") {
+                POPP_TOKEN?.let { headers.append(POPP_TOKEN_HEADER_NAME, it) }
                 contentType(ContentType.Application.Json)
                 setBody(model)
             }
@@ -88,15 +90,15 @@ public class PrescriptionServiceImpl(
 
     override suspend fun deletePrescription(id: Long) {
         return httpClient
-            .delete("erezept/$id") {
-                contentType(ContentType.Application.Json)
+            .delete("api/erezept/$id") {
+                POPP_TOKEN?.let { headers.append(POPP_TOKEN_HEADER_NAME, it) }
             }
             .validateResponseCode()
             .body()
     }
 }
 
-public suspend fun HttpResponse.validateResponseCode(): HttpResponse {
+public suspend fun ZetaHttpResponse.validateResponseCode(): ZetaHttpResponse {
     if (status.value in 400..599) {
         val body = bodyAsText()
         throw HttpException("HTTP error: code = $status, body = $body")

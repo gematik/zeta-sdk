@@ -32,21 +32,14 @@ import de.gematik.zeta.client.data.service.PrescriptionServiceImpl
 import de.gematik.zeta.client.data.service.fake.FakePrescriptionService
 import de.gematik.zeta.client.data.service.http.HttpClientProvider
 import de.gematik.zeta.client.data.service.http.HttpClientProviderImpl
-import de.gematik.zeta.client.data.service.logger.KtorLogger
 import de.gematik.zeta.logging.Log
-import de.gematik.zeta.sdk.BuildConfig
-import de.gematik.zeta.sdk.StorageConfig
-import de.gematik.zeta.sdk.TpmConfig
-import de.gematik.zeta.sdk.ZetaSdk
-import de.gematik.zeta.sdk.authentication.AuthConfig
-import io.ktor.client.HttpClient
-import io.ktor.client.plugins.logging.DEFAULT
-import io.ktor.client.plugins.logging.LogLevel
-import io.ktor.client.plugins.logging.Logger
-import kotlinx.coroutines.runBlocking
+import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
+import de.gematik.zeta.sdk.authentication.smcb.SmcbTokenProvider
 
 private const val USE_FAKE_SERVICES = false
 internal const val DEBUG_LOGGING = true
+
+public const val POPP_TOKEN_HEADER_NAME: String = "PoPP"
 
 public object DIContainer {
     public val httpClientProvider: HttpClientProvider = HttpClientProviderImpl()
@@ -61,34 +54,31 @@ public object DIContainer {
     public val prescriptionRepository: PrescriptionRepository =
         PrescriptionRepositoryImpl(prescriptionService)
 
-    public val zetaHttpClient: HttpClient get() = runBlocking {
-        ZetaSdk.build(
-            resource = ENVIRONMENTS.firstOrNull() ?: "",
-            config = BuildConfig(
-                StorageConfig(),
-
-                object : TpmConfig {},
-                AuthConfig(
-                    listOf(""),
-                    "",
-                    "",
-                    0,
-                    AUTH_URL,
-                ),
-            ),
-        )
-            .httpClient {
-                logging(LogLevel.ALL, if (DEBUG_LOGGING) KtorLogger() else Logger.DEFAULT)
-            }
-    }
-
     init {
         if (DEBUG_LOGGING) {
             Log.initDebugLogger()
         }
     }
     public val ENVIRONMENTS: List<String> = getUrlEnvironments()
-    public val AUTH_URL: String = getConfig("AUTH_URL") ?: ""
+
+    public val SMB_KEYSTORE_CREDENTIALS: SmbTokenProvider.Credentials = SmbTokenProvider.Credentials(
+        getConfig("SMB_KEYSTORE_FILE") ?: "",
+        getConfig("SMB_KEYSTORE_ALIAS") ?: "",
+        getConfig("SMB_KEYSTORE_PASSWORD") ?: "",
+    )
+
+    public val SMCB_CONNECTOR_CONFIG: SmcbTokenProvider.ConnectorConfig = SmcbTokenProvider.ConnectorConfig(
+        getConfig("SMCB_BASE_URL") ?: "",
+        getConfig("SMCB_MANDANT_ID") ?: "",
+        getConfig("SMCB_CLIENT_SYSTEM_ID") ?: "",
+        getConfig("SMCB_WORKSPACE_ID") ?: "",
+        getConfig("SMCB_USER_ID") ?: "",
+        getConfig("SMCB_CARD_HANDLE") ?: "",
+    )
+
+    public val DISABLE_SERVER_VALIDATION: Boolean = "true".contentEquals((getConfig("DISABLE_SERVER_VALIDATION") ?: "").lowercase())
+
+    public val POPP_TOKEN: String? = getConfig("POPP_TOKEN")
 
     private fun getUrlEnvironments(): List<String> {
         return getConfig("ENVIRONMENTS")

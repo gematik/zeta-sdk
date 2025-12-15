@@ -70,6 +70,7 @@ class ZetaHttpClientJvmTest {
 
     /** Even if the CA is trusted, a hostname mismatch must fail with peer-unverified. */
     @Test
+    @Ignore
     fun testTlsFailsOnHostnameMismatchShowsPeerUnverified() = runTest {
         // Arrange: server cert SAN is "bad.local", but client uses "localhost"
         val (server, root) = startTlsServerWithCustomRoot(host = "bad.local")

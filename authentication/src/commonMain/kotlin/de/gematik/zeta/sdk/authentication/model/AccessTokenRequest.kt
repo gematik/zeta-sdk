@@ -31,10 +31,11 @@ import kotlinx.serialization.Serializable
 data class AccessTokenRequest(
     @SerialName("grant_type") val grantType: String,
     @SerialName("client_id") val clientId: String,
-    @SerialName("subject_token") val subjectToken: String,
-    @SerialName("subject_token_type") val subjectTokenType: String,
-    @SerialName("scope") val scope: String,
+    @SerialName("subject_token") val subjectToken: String?,
+    @SerialName("subject_token_type") val subjectTokenType: String?,
     @SerialName("requested_token_type") val requestedTokenType: String,
     @SerialName("client_assertion_type") val clientAssertionType: String,
     @SerialName("client_assertion") val clientAssertion: String,
+    @SerialName("scope") val scope: String,
+    @SerialName("refresh_token") val refreshToken: String? = null,
 )

@@ -32,4 +32,8 @@ enum class TokenType(val tokenType: String) {
     @SerialName("at+jwt") ACCESS("at+jwt"),
 
     @SerialName("rt+jwt") REFRESH("rt+jwt"),
+
+    @SerialName("dpop+jwt") DPOP("dpop+jwt"),
+
+    @SerialName("JWT") JWT("JWT"),
 }

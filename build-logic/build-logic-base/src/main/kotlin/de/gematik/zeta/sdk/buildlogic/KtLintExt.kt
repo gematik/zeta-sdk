@@ -53,7 +53,7 @@ fun Project.setupKtLint(version: Provider<MinimalExternalModuleDependency>) {
         args(
             "src/*ain/**/*.kt",
             "src/*est/**/*.kt",
-            "--log-level=warn",
+            "--log-level=info",
             "--reporter=plain",
             "--reporter=checkstyle,output=$projectDir/build/ktlint.xml",
         )

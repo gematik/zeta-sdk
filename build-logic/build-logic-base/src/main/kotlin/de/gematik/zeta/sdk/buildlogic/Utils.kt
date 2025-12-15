@@ -24,7 +24,6 @@
 
 package de.gematik.zeta.sdk.buildlogic
 
-import com.android.build.gradle.internal.cxx.io.writeTextIfDifferent
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.findByType
 import org.gradle.kotlin.dsl.get
@@ -33,6 +32,12 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import java.io.File
 
 val Project.isRootProject get() = this == rootProject
+
+val Project.isAndroidEnabled get() = findProperty("de.gematik.zeta.sdk.build-logic.enableAndroid") == "true"
+
+val Project.isIOSEnabled get() = findProperty("de.gematik.zeta.sdk.build-logic.enableIOS") == "true"
+
+val Project.isNativeEnabled get() = findProperty("de.gematik.zeta.sdk.build-logic.enableNative") == "true"
 
 fun shell(
     command: String,
@@ -106,3 +111,12 @@ private fun sanitizeBranchName(name: String): String =
 
 private val versionRegex = Regex("""v-?(\d+)\.(\d+)\.(\d+)((-.+?\.)(\d+))*""")
 private val sanitizeRegex = Regex("""[^A-Za-z0-9\-]""")
+
+fun File.containsExactText(text : String) = isFile && text == readText()
+
+fun File.writeTextIfDifferent(text : String) : Boolean {
+    if (containsExactText(text)) return false
+    parentFile.mkdirs()
+    writeText(text)
+    return true
+}

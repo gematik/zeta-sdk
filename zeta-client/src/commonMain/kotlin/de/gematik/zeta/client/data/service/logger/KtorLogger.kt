@@ -24,11 +24,11 @@
 
 package de.gematik.zeta.client.data.service.logger
 
-import io.github.aakira.napier.Napier
+import de.gematik.zeta.logging.Log
 import io.ktor.client.plugins.logging.Logger
 
 public class KtorLogger : Logger {
     override fun log(message: String) {
-        Napier.d(message)
+        Log.d { message }
     }
 }

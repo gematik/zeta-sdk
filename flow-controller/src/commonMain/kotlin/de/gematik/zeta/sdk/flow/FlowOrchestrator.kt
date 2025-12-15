@@ -28,6 +28,7 @@ import de.gematik.zeta.logging.Log
 import io.ktor.client.call.HttpClientCall
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.statement.HttpResponse
+import io.ktor.util.AttributeKey
 
 /**
  * Coordinates request execution with the Flow components.
@@ -69,6 +70,10 @@ class FlowOrchestrator(
     private val requestEvaluator: RequestEvaluator = RequestEvaluatorImpl(),
     private val responseEvaluator: ResponseEvaluator = ResponseEvaluatorImpl(),
 ) {
+    companion object {
+        private const val SAFETY_ITERATION_EXIT_COUNT: Int = 10
+    }
+
     /**
      * Executes the given [original] request inside a flow-aware loop.
      *
@@ -80,18 +85,39 @@ class FlowOrchestrator(
     suspend fun run(original: HttpRequestBuilder, ctx: FlowContext): HttpClientCall {
         val req = HttpRequestBuilder().takeFrom(original)
 
-        val requestNeeds = requestEvaluator.evaluate(req, ctx.storage)
+        val requestNeeds = requestEvaluator.evaluate(req, ctx)
+        Log.d { "Request needs: $requestNeeds" }
         for (need in requestNeeds) executeNeed(need, req, ctx)
 
+        var iteration = 0
         while (true) {
+            req.attributes.put(OrchestratorBypassKey, true)
+            iteration++
+            Log.d { "Orchestrator iteration $iteration" }
+
             val resp = ctx.client.executeOnce(req)
-            when (val directive = responseEvaluator.evaluate(req, resp.call)) {
-                is FlowDirective.Proceed -> return resp.call
-                is FlowDirective.Perform -> executeNeed(directive.need, req, ctx, evaluatorMutation = directive.mutate)
-                is FlowDirective.Abort -> {
-                    Log.e { "Request failed with error: ${directive.error.message}" }
-                    throw directive.error
+            Log.d { "Response status: ${resp.raw.status}" }
+
+            when (val directive = responseEvaluator.evaluate(resp.raw.call, ctx)) {
+                is FlowDirective.Proceed -> {
+                    Log.d { "PROCEED: iteration=$iteration" }
+                    return resp.raw.call
                 }
+
+                is FlowDirective.Perform -> {
+                    Log.d { "PERFORM: need=${directive.need}, iteration=$iteration" }
+                    executeNeed(directive.need, req, ctx, evaluatorMutation = directive.mutate)
+                }
+
+                is FlowDirective.Abort -> {
+                    Log.e { "ABORT: ${directive.error.message}, iteration=$iteration" }
+                    return resp.raw.call
+                }
+            }
+
+            if (iteration > SAFETY_ITERATION_EXIT_COUNT) {
+                Log.e { "Too many iterations, breaking loop after $SAFETY_ITERATION_EXIT_COUNT iterations." }
+                return resp.raw.call
             }
         }
     }
@@ -115,6 +141,7 @@ class FlowOrchestrator(
                 Log.i { "Flow executed successfully, proceeding with request" }
                 evaluatorMutation?.invoke(req)
             }
+
             is CapabilityResult.RetryRequest -> {
                 Log.i { "Retrying the request" }
                 result.mutate(req)
@@ -122,3 +149,5 @@ class FlowOrchestrator(
         }
     }
 }
+
+public val OrchestratorBypassKey = AttributeKey<Boolean>("OrchestratorBypass")

@@ -1,7 +1,7 @@
-# Flow Component
+# Module Flow Component
 
 Deterministic orchestration core for the SDK. It interprets HTTP responses and coordinates capability handlers
-(e.g., device registration, authentication, attestation, etc).
+(service discovery, client registration, authentication, attestation, asl).
 
 ## Design
 
@@ -14,13 +14,14 @@ Deterministic orchestration core for the SDK. It interprets HTTP responses and c
      * Proceed(response) -> return to caller,
      * Perform(need, mutate?) -> run handler, apply mutations, loop,
      * Abort(error) -> throw.
+     * Note: the orchestrator has a safety guard (SAFETY_ITERATION_EXIT_COUNT). If the loop exceed this, logs the error and return the last call.
 - **RequestEvaluator** — Pure function: (request, storage) -> List<FlowNeed>. Typical logic: if route isn’t public and there’s no token -> [Authenticate].
-- **ResponseEvaluator** — Pure mapping: (request, response) -> FlowDirective. E.g., 2xx -> Proceed, 40x -> Perform(Authenticate), others -> Abort.
+- **ResponseEvaluator** — Pure mapping: (call, ctx) -> FlowDirective. E.g., 2xx -> Proceed, 40x -> Perform(Authenticate), others -> Abort.
 - **CapabilityHandler** — Performs the side effect for a FlowNeed (e.g., call auth API, generate attestation, delay for backoff), optionally mutates the same request before retrying:
   * returns RetryRequest { req -> req.headers.append("Authorization", "Bearer …") } to alter the builder,
   * or Done if nothing to change immediately.
 - **ForwardingClient** — Thin adapter with executeOnce(builder): sends the same HttpRequestBuilder and returns a real HttpResponse. In Ktor, it usually calls client.request(builder)—with a re-entry guard or a bypass client to avoid recursion.
-- **SdkStorage** — Minimal key–value surface the handlers use to persist tokens/tickets between steps.
+- **SdkStorage** — Minimal key–value surface the handlers use to persist data between steps.
 
 ## How it works ?
 
@@ -48,7 +49,7 @@ flowchart TD
   FC --> RESP
   RESP -->|Proceed| OUT[Return HttpResponse]
   RESP -->|"Perform (need)"| HANDLERS
-  RESP -->|"Abort (error)"| ERR[Throw error]
+  RESP -->|"Abort (error)"| ERR[Return call with error info]
 
   HANDLERS --> FS
   FS --> HANDLERS
@@ -62,5 +63,5 @@ flowchart TD
   * The ResponseEvaluator looks at the response:
     * Proceed -> return the response to the app.
     * Perform -> run a handler, mutate request, retry loop.
-    * Abort -> throw the error.
+    * Abort -> Logs the client error and return the last client call.
 4. SdkStorage is used by handlers to persist tokens, tickets, etc.

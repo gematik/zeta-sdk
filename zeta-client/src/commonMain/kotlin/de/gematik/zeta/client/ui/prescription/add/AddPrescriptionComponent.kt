@@ -68,11 +68,14 @@ public fun AddPrescriptionComponent(
                 (state as AddPrescriptionState.FormUpdated).result,
                 viewModel::updatePrescription,
             )
+
             is AddPrescriptionState.Added -> LaunchedEffect(Unit) {
                 onAdded()
                 viewModel.clearForm()
             }
+
             is MviState.Loading -> LoadingIndicator()
+
             is MviState.Error -> ErrorMessage((state as MviState.Error).error)
         }
     }

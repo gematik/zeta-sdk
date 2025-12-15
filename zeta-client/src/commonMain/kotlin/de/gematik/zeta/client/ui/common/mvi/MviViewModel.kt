@@ -26,7 +26,7 @@ package de.gematik.zeta.client.ui.common.mvi
 
 import com.ensody.reactivestate.ExperimentalReactiveStateApi
 import com.ensody.reactivestate.ReactiveViewModel
-import io.github.aakira.napier.Napier
+import de.gematik.zeta.logging.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.launchIn
@@ -50,7 +50,7 @@ public abstract class MviViewModel<S : MviState>(
     }
 
     override fun onError(error: Throwable) {
-        Napier.e(error.message.orEmpty(), error)
+        Log.e(error) { error.message.orEmpty() }
         state.update { MviState.Error(error.message.orEmpty()) }
     }
 }

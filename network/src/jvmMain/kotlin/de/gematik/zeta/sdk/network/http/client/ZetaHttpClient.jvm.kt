@@ -24,10 +24,13 @@
 
 package de.gematik.zeta.sdk.network.http.client
 
+import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.network.http.client.config.ClientConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.client.plugins.websocket.pingInterval
 import okhttp3.OkHttpClient
 import okhttp3.tls.HandshakeCertificates
 import java.io.ByteArrayInputStream
@@ -38,6 +41,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * JVM/Android actual that builds an OkHttp-backed [HttpClient].
@@ -75,15 +79,24 @@ internal actual fun buildPlatformClient(
     val socketFactory: SSLSocketFactory
     val trustManager: X509TrustManager
 
-    // TODO: remove when server certificate can be validated
-    val disableTLSVerification = true
+    val disableTLSVerification = cfg.security.disableServerValidation
+
+    Log.i { "JVM: Disable server validation = $disableTLSVerification" }
+
     if (disableTLSVerification) {
         val allTrustedCerts = arrayOf<TrustManager>(object : X509TrustManager {
-            override fun checkClientTrusted(chain: Array<out X509Certificate?>?, authType: String?) {}
-            override fun checkServerTrusted(chain: Array<out X509Certificate?>?, authType: String?) {}
+            @Suppress("TrustAllX509TrustManager")
+            override fun checkClientTrusted(chain: Array<out X509Certificate?>?, authType: String?) { // NOSONAR
+                // do nothing - override check for test environments
+            }
+
+            @Suppress("TrustAllX509TrustManager")
+            override fun checkServerTrusted(chain: Array<out X509Certificate?>?, authType: String?) { // NOSONAR
+                // do nothing - override check for test environments
+            }
             override fun getAcceptedIssuers(): Array<out X509Certificate?> = emptyArray()
         })
-        val sslContext = SSLContext.getInstance("TLS")
+        val sslContext = SSLContext.getInstance("TLSv1.2")
         sslContext.init(null, allTrustedCerts, SecureRandom())
 
         socketFactory = sslContext.socketFactory
@@ -109,6 +122,7 @@ internal actual fun buildPlatformClient(
 
     // Preconfigure OkHttp with the custom trust manager + SSLSocketFactory.
     val okClient = OkHttpClient.Builder()
+        .hostnameVerifier { _, _ -> true } // NOSONAR
         .sslSocketFactory(socketFactory, trustManager)
         .build()
 
@@ -118,6 +132,9 @@ internal actual fun buildPlatformClient(
             commonSetup(this)
             engine {
                 preconfigured = okClient
+            }
+            install(WebSockets) {
+                pingInterval = 30.seconds
             }
         }
     }

@@ -24,13 +24,13 @@
 
 package de.gematik.zeta.sdk.flow
 
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
 import io.ktor.client.request.HttpRequestBuilder
-import io.ktor.client.statement.HttpResponse
 
 /**
  * Minimal client used by the flow to execute the current request builder once.
  * The implementation should avoid re-entering the flow plugin to prevent recursion.
  */
 interface ForwardingClient {
-    suspend fun executeOnce(builder: HttpRequestBuilder): HttpResponse
+    suspend fun executeOnce(builder: HttpRequestBuilder): ZetaHttpResponse
 }

@@ -32,5 +32,5 @@ sealed interface FlowNeed {
     object ConfigurationFiles : FlowNeed
     object ClientRegistration : FlowNeed
     object Authentication : FlowNeed
-//    object Attestation : FlowNeed
+    object Asl : FlowNeed
 }

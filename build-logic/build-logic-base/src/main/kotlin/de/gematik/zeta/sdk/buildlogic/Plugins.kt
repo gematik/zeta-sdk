@@ -26,7 +26,6 @@
 
 package de.gematik.zeta.sdk.buildlogic
 
-import com.android.build.gradle.internal.cxx.io.writeTextIfDifferent
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.VersionCatalog
@@ -85,6 +84,8 @@ class KotlinBuildLogicPlugin : Plugin<Project> {
         target.run {
             if (!isRootProject) {
                 pluginManager.apply("io.gitlab.arturbosch.detekt")
+                // setting up kover tasks for modules
+                pluginManager.apply("org.jetbrains.kotlinx.kover")
             }
         }
     }
@@ -95,7 +96,7 @@ class KmpBuildLogicPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         target.run {
             if (!isRootProject) {
-                if (!pluginManager.hasPlugin("com.android.application")) {
+                if (!pluginManager.hasPlugin("com.android.application") && project.isAndroidEnabled) {
                     pluginManager.apply("com.android.library")
                 }
                 pluginManager.apply("org.jetbrains.kotlin.multiplatform")
@@ -110,7 +111,7 @@ class CocoapodsBuildLogicPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         target.run {
             pluginManager.apply("de.gematik.zeta.sdk.build-logic.kmp")
-            if (!isRootProject) {
+            if (!isRootProject && project.isIOSEnabled) {
                 pluginManager.apply("org.jetbrains.kotlin.native.cocoapods")
             }
         }
@@ -121,10 +122,20 @@ class CocoapodsBuildLogicPlugin : Plugin<Project> {
 class XcFrameworkBuildLogicPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         target.run {
-            pluginManager.apply("de.gematik.zeta.sdk.build-logic.cocoapods")
-            if (!isRootProject) {
-                pluginManager.apply("co.touchlab.skie")
+            if (project.isIOSEnabled) {
+                pluginManager.apply("de.gematik.zeta.sdk.build-logic.cocoapods")
+                if (!isRootProject) {
+                    pluginManager.apply("co.touchlab.skie")
+                }
             }
+        }
+    }
+}
+
+/** Shared library setup. */
+class SharedLibBuildLogicPlugin : Plugin<Project> {
+    override fun apply(target: Project) {
+        target.run {
         }
     }
 }
@@ -145,7 +156,7 @@ class ComposeBuildLogicPlugin : Plugin<Project> {
 class AppBuildLogicPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         target.run {
-            if (!isRootProject) {
+            if (!isRootProject && project.isAndroidEnabled) {
                 pluginManager.apply("com.android.application")
             }
             pluginManager.apply("de.gematik.zeta.sdk.build-logic.compose")
