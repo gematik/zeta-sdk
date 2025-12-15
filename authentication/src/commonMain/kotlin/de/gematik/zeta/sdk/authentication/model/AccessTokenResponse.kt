@@ -38,15 +38,23 @@ data class AccessTokenResponse(
     @SerialName("session_state") val sessionState: String,
     @SerialName("scope") val scope: String,
     @SerialName("issued_token_type") val issuedTokenType: String,
+    @SerialName("refresh_token") val refreshToken: String,
 )
 
 fun AccessTokenRequest.toParameters() = Parameters.build {
     append("grant_type", grantType)
     append("client_id", clientId)
-    append("subject_token", subjectToken)
-    append("subject_token_type", subjectTokenType)
-    append("scope", scope)
+    if (!subjectToken.isNullOrBlank()) {
+        append("subject_token", subjectToken)
+    }
+    if (!subjectTokenType.isNullOrBlank()) {
+        append("subject_token_type", subjectTokenType)
+    }
     append("requested_token_type", requestedTokenType)
     append("client_assertion_type", clientAssertionType)
     append("client_assertion", clientAssertion)
+    append("scope", scope)
+    if (!refreshToken.isNullOrBlank()) {
+        append("refresh_token", refreshToken)
+    }
 }

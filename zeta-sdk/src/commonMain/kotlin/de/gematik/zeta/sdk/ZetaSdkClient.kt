@@ -25,26 +25,41 @@
 package de.gematik.zeta.sdk
 
 import de.gematik.zeta.sdk.authentication.AuthConfig
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.storage.SdkStorage
-import io.ktor.client.HttpClient
+import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 
 public interface ZetaSdkClient {
     suspend fun discover(): Result<Unit>
     suspend fun register(): Result<Unit>
     suspend fun authenticate(): Result<Unit>
-    fun httpClient(builder: ZetaHttpClientBuilder.() -> Unit = {}): HttpClient
+    fun httpClient(builder: ZetaHttpClientBuilder.() -> Unit = {}): ZetaHttpClient
+    suspend fun <R> ws(
+        targetUrl: String,
+        builder: ZetaHttpClientBuilder.() -> Unit = {},
+        customHeaders: Map<String, String>? = null,
+        block: suspend DefaultClientWebSocketSession.() -> R,
+    )
     suspend fun close(): Result<Unit>
 }
 
-data class StorageConfig(val provider: SdkStorage? = null)
+data class StorageConfig(
+    val provider: SdkStorage? = null,
+    // TODO: fix clients to generate their own B64 AES 256 key
+    val aesB64Key: String = "7aae7xXr8rnzVqjpYbosS0CFMrlprkD7jbVotm0fd+w=",
+)
 
 public interface TpmConfig
 
 public data class BuildConfig(
+    val productId: String,
+    val productVersion: String,
+    val clientName: String,
     val storageConfig: StorageConfig,
     val tpmConfig: TpmConfig,
     val authConfig: AuthConfig,
+    val httpClientBuilder: ZetaHttpClientBuilder? = null,
     val registrationCallback: RegistrationCallback? = null,
     val authenticationCallback: AuthenticationCallback? = null,
 )

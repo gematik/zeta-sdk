@@ -33,6 +33,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -50,18 +51,19 @@ class PrescriptionListViewModelTest {
 
     private lateinit var viewModel: PrescriptionListViewModel
     private lateinit var testScope: TestScope
+    private lateinit var testDispatcher: TestDispatcher
 
     private lateinit var mockRepository: PrescriptionRepository
 
     @BeforeTest
     fun setUp() {
-        val testDispatcher = UnconfinedTestDispatcher()
+        testDispatcher = UnconfinedTestDispatcher()
+        testScope = TestScope(testDispatcher)
         Dispatchers.setMain(testDispatcher)
 
-        testScope = TestScope(testDispatcher)
         mockRepository = mockk()
 
-        viewModel = PrescriptionListViewModel(testScope.contextualBackgroundScope(), mockRepository)
+        viewModel = PrescriptionListViewModel(testScope.contextualBackgroundScope(), mockRepository, testDispatcher)
     }
 
     @AfterTest

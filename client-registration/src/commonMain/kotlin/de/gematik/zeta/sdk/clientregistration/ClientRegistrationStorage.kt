@@ -25,26 +25,45 @@
 package de.gematik.zeta.sdk.clientregistration
 
 import de.gematik.zeta.logging.Log
+import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationResponse
+import de.gematik.zeta.sdk.network.http.client.hostOf
+import de.gematik.zeta.sdk.storage.ExtendedStorage
 import de.gematik.zeta.sdk.storage.SdkStorage
+import kotlinx.serialization.json.Json
 
-class ClientRegistrationStorage(private val storage: SdkStorage) {
+interface ClientRegistrationStorage {
+    suspend fun saveRegistration(authServer: String, registrationResponse: ClientRegistrationResponse)
+    suspend fun getClientId(authServer: String): String?
+    suspend fun clear()
+}
+
+class ClientRegistrationStorageImpl(private val sdkStorage: SdkStorage) : ClientRegistrationStorage {
     companion object Companion {
-        private const val KEY_CLIENT_ID = "client_id"
-        private const val KEY_CLIENT_ISSUED_AT = "client_issued_at"
+        private const val CLIENT_REGISTRATION_BY_AUTH_SERVER_KEY = "client_registration_by_auth_server"
+    }
+    private val storage = ExtendedStorage(sdkStorage)
+
+    override suspend fun saveRegistration(authServer: String, registrationResponse: ClientRegistrationResponse) {
+        Log.d { "Saving client registration for AS: $authServer" }
+        val key = hostOf(authServer)
+        val map = storage.getMap(CLIENT_REGISTRATION_BY_AUTH_SERVER_KEY) ?: mutableMapOf()
+        map[key] = Json.encodeToString(registrationResponse)
+
+        storage.putMap(CLIENT_REGISTRATION_BY_AUTH_SERVER_KEY, map)
     }
 
-    suspend fun saveClientId(clientId: String, issuedAt: Long) {
-        Log.d { "Saving client id and client issued at" }
-        storage.put(KEY_CLIENT_ID, clientId)
-        storage.put(KEY_CLIENT_ISSUED_AT, issuedAt.toString())
+    override suspend fun getClientId(authServer: String): String? {
+        val key = hostOf(authServer)
+        val map = storage.getMap(CLIENT_REGISTRATION_BY_AUTH_SERVER_KEY) ?: return null
+        val raw = map[key] ?: return null
+
+        return runCatching { Json.decodeFromString<ClientRegistrationResponse>(raw).clientId }
+            .onFailure { e -> Log.e { "Failed to decode registration for $key: ${e.message}" } }
+            .getOrNull()
     }
 
-    suspend fun getClientId() = storage.get(KEY_CLIENT_ID)
-    suspend fun getClientIssuedAt() = storage.get(KEY_CLIENT_ISSUED_AT)
-
-    suspend fun clear() {
-        Log.d { "Removing client id and client issued at from storage" }
-        storage.remove(KEY_CLIENT_ID)
-        storage.remove(KEY_CLIENT_ISSUED_AT)
+    override suspend fun clear() {
+        Log.d { "Removing client registration" }
+        storage.remove(CLIENT_REGISTRATION_BY_AUTH_SERVER_KEY)
     }
 }

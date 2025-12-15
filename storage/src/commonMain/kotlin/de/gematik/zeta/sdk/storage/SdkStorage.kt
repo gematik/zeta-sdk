@@ -24,6 +24,9 @@
 
 package de.gematik.zeta.sdk.storage
 
+import de.gematik.zeta.logging.Log
+import kotlinx.serialization.json.Json
+
 interface SdkStorage {
     suspend fun put(key: String, value: String)
     suspend fun get(key: String): String?
@@ -31,20 +34,34 @@ interface SdkStorage {
     suspend fun clear()
 }
 
-public class InMemoryStorage : SdkStorage {
-    private val map = mutableMapOf<String, String>()
+public class ExtendedStorage(private val storage: SdkStorage) {
+    private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
-    override suspend fun put(key: String, value: String) {
-        map[key] = value
+    /** Loads a String -> String map or returns null if missing/corrupt. */
+    suspend fun getMap(key: String): MutableMap<String, String>? {
+        val raw = storage.get(key)?.takeIf { it.isNotBlank() } ?: return null
+        return runCatching {
+            json.decodeFromString<Map<String, String>>(raw).toMutableMap()
+        }.onFailure { e ->
+            Log.e { "Corrupt map for '$key' in storage. Reason: ${e.message}" }
+        }.getOrNull()
     }
 
-    override suspend fun get(key: String): String? = map[key]
+    suspend fun putMap(key: String, map: MutableMap<String, String>) =
+        storage.put(key, json.encodeToString<Map<String, String>>(map))
 
-    override suspend fun remove(key: String) {
-        map.remove(key)
+    /** Upserts a map entry under [key]. */
+    suspend fun upsertStringMap(
+        key: String,
+        mutate: (MutableMap<String, String>) -> Unit,
+    ) {
+        val m = getMap(key) ?: mutableMapOf()
+        mutate(m)
+        putMap(key, m)
     }
 
-    override suspend fun clear() {
-        map.clear()
-    }
+    suspend fun put(key: String, value: String) = storage.put(key, value)
+    suspend fun get(key: String): String? = storage.get(key)
+    suspend fun remove(key: String) = storage.remove(key)
+    suspend fun clear() = storage.clear()
 }

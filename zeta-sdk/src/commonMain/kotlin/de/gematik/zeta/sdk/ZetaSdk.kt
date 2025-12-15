@@ -24,26 +24,42 @@
 
 package de.gematik.zeta.sdk
 
+import de.gematik.zeta.sdk.asl.AslApi
+import de.gematik.zeta.sdk.asl.AslApiImpl
+import de.gematik.zeta.sdk.asl.aslDecryptionPlugin
+import de.gematik.zeta.sdk.authentication.AccessTokenProvider
 import de.gematik.zeta.sdk.authentication.AccessTokenProviderImpl
 import de.gematik.zeta.sdk.authentication.AuthenticationApiImpl
+import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.clientregistration.ClientRegistrationApiImpl
-import de.gematik.zeta.sdk.clientregistration.PostureProviderImpl
 import de.gematik.zeta.sdk.configuration.ConfigurationApiImpl
-import de.gematik.zeta.sdk.flow.FlowContext
+import de.gematik.zeta.sdk.flow.FlowContextImpl
 import de.gematik.zeta.sdk.flow.FlowNeed
 import de.gematik.zeta.sdk.flow.FlowOrchestrator
 import de.gematik.zeta.sdk.flow.ForwardingClient
+import de.gematik.zeta.sdk.flow.handler.AslHandler
 import de.gematik.zeta.sdk.flow.handler.ClientRegistrationHandler
 import de.gematik.zeta.sdk.flow.handler.ConfigurationHandler
 import de.gematik.zeta.sdk.flow.handler.EnsureAccessTokenHandler
 import de.gematik.zeta.sdk.flow.zetaPlugin
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
-import de.gematik.zeta.sdk.storage.InMemoryStorage
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
 import de.gematik.zeta.sdk.storage.SdkStorage
+import de.gematik.zeta.sdk.storage.provideSdkStorage
+import de.gematik.zeta.sdk.tpm.Tpm
+import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.logging.LogLevel
+import io.ktor.client.plugins.logging.Logger
+import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.HttpRequestBuilder
-import io.ktor.client.request.request
-import io.ktor.client.statement.HttpResponse
+import io.ktor.client.request.header
+import io.ktor.client.request.url
+import io.ktor.http.HttpHeaders
+import io.ktor.util.appendAll
+import kotlinx.coroutines.coroutineScope
+import kotlin.time.Clock.System
 
 /**
  * Zeta SDK entry point.
@@ -61,13 +77,22 @@ import io.ktor.client.statement.HttpResponse
  */
 
 public object ZetaSdk {
+    private lateinit var client: ZetaSdkClientImpl
     public fun build(
         resource: String,
         config: BuildConfig,
-    ): ZetaSdkClient = ZetaSdkClientImpl(resource, config)
+    ): ZetaSdkClient {
+        client = ZetaSdkClientImpl(resource, config)
+        return client
+    }
 
     public suspend fun forget(): Result<Unit> = runCatching {
-        TODO("")
+        client.flowContext.authenticationStorage.clear()
+        client.flowContext.configurationStorage.clear()
+        client.flowContext.clientRegistrationStorage.clear()
+        client.flowContext.tpmStorage.clear()
+        client.tpmProvider.forget()
+        client.flowContext.aslStorage.clear()
     }
 }
 
@@ -75,36 +100,62 @@ private class ZetaSdkClientImpl(
     private val resource: String,
     private val cfg: BuildConfig,
 ) : ZetaSdkClient {
-    private val baseClient = ZetaHttpClientBuilder(resource).build()
+    private lateinit var mainHttpClient: ZetaHttpClient
+    private val httpClientBuilder: ZetaHttpClientBuilder = cfg.httpClientBuilder ?: ZetaHttpClientBuilder("").logging(
+        LogLevel.ALL,
+        object : Logger {
+            override fun log(message: String) {
+                println(message)
+            }
+        },
+    )
     private val forwardingClient = object : ForwardingClient {
-        override suspend fun executeOnce(builder: HttpRequestBuilder): HttpResponse = baseClient.request(builder)
-    }
-    private val storage: SdkStorage = cfg.storageConfig.provider ?: InMemoryStorage()
-    private val flowContext = FlowContext(forwardingClient, storage)
-    private val configHandler: ConfigurationHandler by lazy {
-        ConfigurationHandler(ConfigurationApiImpl(resource, cfg.authConfig.authUrl))
-    }
-    private val clientRegistrationHandler: ClientRegistrationHandler by lazy {
-        ClientRegistrationHandler(ClientRegistrationApiImpl(cfg.authConfig.authUrl), PostureProviderImpl())
+        override suspend fun executeOnce(builder: HttpRequestBuilder): ZetaHttpResponse = mainHttpClient.request {
+            takeFrom(builder)
+        }
     }
 
+    private val storage: SdkStorage = cfg.storageConfig.provider ?: provideSdkStorage(cfg.storageConfig.aesB64Key)
+    val flowContext = FlowContextImpl(resource, forwardingClient, storage)
+    private val configHandler: ConfigurationHandler by lazy {
+        ConfigurationHandler(ConfigurationApiImpl(httpClientBuilder), cfg.authConfig)
+    }
+    val tpmProvider: TpmProvider = Tpm.provider(flowContext.tpmStorage)
+    private val clientRegistrationHandler: ClientRegistrationHandler by lazy {
+        ClientRegistrationHandler(cfg.clientName, ClientRegistrationApiImpl(httpClientBuilder), tpmProvider)
+    }
+
+    private lateinit var accessTokenProvider: AccessTokenProvider
     private val authHandler: EnsureAccessTokenHandler by lazy {
-        EnsureAccessTokenHandler(
-            AccessTokenProviderImpl(
-                AuthenticationApiImpl(cfg.authConfig),
-                cfg.authConfig,
-                storage,
-            ),
+        accessTokenProvider = AccessTokenProviderImpl(
+            resource,
+            cfg.authConfig,
+            AuthenticationApiImpl(httpClientBuilder),
+            flowContext.authenticationStorage,
+            { System.now().epochSeconds },
+            tpmProvider,
         )
+        EnsureAccessTokenHandler(
+            accessTokenProvider,
+            authConfig = cfg.authConfig,
+            cfg.productId,
+            cfg.productVersion,
+        )
+    }
+    private lateinit var aslApi: AslApi
+    private val aslHandler: AslHandler by lazy {
+        aslApi = AslApiImpl(cfg.authConfig.enableAslTracingHeader, flowContext.aslStorage, httpClientBuilder, accessTokenProvider)
+
+        AslHandler(aslApi)
     }
 
     private fun newOrchestrator(): FlowOrchestrator =
         FlowOrchestrator(
             handlers = listOf(
-                // TODO: uncomment when the endpoints are available
-            /*configHandler,
-            clientRegistrationHandler,*/
+                configHandler,
+                clientRegistrationHandler,
                 authHandler,
+                aslHandler,
             ),
         )
 
@@ -127,13 +178,48 @@ private class ZetaSdkClientImpl(
      * @param builder configuration lambda executed on a fresh [ZetaHttpClientBuilder].
      * @return A built and configured [HttpClient].
      */
-    override fun httpClient(builder: ZetaHttpClientBuilder.() -> Unit): HttpClient {
+    override fun httpClient(builder: ZetaHttpClientBuilder.() -> Unit): ZetaHttpClient {
         val orchestrator = newOrchestrator()
-        return ZetaHttpClientBuilder(resource)
+        mainHttpClient = ZetaHttpClientBuilder(resource)
             .apply(builder)
             .build(addExtras = {
+                install(aslDecryptionPlugin(aslApi))
                 install(zetaPlugin(orchestrator, flowContext))
             })
+
+        return mainHttpClient
+    }
+
+    override suspend fun <R> ws(
+        targetUrl: String,
+        builder: ZetaHttpClientBuilder.() -> Unit,
+        customHeaders: Map<String, String>?,
+        block: suspend DefaultClientWebSocketSession.() -> R,
+    ) = coroutineScope {
+        discover().getOrThrow()
+        register().getOrThrow()
+
+        val token = authHandler.getValidAccessToken(flowContext)
+        require(token.isNotBlank())
+
+        val hashedToken = accessTokenProvider.hash(token)
+        val dpop = accessTokenProvider.createDpopToken("GET", targetUrl, null, hashedToken)
+
+        val wsClient = ZetaHttpClientBuilder(resource)
+            .apply(builder)
+            .build()
+
+        wsClient.webSocket(request = {
+            url(targetUrl)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpAuthHeaders.Dpop, dpop)
+            header(HttpHeaders.Accept, "application/json")
+            customHeaders?.let {
+                headers.appendAll(customHeaders)
+            }
+        }) {
+            block()
+        }
     }
 
     override suspend fun close(): Result<Unit> = runCatching {

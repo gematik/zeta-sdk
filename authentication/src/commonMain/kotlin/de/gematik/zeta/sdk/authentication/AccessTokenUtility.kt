@@ -24,24 +24,46 @@
 
 package de.gematik.zeta.sdk.authentication
 
-import de.gematik.zeta.sdk.authentication.model.AccessTokenClaims
-import de.gematik.zeta.sdk.authentication.model.AccessTokenHeader
 import io.ktor.utils.io.core.toByteArray
 import kotlinx.serialization.json.Json
 import kotlin.io.encoding.Base64
 
+/**
+ * Utility object for creating and manipulating access tokens.
+ */
 internal object AccessTokenUtility {
-    fun create(header: AccessTokenHeader, payload: AccessTokenClaims): String {
+    /**
+     * Creates a JWT-like token from a header and payload.
+     *
+     * The header and payload are serialized to JSON and then Base64 URL-safe encoded.
+     * The resulting strings are concatenated with a period in between.
+     *
+     * @param H The type of the header.
+     * @param P The type of the payload.
+     * @param header The header object.
+     * @param payload The payload object.
+     * @return A string representing the unsigned token in the format "base64(header).base64(payload)".
+     */
+    inline fun <reified H, reified P> create(header: H, payload: P): String {
         // encoding
         val jsonHeader = Json.encodeToString(header)
         val jsonPayload = Json.encodeToString(payload)
 
+        val base64 = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
+
         // base64
-        val base64Header = Base64.encode(jsonHeader.toByteArray())
-        val base64Payload = Base64.encode(jsonPayload.toByteArray())
+        val base64Header = base64.encode(jsonHeader.toByteArray())
+        val base64Payload = base64.encode(jsonPayload.toByteArray())
 
         return "$base64Header.$base64Payload"
     }
 
+    /**
+     * Appends a signature to an existing token.
+     *
+     * @param token The token string, usually in the format "base64(header).base64(payload)".
+     * @param signature The signature to append.
+     * @return The signed token in the format "token.signature".
+     */
     fun addSignature(token: String, signature: String): String = "$token.$signature"
 }

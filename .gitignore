@@ -2,6 +2,7 @@
 .gradle
 .kotlin
 build
+build-cache
 local.properties
 .credentials
 .idea
@@ -12,7 +13,7 @@ local.properties
 .externalNativeBuild
 .cxx
 kotlin-js-store
-
+build-cache
 # ------------
 # iOS projects
 # ------------

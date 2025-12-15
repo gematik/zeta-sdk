@@ -24,32 +24,119 @@
 
 package de.gematik.zeta.sdk.flow.handler
 
+import de.gematik.zeta.sdk.authentication.AccessTokenParams
 import de.gematik.zeta.sdk.authentication.AccessTokenProvider
+import de.gematik.zeta.sdk.authentication.AuthConfig
+import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.flow.CapabilityHandler
 import de.gematik.zeta.sdk.flow.CapabilityResult
 import de.gematik.zeta.sdk.flow.FlowContext
 import de.gematik.zeta.sdk.flow.FlowNeed
 import io.ktor.http.HttpHeaders
+import io.ktor.http.URLBuilder
+import io.ktor.http.Url
+import io.ktor.http.encodedPath
 
 @Suppress("FunctionOnlyReturningConstant")
 class EnsureAccessTokenHandler(
-    val accessTokenProvider: AccessTokenProvider,
-
+    val tokenProvider: AccessTokenProvider,
+    val authConfig: AuthConfig,
+    val productId: String,
+    val productVersion: String,
 ) : CapabilityHandler {
-
     override fun canHandle(need: FlowNeed): Boolean = need == FlowNeed.Authentication
 
     override suspend fun handle(need: FlowNeed, ctx: FlowContext): CapabilityResult {
-        // TODO: uncomment when registration is enabled
-        // val clientId = ClientRegistrationStorage(ctx.storage).getClientId()
-        // checkNotNull(clientId)
+        val cfg = buildAccessTokenParams(ctx)
 
-        val token = accessTokenProvider.getValidToken()
+        val issuer = requireNotNull(ctx.configurationStorage.getAuthServer(ctx.resource)?.issuer) {
+            "Missing issuer for resource: $ctx.resource"
+        }
+
+        val token = tokenProvider.getValidToken(
+            cfg.tokenEndpoint,
+            cfg.nonceEndpoint,
+            AccessTokenParams(
+                cfg.params.clientId,
+                productId,
+                productVersion,
+                authConfig.exp,
+                cfg.params.scopes,
+                audienceFromIssuer(issuer),
+            ),
+        )
+
+        val hashedToken = tokenProvider.hash(token)
 
         return CapabilityResult.RetryRequest { req ->
             if (!req.headers.contains(HttpHeaders.Authorization)) {
+                val dpop = tokenProvider.createDpopToken(req.method.value, req.url.toString(), null, hashedToken)
                 req.headers[HttpHeaders.Authorization] = "Bearer $token"
+                req.headers[HttpAuthHeaders.Dpop] = dpop
             }
         }
     }
+
+    private suspend fun buildAccessTokenParams(ctx: FlowContext): AccessTokenParamsWithEndpoints {
+        val authServer = requireNotNull(ctx.configurationStorage.getAuthServer(ctx.resource)) {
+            "Missing auth server configuration for resource: ${ctx.resource}"
+        }
+        val tokenEndpoint = requireNotNull(authServer.tokenEndpoint) {
+            "Missing token endpoint for resource: ${ctx.resource}"
+        }
+        val nonceEndpoint = requireNotNull(authServer.nonceEndpoint) {
+            "Missing nonce endpoint for resource: ${ctx.resource}"
+        }
+        val clientId = requireNotNull(ctx.clientRegistrationStorage.getClientId(ctx.resource)) {
+            "Missing client_id for resource ${ctx.resource}"
+        }
+        val issuer = requireNotNull(ctx.configurationStorage.getAuthServer(ctx.resource)?.issuer) {
+            "Missing issuer for resource: $ctx.resource"
+        }
+        val scopes = authConfig.scopes.ifEmpty {
+            requireNotNull(authServer.scopesSupported) {
+                "Missing scopes supported for resource: ${ctx.resource}"
+            }
+        }
+
+        return AccessTokenParamsWithEndpoints(
+            tokenEndpoint = tokenEndpoint,
+            nonceEndpoint = nonceEndpoint,
+            params = AccessTokenParams(
+                clientId = clientId,
+                productId = productId,
+                productVersion = productVersion,
+                expiration = authConfig.exp,
+                scopes = scopes,
+                audience = audienceFromIssuer(issuer),
+            ),
+        )
+    }
+
+    private data class AccessTokenParamsWithEndpoints(
+        val tokenEndpoint: String,
+        val nonceEndpoint: String,
+        val params: AccessTokenParams,
+    )
+
+    /** Helper you can call from ws() to get a valid access token */
+    suspend fun getValidAccessToken(ctx: FlowContext): String {
+        val cfg = buildAccessTokenParams(ctx)
+        return tokenProvider.getValidToken(
+            cfg.tokenEndpoint,
+            cfg.nonceEndpoint,
+            cfg.params,
+        )
+    }
+}
+
+fun audienceFromIssuer(issuer: String): String {
+    val authUrl = Url(issuer)
+
+    return URLBuilder().apply {
+        protocol = authUrl.protocol
+        host = authUrl.host
+        port = authUrl.port
+        encodedPath = "/auth/"
+    }.buildString()
 }

@@ -2,7 +2,7 @@ FROM eclipse-temurin:21-jdk
 ARG ANDROID_COMPILE_SDK=34
 ARG ANDROID_BUILD_TOOLS=34.0.0
 ARG ANDROID_SDK_TOOLS=11076708
-RUN apt-get update -qq && apt-get install -y wget tar unzip lib32stdc++6 lib32z1
+RUN apt-get update -qq && apt-get install -y wget tar unzip lib32stdc++6 lib32z1 git
 ENV ANDROID_SDK_ROOT="${PWD}/android-home"
 RUN mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
 RUN wget -q -O $ANDROID_SDK_ROOT/cmdline-tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_SDK_TOOLS}_latest.zip"

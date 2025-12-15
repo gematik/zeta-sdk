@@ -24,53 +24,96 @@
 
 package de.gematik.zeta.sdk.configuration
 
-import de.gematik.zeta.sdk.configuration.models.OidcDiscoveryResponse
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
-import io.ktor.client.call.body
-import io.ktor.client.request.get
-import io.ktor.client.statement.bodyAsText
+import io.ktor.http.Url
 
+/**
+ * Contract for retrieving the well-known configuration documents and schemas.
+ */
 interface ConfigurationApi {
-    suspend fun fetchResourceMetadata(): String
-    suspend fun fetchAuthorizationMetadata(): OidcDiscoveryResponse
+    suspend fun fetchResourceMetadata(resourceUrl: String): String
+    suspend fun fetchAuthorizationMetadata(authFqdns: String): String
     suspend fun getResourceSchema(): String
     suspend fun getAuthorizationSchema(): String
 }
 
-/*
- * Note that the baseAsWellKnownUrl will be going away in further releases,
- * once configuration and discovery is fully implemented
+/**
+ * API for retrieving *well-known* configuration documents and their schemas.
+ *
+ * It also exposes helpers to load the corresponding JSON Schema files that are bundled
+ * with the application via the platform-specific [loadResource].
+ *
  */
 @Suppress("UnusedPrivateProperty")
-public class ConfigurationApiImpl(
-    private val resource: String,
-    // temporary until fully implemented
-    private val baseAsWellKnownUrl: String,
+class ConfigurationApiImpl(
+    private val httpClientBuilder: ZetaHttpClientBuilder,
 ) : ConfigurationApi {
-    private val baseUrl: String = "$baseAsWellKnownUrl/.well-known/"
 
-    override suspend fun fetchResourceMetadata(): String {
-        val client = ZetaHttpClientBuilder(baseUrl).build()
-        return client
+    /**
+     * Fetches the *Protected Resource* well-known document.
+     *
+     * GET `/.well-known/oauth-protected-resource`
+     *
+     * @return The raw JSON payload as a UTF-8 text [String].
+     */
+    override suspend fun fetchResourceMetadata(resourceUrl: String): String {
+        val baseUrl = protectedBaseUrl(resourceUrl)
+        return httpClientBuilder.build(baseUrl)
             .get("oauth-protected-resource")
             .bodyAsText()
     }
 
-    override suspend fun fetchAuthorizationMetadata(): OidcDiscoveryResponse {
-        val client = ZetaHttpClientBuilder(baseUrl).build()
-
-        return client
+    /**
+     * Fetches the *Authorization Server* well-known document.
+     *
+     * GET `/.well-known/oauth-authorization-server`
+     *
+     * @return The raw JSON payload as a [String].
+     */
+    override suspend fun fetchAuthorizationMetadata(authFqdns: String): String {
+        val baseUrl = protectedBaseUrl(authFqdns)
+        return httpClientBuilder.build(baseUrl)
             .get("oauth-authorization-server")
-            .body()
+            .bodyAsText()
     }
 
-    override suspend fun getResourceSchema(): String {
-        return loadResource("as-well-known.json")
-    }
+    /**
+     * Loads the JSON Schema that validates the *Authorization Server* well-known document.
+     *
+     * @return The schema JSON as a [String].
+     */
+    override suspend fun getAuthorizationSchema(): String =
+        loadResource("as-well-known.json")
 
-    override suspend fun getAuthorizationSchema(): String {
-        return loadResource("opr-well-known.json")
-    }
+    /**
+     * Loads the JSON Schema that validates the *Protected Resource* well-known document.
+     *
+     * @return The schema JSON as a [String].
+     */
+    override suspend fun getResourceSchema(): String =
+        loadResource("opr-well-known.json")
 }
 
+private fun protectedBaseUrl(resourceUrl: String): String {
+    val u = Url(resourceUrl)
+    val defaultPort = when (u.protocol.name.lowercase()) {
+        "https" -> 443
+        "http" -> 80
+        else -> 0
+    }
+    val hostPart = if (':' in u.host) "[${u.host}]" else u.host
+    val portPart = if (u.port > 0 && u.port != defaultPort) ":${u.port}" else ""
+
+    return "https://$hostPart$portPart/.well-known/"
+}
+
+/**
+ * Loads a text resource packaged with the application.
+ *
+ * This is declared as `expect` in common code and must be provided by each platform
+ *
+ * @param fileName File name of the resource (e.g., `"as-well-known.json"`).
+ * @return File contents as a [String].
+ * @throws IllegalStateException if the resource cannot be found or read (platform-dependent).
+ */
 expect fun loadResource(fileName: String): String

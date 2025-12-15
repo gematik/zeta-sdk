@@ -30,7 +30,10 @@ package de.gematik.zeta.sdk.network.http.client.config
  * @property additionalCaPem Extra CA certificates, in PEM format (each entry is a full PEM string).
  *                           These are appended to the platform/default trust store by the
  *                           platform-specific engine in [buildPlatformClient].
+ * @property disableServerValidation when set to true, disable server certificate and hostname checks
+ *                           Defaults to false as secure default.
  */
 internal data class SecurityConfig(
     val additionalCaPem: List<String> = emptyList(),
+    val disableServerValidation: Boolean = false,
 )

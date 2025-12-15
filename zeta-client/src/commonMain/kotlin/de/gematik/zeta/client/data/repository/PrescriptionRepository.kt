@@ -26,6 +26,7 @@ package de.gematik.zeta.client.data.repository
 
 import de.gematik.zeta.client.data.service.PrescriptionService
 import de.gematik.zeta.client.model.PrescriptionModel
+import de.gematik.zeta.sdk.ZetaSdk
 
 public interface PrescriptionRepository {
     public suspend fun prescriptionList(): List<PrescriptionModel>
@@ -33,6 +34,7 @@ public interface PrescriptionRepository {
     public suspend fun addPrescription(model: PrescriptionModel)
     public suspend fun updatePrescription(id: Long, model: PrescriptionModel)
     public suspend fun deletePrescription(id: Long)
+    public suspend fun forgetAuthorization()
 }
 
 public class PrescriptionRepositoryImpl(
@@ -57,5 +59,9 @@ public class PrescriptionRepositoryImpl(
 
     override suspend fun deletePrescription(id: Long) {
         return prescriptionService.deletePrescription(id)
+    }
+
+    override suspend fun forgetAuthorization() {
+        ZetaSdk.forget()
     }
 }

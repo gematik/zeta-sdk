@@ -26,9 +26,11 @@
 
 package de.gematik.zeta.sdk.buildlogic
 
+import org.gradle.api.Project
 import org.gradle.api.publish.maven.MavenPomLicenseSpec
 import org.gradle.kotlin.dsl.assign
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import com.vanniktech.maven.publish.MavenPublishBaseExtension
 
 fun MavenPomLicenseSpec.apache2() {
     license {
@@ -42,4 +44,58 @@ fun MavenPomLicenseSpec.mit() {
         name = "The MIT License"
         url = "https://opensource.org/licenses/mit-license.php"
     }
+}
+
+fun MavenPublishBaseExtension.prepareForMavenCentralPublishing(project: Project) {
+    pom {
+        //        coordinates(
+        //            groupId = "de.gematik.zeta",
+        //            artifactId = "zeta-sdk",
+        //            version = "0.0.1-SNAPSHOT"
+        //        )
+
+        name.set("ZETA Client")
+        description.set("Kotlin Multiplatform client library to access ZETA Guard API")
+        url.set("https://github.com/gematik/zeta-sdk")
+
+        licenses {
+            license {
+                name.set("Apache License 2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+            }
+        }
+
+        developers {
+            developer {
+                id.set("gematik")
+                name.set("gematik")
+                email.set("software-development@gematik.de")
+                url.set("https://gematik.github.io/")
+                organization.set("gematik GmbH")
+                organizationUrl.set("https://www.gematik.de/")
+            }
+        }
+
+        scm {
+            url.set("https://github.com/gematik/zeta-sdk")
+            connection.set("scm:git:git@github.com:gematik/zeta-sdk.git")
+            developerConnection.set("scm:git:ssh://git@github.com:gematik/zeta-sdk.git")
+        }
+
+        issueManagement {
+            system.set("GitHub")
+            url.set("https://github.com/gematik/zeta-sdk/issues")
+        }
+
+        organization {
+            name.set("gematik GmbH")
+            url.set("https://www.gematik.de")
+        }
+    }
+
+    // Configure publishing to Maven Central
+    publishToMavenCentral()
+
+    // Enable GPG signing for all publications
+    signAllPublications()
 }

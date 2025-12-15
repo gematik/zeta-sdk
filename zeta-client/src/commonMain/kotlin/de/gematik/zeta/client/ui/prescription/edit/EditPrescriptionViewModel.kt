@@ -30,13 +30,17 @@ import de.gematik.zeta.client.di.DIContainer
 import de.gematik.zeta.client.model.PrescriptionModel
 import de.gematik.zeta.client.ui.common.mvi.MviState
 import de.gematik.zeta.client.ui.common.mvi.MviViewModel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.update
 
 @OptIn(ExperimentalReactiveStateApi::class)
 public class EditPrescriptionViewModel(
     scope: CoroutineScope,
     private val repository: PrescriptionRepository = DIContainer.prescriptionRepository,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : MviViewModel<EditPrescriptionState>(
     scope,
     initialState = EditPrescriptionState.FormUpdated(PrescriptionModel()),
@@ -45,7 +49,7 @@ public class EditPrescriptionViewModel(
     private var id = -1L
     private var model = PrescriptionModel()
 
-    internal fun loadPrescription(modelId: Long?) = launch {
+    internal fun loadPrescription(modelId: Long?) = launch(ioDispatcher) {
         requireNotNull(id) { "model.id is null" }
         id = modelId ?: -1
         model = repository.prescription(id)
@@ -57,7 +61,7 @@ public class EditPrescriptionViewModel(
         state.update { EditPrescriptionState.FormUpdated(model) }
     }
 
-    internal fun savePrescription() = launch {
+    internal fun savePrescription() = launch(ioDispatcher) {
         repository.updatePrescription(id, model)
         model = PrescriptionModel()
         state.update { EditPrescriptionState.Saved }

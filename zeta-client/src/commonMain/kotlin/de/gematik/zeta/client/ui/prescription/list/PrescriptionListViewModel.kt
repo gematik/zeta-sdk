@@ -30,26 +30,37 @@ import de.gematik.zeta.client.di.DIContainer
 import de.gematik.zeta.client.model.PrescriptionModel
 import de.gematik.zeta.client.ui.common.mvi.MviState
 import de.gematik.zeta.client.ui.common.mvi.MviViewModel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.update
 
 @OptIn(ExperimentalReactiveStateApi::class)
 public class PrescriptionListViewModel(
     scope: CoroutineScope,
     private val repository: PrescriptionRepository = DIContainer.prescriptionRepository,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : MviViewModel<PrescriptionListState>(
     scope,
     initialState = PrescriptionListState.Result(emptyList()),
 ) {
 
-    internal fun loadPrescriptionList() = launch {
-        val list = repository.prescriptionList()
+    private var list: List<PrescriptionModel> = emptyList()
+
+    internal fun loadPrescriptionList() = launch(ioDispatcher) {
+        list = repository.prescriptionList()
         state.update { PrescriptionListState.Result(list) }
     }
 
-    internal fun deletePrescription(model: PrescriptionModel) = launch {
+    internal fun forgetAuthorization() = launch(ioDispatcher) {
+        repository.forgetAuthorization()
+        state.update { PrescriptionListState.Result(list) }
+    }
+
+    internal fun deletePrescription(model: PrescriptionModel) = launch(ioDispatcher) {
         repository.deletePrescription(model.id ?: -1)
-        val list = repository.prescriptionList()
+        list = repository.prescriptionList()
         state.update { PrescriptionListState.Result(list) }
     }
 }

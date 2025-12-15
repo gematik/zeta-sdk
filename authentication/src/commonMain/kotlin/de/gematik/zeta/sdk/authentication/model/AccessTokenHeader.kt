@@ -29,12 +29,12 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class AccessTokenHeader(
-    /** Token type where "at": access token and "rt": refresh token  */
+    /** The type of the JWT.  */
     @SerialName("typ") val typ: TokenType,
-    /** SHA-256 hash of the public signing key used  */
-    val kid: String,
-    /** SMC-B Public Signer Key  */
-    val jwk: String,
-    /** Algorithm  */
-    val alg: String = "ES256",
+    /** SHA-256 hash of the certificate used  */
+    @SerialName("kid") val kid: String? = null,
+    /** Contains the certificate. The certificate must be the leaf certificate containing the public key for verifying the signature. It must be base64-der-encoded */
+    @SerialName("x5c") val x5c: List<String>,
+    /** The algorithm used to sign the JWT.  */
+    @SerialName("alg") val alg: String,
 )

@@ -26,14 +26,13 @@ package de.gematik.zeta.sdk.flow
 
 import de.gematik.zeta.logging.Log
 import io.ktor.client.call.HttpClientCall
-import io.ktor.client.request.HttpRequestBuilder
 
 /**
  * Maps a (request, response) pair to the next flow decision.
  * Keep it stateless and deterministic for testability.
  */
 fun interface ResponseEvaluator {
-    fun evaluate(req: HttpRequestBuilder, resp: HttpClientCall): FlowDirective
+    suspend fun evaluate(call: HttpClientCall, ctx: FlowContext): FlowDirective
 }
 
 /**
@@ -45,14 +44,13 @@ fun interface ResponseEvaluator {
  * Extend by uncommenting/adding rules (e.g., 40x->Authentication, 40x->Attestation).
  */
 class ResponseEvaluatorImpl : ResponseEvaluator {
-    override fun evaluate(req: HttpRequestBuilder, resp: HttpClientCall): FlowDirective =
-        when (resp.response.status.value) {
-            in 200..299 -> FlowDirective.Proceed(resp.response)
-            // 40x -> FlowDirective.Perform(FlowNeed.Authentication)
-            // 40x -> FlowDirective.Perform(FlowNeed.Attestation)
+    override suspend fun evaluate(call: HttpClientCall, ctx: FlowContext): FlowDirective =
+        when (call.response.status.value) {
+            in 200..299 -> FlowDirective.Proceed(call.response)
+
             else -> {
-                Log.e { "Requests failed. URL: ${resp.request.url} - Status: ${resp.response.status}" }
-                FlowDirective.Abort(Exception("Unhandled status ${resp.response.status}"))
+                Log.e { "Requests failed. URL: ${call.request.url} - Status: ${call.response.status}" }
+                FlowDirective.Abort(call.response, Exception("Unhandled status ${call.response.status}"))
             }
         }
 }

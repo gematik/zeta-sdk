@@ -24,13 +24,40 @@
 
 package de.gematik.zeta.sdk.flow
 
+import de.gematik.zeta.sdk.asl.AslStorage
+import de.gematik.zeta.sdk.asl.AslStorageImpl
+import de.gematik.zeta.sdk.authentication.AuthenticationStorage
+import de.gematik.zeta.sdk.authentication.AuthenticationStorageImpl
+import de.gematik.zeta.sdk.clientregistration.ClientRegistrationStorage
+import de.gematik.zeta.sdk.clientregistration.ClientRegistrationStorageImpl
+import de.gematik.zeta.sdk.configuration.ConfigurationStorage
+import de.gematik.zeta.sdk.configuration.ConfigurationStorageImpl
 import de.gematik.zeta.sdk.storage.SdkStorage
+import de.gematik.zeta.sdk.tpm.TpmStorage
+import de.gematik.zeta.sdk.tpm.TpmStorageImpl
+
+interface FlowContext {
+    val resource: String
+    val client: ForwardingClient
+    val configurationStorage: ConfigurationStorage
+    val clientRegistrationStorage: ClientRegistrationStorage
+    val authenticationStorage: AuthenticationStorage
+    val tpmStorage: TpmStorage
+    val aslStorage: AslStorage
+}
 
 /**
  * Shared context passed to handlers. Provides a HTTP client
  * (that executes the current request builder) and access to storage.
  */
-data class FlowContext(
-    val client: ForwardingClient,
-    val storage: SdkStorage,
-)
+class FlowContextImpl(
+    override val resource: String,
+    override val client: ForwardingClient,
+    storage: SdkStorage,
+    override val configurationStorage: ConfigurationStorage = ConfigurationStorageImpl(storage),
+    override val clientRegistrationStorage: ClientRegistrationStorage = ClientRegistrationStorageImpl(storage),
+    override val authenticationStorage: AuthenticationStorage = AuthenticationStorageImpl(storage),
+    override val tpmStorage: TpmStorage = TpmStorageImpl(storage),
+    override val aslStorage: AslStorage = AslStorageImpl(storage),
+
+) : FlowContext

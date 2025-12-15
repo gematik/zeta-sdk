@@ -89,6 +89,10 @@ public fun PrescriptionListComponent() {
             ) {
                 Text("Add")
             }
+            Spacer(modifier = Modifier.weight(1f))
+            Button(onClick = viewModel::forgetAuthorization) {
+                Text("Forget")
+            }
         }
         when (state) {
             is PrescriptionListState.Result -> PrescriptionList(
@@ -99,7 +103,9 @@ public fun PrescriptionListComponent() {
                 },
                 viewModel::deletePrescription,
             )
+
             is MviState.Loading -> LoadingIndicator()
+
             is MviState.Error -> ErrorMessage((state as MviState.Error).error)
         }
     }

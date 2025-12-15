@@ -24,52 +24,77 @@
 
 package de.gematik.zeta.client.data.service.http
 
-import de.gematik.zeta.client.data.service.logger.KtorLogger
-import de.gematik.zeta.client.di.DEBUG_LOGGING
-import de.gematik.zeta.client.di.DIContainer.AUTH_URL
+import de.gematik.zeta.client.data.service.smb.HardcodedTokenProvider
+import de.gematik.zeta.client.di.DIContainer.DISABLE_SERVER_VALIDATION
+import de.gematik.zeta.client.di.DIContainer.SMB_KEYSTORE_CREDENTIALS
+import de.gematik.zeta.client.di.DIContainer.SMCB_CONNECTOR_CONFIG
 import de.gematik.zeta.sdk.BuildConfig
 import de.gematik.zeta.sdk.StorageConfig
 import de.gematik.zeta.sdk.TpmConfig
 import de.gematik.zeta.sdk.ZetaSdk
 import de.gematik.zeta.sdk.authentication.AuthConfig
-import io.ktor.client.HttpClient
-import io.ktor.client.plugins.logging.DEFAULT
+import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
+import de.gematik.zeta.sdk.authentication.smcb.SmcbTokenProvider
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 
 public interface HttpClientProvider {
-    public fun provideHttpClient(): HttpClient
+    public fun provideHttpClient(): ZetaHttpClient
     public fun setupEnvUrl(url: String)
 }
 
 public class HttpClientProviderImpl : HttpClientProvider {
 
-    private lateinit var httpClient: HttpClient
+    private lateinit var httpClient: ZetaHttpClient
 
-    override fun provideHttpClient(): HttpClient =
+    override fun provideHttpClient(): ZetaHttpClient =
         httpClient
 
     override fun setupEnvUrl(url: String) {
         httpClient = prepareHttpClient(url)
     }
 
-    private fun prepareHttpClient(url: String): HttpClient {
+    private fun prepareHttpClient(url: String): ZetaHttpClient {
         return ZetaSdk.build(
             resource = url,
             config = BuildConfig(
+                "demo_client",
+                productVersion = "0.2.0",
+                "sdk-client",
                 StorageConfig(),
                 object : TpmConfig {},
                 AuthConfig(
-                    listOf(""),
-                    "",
-                    "",
-                    0,
-                    AUTH_URL,
+                    listOf(
+                        "zero:audience",
+                    ),
+                    30,
+                    true,
+                    when {
+                        SMB_KEYSTORE_CREDENTIALS.keystoreFile.isNotEmpty() ->
+                            SmbTokenProvider(SMB_KEYSTORE_CREDENTIALS)
+
+                        SMCB_CONNECTOR_CONFIG.baseUrl.isNotEmpty() ->
+                            SmcbTokenProvider(SMCB_CONNECTOR_CONFIG)
+
+                        else ->
+                            HardcodedTokenProvider()
+                    },
                 ),
+                ZetaHttpClientBuilder("").disableServerValidation(DISABLE_SERVER_VALIDATION),
             ),
         )
             .httpClient {
-                logging(LogLevel.ALL, if (DEBUG_LOGGING) KtorLogger() else Logger.DEFAULT)
+                logging(
+                    LogLevel.ALL,
+                    object : Logger {
+                        override fun log(message: String) {
+                            println(message)
+                        }
+                    },
+                )
+                disableServerValidation(DISABLE_SERVER_VALIDATION)
             }
     }
 }

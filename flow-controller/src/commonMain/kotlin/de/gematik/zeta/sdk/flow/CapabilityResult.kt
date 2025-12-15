@@ -40,5 +40,5 @@ sealed interface CapabilityResult {
      * Ask the orchestrator to retry the same request, after applying [mutate].
      * Use this to add headers or tweak the request before the next send.
      */
-    data class RetryRequest(val mutate: (HttpRequestBuilder) -> Unit = {}) : CapabilityResult
+    data class RetryRequest(val mutate: suspend (HttpRequestBuilder) -> Unit = {}) : CapabilityResult
 }

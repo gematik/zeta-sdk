@@ -24,6 +24,8 @@
 
 package de.gematik.zeta.sdk.flow
 
+import de.gematik.zeta.sdk.flow.RequestEvaluatorImplTest.FakeForwardingClient
+import de.gematik.zeta.sdk.storage.InMemoryStorage
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -47,12 +49,12 @@ class ResponseEvaluatorImplTest {
     @Test
     fun evaluate_returns_proceed_when_succeeds() = runTest {
         // Arrange
+        val dummyCtx = getDummyContextWithResource()
         val evaluator = ResponseEvaluatorImpl()
-        val req = HttpRequestBuilder()
         val resp = responseWith(HttpStatusCode.OK)
 
         // Act
-        val directive = evaluator.evaluate(req, resp.call)
+        val directive = evaluator.evaluate(resp.call, dummyCtx)
 
         // Assert
         assertIs<FlowDirective.Proceed>(directive)
@@ -64,12 +66,12 @@ class ResponseEvaluatorImplTest {
     @Test
     fun evaluate_returns_abort_on_status_code_404() = runTest {
         // Arrange
+        val storage = InMemoryStorage()
         val evaluator = ResponseEvaluatorImpl()
-        val req = HttpRequestBuilder()
         val resp = responseWith(HttpStatusCode.NotFound)
 
         // Act
-        val directive = evaluator.evaluate(req, resp.call)
+        val directive = evaluator.evaluate(resp.call, FlowContextImpl("", FakeForwardingClient(), storage))
 
         // Assert
         assertIs<FlowDirective.Abort>(directive)

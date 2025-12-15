@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>ERezept WebSocket Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs/lib/stomp.min.js"></script>
+</head>
+<body>
+
+<h1>ERezept WebSocket Test</h1>
+
+<p>URL:<br>
+  <input id="wsUrl" type="text" value="ws://localhost:8081/proxy/ws" size="50">
+</p>
+<p>
+  <button id="connectBtn">Connect</button>
+  <button id="disconnectBtn" disabled>Disconnect</button>
+</p>
+
+<h2>Create</h2>
+<p>
+  Prescription ID: <input id="prescriptionId" type="text" value="RX-12345"><br>
+  Status: <input id="status" type="text" value="CREATED"><br>
+  <button id="createBtn" disabled>Create</button>
+</p>
+
+<h2>Read</h2>
+<p>
+  ID: <input id="readId" type="text" value="1"><br>
+  <button id="readBtn" disabled>Read</button>
+</p>
+
+<h2>Log</h2>
+<textarea id="log" rows="20" cols="80" readonly></textarea>
+
+<script>
+  let stomp = null;
+  let ws = null;
+
+  const log = (msg) => {
+    const logArea = document.getElementById('log');
+    const time = new Date().toTimeString().split(' ')[0];
+    logArea.value += `[${time}] ${msg}\n`;
+    logArea.scrollTop = logArea.scrollHeight;
+  };
+
+  const setButtons = (state) => {
+    document.getElementById('connectBtn').disabled = state;
+    document.getElementById('disconnectBtn').disabled = !state;
+    document.getElementById('createBtn').disabled = !state;
+    document.getElementById('readBtn').disabled = !state;
+  };
+
+  document.getElementById('connectBtn').onclick = () => {
+    const url = document.getElementById('wsUrl').value;
+    log('Connecting to ' + url);
+
+    ws = new WebSocket(url);
+    stomp = Stomp.over(ws);
+    stomp.debug = null;
+
+    stomp.connect({}, () => {
+      log('Connected');
+      setButtons(true);
+
+      stomp.subscribe('/topic/erezept', (msg) => {
+        log('Received: ' + msg.body);
+      });
+
+      stomp.subscribe('/user/queue/erezept', (msg) => {
+        log('Response: ' + msg.body);
+      });
+
+    }, (err) => {
+      log('Error: ' + err);
+      setButtons(false);
+    });
+  };
+
+  document.getElementById('disconnectBtn').onclick = () => {
+    if (stomp) {
+      stomp.disconnect(() => {
+        log('Disconnected');
+        setButtons(false);
+      });
+    }
+  };
+
+  document.getElementById('createBtn').onclick = () => {
+    const data = {
+      prescriptionId: document.getElementById('prescriptionId').value,
+      status: document.getElementById('status').value
+    };
+    log('Creating: ' + JSON.stringify(data));
+    stomp.send('/app/erezept.create', {}, JSON.stringify(data));
+  };
+
+  document.getElementById('readBtn').onclick = () => {
+    const id = document.getElementById('readId').value;
+    log('Reading ID: ' + id);
+    stomp.send('/app/erezept.read.' + id, {}, '{}');
+  };
+</script>
+</body>
+</html>

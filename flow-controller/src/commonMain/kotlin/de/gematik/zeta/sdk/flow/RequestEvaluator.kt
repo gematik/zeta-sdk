@@ -33,7 +33,7 @@ import io.ktor.client.request.HttpRequestBuilder
 * for current state (e.g., token presence).
 */
 fun interface RequestEvaluator {
-    suspend fun evaluate(request: HttpRequestBuilder, storage: SdkStorage): List<FlowNeed>
+    suspend fun evaluate(request: HttpRequestBuilder, context: FlowContext): List<FlowNeed>
 }
 
 /**
@@ -50,22 +50,16 @@ class RequestEvaluatorImpl(
 ) : RequestEvaluator {
     override suspend fun evaluate(
         request: HttpRequestBuilder,
-        storage: SdkStorage,
+        context: FlowContext,
     ): List<FlowNeed> {
         if (isPublic(request)) return emptyList()
         val needs = mutableListOf<FlowNeed>()
-        // TODO: uncomment when endpoints are available
-// FlowNeed.ConfigurationFiles
-//        Log.d { "Getting client id from storage" }
-//        val hasClientId = (ClientRegistrationStorage(storage).getClientId() != null)
-//        if (!hasClientId) {
-//            Log.i { "Client id not found. Adding flow for client registration" }
-//            needs += FlowNeed.ClientRegistration
-//        }
 
+        needs += FlowNeed.ConfigurationFiles
+        needs += FlowNeed.ClientRegistration
         needs += FlowNeed.Authentication
+        needs += FlowNeed.Asl
 
-        // return needs based on: hasValidToken, isClientRegistered, hasDiscoveryBeenDone
         return needs
     }
 }

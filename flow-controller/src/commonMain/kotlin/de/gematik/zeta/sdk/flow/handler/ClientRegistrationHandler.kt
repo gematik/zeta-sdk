@@ -24,52 +24,47 @@
 
 package de.gematik.zeta.sdk.flow.handler
 
-import de.gematik.zeta.platform.Platform
-import de.gematik.zeta.platform.platform
 import de.gematik.zeta.sdk.clientregistration.ClientRegistrationApi
-import de.gematik.zeta.sdk.clientregistration.ClientRegistrationStorage
-import de.gematik.zeta.sdk.clientregistration.PostureProvider
-import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationResponse
-import de.gematik.zeta.sdk.clientregistration.model.Platform.SOFTWARE
-import de.gematik.zeta.sdk.clientregistration.model.SoftwareClientRegistrationRequest
+import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationRequest
+import de.gematik.zeta.sdk.clientregistration.model.Jwks
 import de.gematik.zeta.sdk.flow.CapabilityHandler
 import de.gematik.zeta.sdk.flow.CapabilityResult
 import de.gematik.zeta.sdk.flow.FlowContext
 import de.gematik.zeta.sdk.flow.FlowNeed
-import kotlin.time.Clock
+import de.gematik.zeta.sdk.tpm.TpmProvider
 
 @Suppress("UnusedPrivateProperty")
 class ClientRegistrationHandler(
-    private val api: ClientRegistrationApi,
-    private val postureProvider: PostureProvider,
+    private val clientName: String,
+    private val regApi: ClientRegistrationApi,
+    private val tpmProvider: TpmProvider,
 ) : CapabilityHandler {
-
     override fun canHandle(need: FlowNeed): Boolean = need == FlowNeed.ClientRegistration
 
     override suspend fun handle(
         need: FlowNeed,
         ctx: FlowContext,
     ): CapabilityResult {
-        val response = when (platform()) {
-            is Platform.Jvm -> registerSoftwareClient()
-            else -> TODO("has to be implemented")
+        val authServer = ctx.configurationStorage.getAuthServer(ctx.resource)
+        val clientId = ctx.clientRegistrationStorage.getClientId(authServer!!.issuer)
+
+        if (!clientId.isNullOrBlank()) {
+            return CapabilityResult.Done
         }
 
-        ClientRegistrationStorage(ctx.storage)
-            .saveClientId(response.clientId, response.clientIssuedAt)
+        val registrationRequest = ClientRegistrationRequest(
+            tokenEndpointAuthMethod = "private_key_jwt",
+            grantTypes = listOf("urn:ietf:params:oauth:grant-type:token-exchange", "refresh_token"),
+            responseTypes = listOf("token"),
+            clientName = clientName,
+            jwks = Jwks(listOf(tpmProvider.generateClientInstanceKey().jwk)),
+        )
+
+        val registrationResponse = regApi.register(authServer.openidProvidersEndpoint, registrationRequest)
+
+        ctx.clientRegistrationStorage
+            .saveRegistration(authServer.issuer, registrationResponse)
 
         return CapabilityResult.Done
-    }
-
-    private suspend fun registerSoftwareClient(): ClientRegistrationResponse {
-        // TODO: clientName: 'Name of the client, chosen by user or application'. Does it come from SDK?
-        val clientName = ""
-        val posture = postureProvider.buildSoftwarePosture()
-        val payload = SoftwareClientRegistrationRequest(clientName, platform = SOFTWARE, posture)
-
-        // TODO: uncomment when endpoint is available.
-        // [A_27799](02): POST client registration
-        // return api.register(payload)
-        return ClientRegistrationResponse("test_client_id", Clock.System.now().epochSeconds)
     }
 }

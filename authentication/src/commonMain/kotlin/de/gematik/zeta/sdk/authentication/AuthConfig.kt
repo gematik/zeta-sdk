@@ -26,11 +26,7 @@ package de.gematik.zeta.sdk.authentication
 
 public data class AuthConfig(
     val scopes: List<String>,
-    val connectorAddress: String,
-    // The Telematik-ID of the SM(C)-B.
-    val sub: String,
-    // The expiration time of the JWT (Short-lived). now() +  exp
-    val exp: Int,
-    // the URL of the realm of the ZETA Guard on the PDP Auth Server
-    val authUrl: String,
+    val exp: Long,
+    val enableAslTracingHeader: Boolean,
+    val subjectTokenProvider: SubjectTokenProvider,
 )

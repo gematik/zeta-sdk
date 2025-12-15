@@ -29,26 +29,20 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class AccessTokenClaims(
-    /** Issuer */
-    @SerialName("iss") val issuer: String,
-    /** Expiration time (Unix epoch seconds) */
+    /** The issuer of the JWT (client_id) */
+    @SerialName("iss") val iss: String,
+    /** The expiration time of the JWT (Short-lived) */
     @SerialName("exp") val exp: Long,
-    /** Audiences */
-    @SerialName("aud") val audience: List<String>,
-    /** Subject */
-    @SerialName("sub") val subject: String,
-    /** Issued-at time (Unix epoch seconds) */
+    /** The audience of the JWT (the Authorization Server) */
+    @SerialName("aud") val aud: List<String>,
+    /** The Telematik-ID of the SM(C)-B */
+    @SerialName("sub") val sub: String,
+    /** The issued at time of the JWT */
     @SerialName("iat") val iat: Long,
-    /** JWT ID */
+    /** A unique value from the AS to prevent replay attacks. */
+    @SerialName("nonce") val nonce: String,
+    /** The JWT ID */
     @SerialName("jti") val jti: String,
-    /** Optional space-separated scopes (per OAuth2) */
-    @SerialName("scope") val scope: String? = null,
-    /** Confirmation claim with DPoP thumbprint */
-    @SerialName("cnf") val cnf: Cnf,
-) {
-    @Serializable
-    data class Cnf(
-        /** SHA-256 hash (base64url) of the DPoP public key */
-        @SerialName("jkt") val jkt: String,
-    )
-}
+    /** Access token type */
+    @SerialName("typ") val typ: String,
+)

@@ -29,6 +29,8 @@ import com.ensody.reactivestate.ReactiveViewModel
 import de.gematik.zeta.client.data.repository.HelloZetaRepository
 import de.gematik.zeta.client.data.repository.HelloZetaRepositoryImpl
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 
@@ -41,7 +43,7 @@ public class HelloZetaViewModel(
 
     private val helloZetaRepository: HelloZetaRepository = HelloZetaRepositoryImpl()
 
-    internal fun helloZeta() = launch {
+    internal fun helloZeta() = launch(Dispatchers.IO) {
         try {
             val helloZetaResponse = helloZetaRepository.helloZeta()
             updateZetaResponse(helloZetaResponse)

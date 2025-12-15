@@ -41,5 +41,5 @@ sealed interface FlowDirective {
     data class Perform(val need: FlowNeed, val mutate: (HttpRequestBuilder) -> Unit = {}) : FlowDirective
 
     /** Irrecoverable error: stop the flow and throw [error]. */
-    data class Abort(val error: Throwable) : FlowDirective
+    data class Abort(val response: HttpResponse, val error: Throwable) : FlowDirective
 }

@@ -119,6 +119,13 @@ fun KotlinMultiplatformExtension.applyKmpHierarchy(block: KotlinHierarchyBuilder
                 withTvos()
                 withWatchos()
             }
+            group("mobile") {
+                withAndroidTarget()
+                group("ios")
+                withIos()
+                withTvos()
+                withWatchos()
+            }
             group("compose") {
                 withJs()
                 withWasmJs()
@@ -153,16 +160,22 @@ fun KotlinMultiplatformExtension.addAllTargets(
     onlyComposeSupport: Boolean = false,
     iosX64: Boolean = true,
 ) {
-    androidTarget {
-        publishLibraryVariants("release")
-    }
-    if (!onlyComposeSupport) {
-        allAndroidNative()
+    if (project.isAndroidEnabled) {
+        androidTarget {
+            publishLibraryVariants("release")
+        }
+        if (!onlyComposeSupport) {
+            allAndroidNative()
+        }
     }
     jvm()
     allJs()
-    allAppleMobile(x64 = iosX64, onlyComposeSupport = onlyComposeSupport)
-    allDesktop()
+    if (project.isIOSEnabled) {
+        allAppleMobile(x64 = iosX64, onlyComposeSupport = onlyComposeSupport)
+    }
+    if (project.isNativeEnabled) {
+        allDesktop()
+    }
 }
 
 fun KotlinMultiplatformExtension.allDesktop() {

@@ -35,8 +35,23 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
+import io.ktor.client.plugins.websocket.webSocket
+import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.delete
+import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.get
+import io.ktor.client.request.patch
+import io.ktor.client.request.post
+import io.ktor.client.request.put
+import io.ktor.client.request.request
+import io.ktor.client.request.url
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.Parameters
+import io.ktor.http.Url
 import io.ktor.http.takeFrom
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.utils.io.core.Closeable
 import kotlinx.serialization.json.Json
 
 /**
@@ -62,9 +77,11 @@ import kotlinx.serialization.json.Json
 internal fun zetaHttpClient(
     configure: ClientConfig.() -> Unit,
     addExtras: (HttpClientConfig<*>.() -> Unit)? = null,
-): HttpClient {
+): ZetaHttpClient {
     Log.d { "Configuring the HTTP client" }
     val cfg = ClientConfig().apply(configure)
+
+    Log.i { "Disable server validation = " + cfg.security.disableServerValidation }
 
     val commonSetup: HttpClientConfig<*>.() -> Unit = {
         install(DefaultRequest) {
@@ -114,11 +131,13 @@ internal fun zetaHttpClient(
     }
 
     val injected = cfg.engineFactory
-    return if (injected != null) {
+    val httpClient = if (injected != null) {
         HttpClient(injected()) { commonSetup(this) }
     } else {
         buildPlatformClient(cfg, commonSetup)
     }
+
+    return ZetaHttpClient(httpClient)
 }
 
 /**
@@ -126,7 +145,7 @@ internal fun zetaHttpClient(
  *
  * Implement this in each target (e.g., JVM/Android with CIO/OkHttp, iOS with OpenSSL).
  * Responsibilities typically include:
- *  - Applying [cfg.security.additionalCaPem] to the engine trust manager (if supported on platform).
+ *  - Applying cfg.security.additionalCaPem to the engine trust manager (if supported on platform).
  *  - Choosing sensible engine defaults for the platform.
  *
  * @param cfg          The finalized client configuration.
@@ -136,3 +155,148 @@ internal expect fun buildPlatformClient(
     cfg: ClientConfig,
     commonSetup: HttpClientConfig<*>.() -> Unit,
 ): HttpClient
+
+/** Normalizes a URL/host to a lowercase FQDN key. */
+public fun hostOf(value: String): String {
+    val s = if ("://" in value || value.startsWith("//")) value else "https://$value"
+    return Url(s).host.trim().trimEnd('.').lowercase()
+}
+
+public class ZetaHttpClient public constructor(
+    public val delegate: HttpClient,
+) : Closeable {
+
+    override fun close() {
+        delegate.close()
+    }
+
+    public inline fun <R> useRaw(block: HttpClient.() -> R): R = delegate.block()
+
+    public suspend inline fun get(
+        urlString: String,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.get(urlString, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun get(
+        url: Url,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.get(url, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun post(
+        urlString: String,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.post(urlString, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun post(
+        url: Url,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.post(url, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun put(
+        urlString: String,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.put(urlString, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun put(
+        url: Url,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.put(url, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun delete(
+        urlString: String,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.delete(urlString, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun <reified T> delete(
+        url: Url,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.delete(url, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun patch(
+        urlString: String,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.patch(urlString, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun patch(
+        url: Url,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.patch(url, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun request(
+        noinline block: HttpRequestBuilder.() -> Unit,
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.request(block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun request(
+        urlString: String,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.request {
+            url(urlString)
+            block()
+        }
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun request(
+        url: Url,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.request {
+            url(url)
+            block()
+        }
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun submitForm(
+        urlString: String,
+        formParameters: Parameters,
+        encodeInQuery: Boolean = false,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.submitForm(
+            url = urlString,
+            formParameters = formParameters,
+            encodeInQuery = encodeInQuery,
+            block = block,
+        )
+        return response.toZetaResponse()
+    }
+
+    public suspend fun webSocket(request: HttpRequestBuilder.() -> Unit, block: suspend DefaultClientWebSocketSession.() -> Unit) {
+        return delegate.webSocket(request, block)
+    }
+}

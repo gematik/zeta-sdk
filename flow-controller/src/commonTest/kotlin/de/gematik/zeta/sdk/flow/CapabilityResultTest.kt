@@ -25,6 +25,7 @@
 package de.gematik.zeta.sdk.flow
 
 import io.ktor.client.request.HttpRequestBuilder
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -35,7 +36,7 @@ class CapabilityResultTest {
 
     /** Mutate lambda can change the request (e.g., add a header). */
     @Test
-    fun mutate_adds_header_to_request() {
+    fun mutate_adds_header_to_request() = runTest {
         // Arrange
         val req = HttpRequestBuilder()
         val retry = CapabilityResult.RetryRequest { builder ->

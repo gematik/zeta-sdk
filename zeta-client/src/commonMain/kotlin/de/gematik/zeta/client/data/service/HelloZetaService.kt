@@ -25,8 +25,8 @@
 package de.gematik.zeta.client.data.service
 
 import de.gematik.zeta.client.di.DIContainer
-import io.ktor.client.request.get
-import io.ktor.client.statement.bodyAsText
+import de.gematik.zeta.client.di.DIContainer.POPP_TOKEN
+import de.gematik.zeta.client.di.POPP_TOKEN_HEADER_NAME
 
 public interface HelloZetaService {
     public suspend fun helloZeta(): String
@@ -34,8 +34,10 @@ public interface HelloZetaService {
 
 public class HelloZetaServiceImpl : HelloZetaService {
     override suspend fun helloZeta(): String {
-        return DIContainer.zetaHttpClient
-            .get("/testfachdienst/hellozeta")
-            .bodyAsText()
+        return DIContainer.httpClientProvider.provideHttpClient()
+            .get("/hellozeta") {
+                POPP_TOKEN?.let { headers.append(POPP_TOKEN_HEADER_NAME, it) }
+            }
+            .body()
     }
 }

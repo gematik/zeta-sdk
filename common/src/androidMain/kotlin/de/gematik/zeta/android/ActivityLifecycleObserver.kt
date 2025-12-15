@@ -49,14 +49,18 @@ internal class ActivityLifecycleObserver : Application.ActivityLifecycleCallback
     }
 
     override fun onActivityPaused(activity: Activity) {
+        // do nothing - may be implemented in MS5+
     }
 
     override fun onActivityStopped(activity: Activity) {
+        // do nothing - may be implemented in MS5+
     }
 
     override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {
+        // do nothing - may be implemented in MS5+
     }
 
     override fun onActivityDestroyed(activity: Activity) {
+        // do nothing - may be implemented in MS5+
     }
 }
