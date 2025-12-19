@@ -2,7 +2,7 @@
 
 # Release Notes ZETA SDK
 
-## Release 0.2.3
+## Release 0.2.6
 
 This version implements the "happy flow" for the ZETA protocol for the ZETA client SDK.
 
@@ -35,9 +35,21 @@ Not all validations are implemented yet and will follow in later releases.
 
 #### Functional
 
-- Refresh Token handling not yet fully implemented (token rotation)
 - C++ API still unstable and crypto-functions missing
-- asl tracing header
+
+## Changes from 0.2.5
+
+- Send clientId and clientIdIssuedAt within client assessment data for token exchange (websockets)
+
+## Changes from 0.2.4
+
+- Correct the field platform name
+
+## Changes from 0.2.3
+
+- fix for asl debug header
+- fix for web sockets
+- fix for sending client-/user-data
 
 ## Changes from 0.2.2
 

@@ -16,7 +16,7 @@ setupBuildLogic {
             api(project(":network"))
             implementation(project(":tpm"))
             implementation(project(":storage"))
-            implementation(project(":attestation"))
+            api(project(":attestation"))
         }
 
         sourceSets.commonTest.dependencies {

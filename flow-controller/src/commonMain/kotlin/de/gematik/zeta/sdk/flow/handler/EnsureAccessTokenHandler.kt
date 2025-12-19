@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.flow.handler
 
+import de.gematik.zeta.sdk.attestation.model.ClientSelfAssessment
 import de.gematik.zeta.sdk.authentication.AccessTokenParams
 import de.gematik.zeta.sdk.authentication.AccessTokenProvider
 import de.gematik.zeta.sdk.authentication.AuthConfig
@@ -43,6 +44,7 @@ class EnsureAccessTokenHandler(
     val authConfig: AuthConfig,
     val productId: String,
     val productVersion: String,
+    val clientSelfAssessment: ClientSelfAssessment,
 ) : CapabilityHandler {
     override fun canHandle(need: FlowNeed): Boolean = need == FlowNeed.Authentication
 
@@ -63,6 +65,7 @@ class EnsureAccessTokenHandler(
                 authConfig.exp,
                 cfg.params.scopes,
                 audienceFromIssuer(issuer),
+                cfg.params.clientSelfAssessment,
             ),
         )
 
@@ -99,6 +102,13 @@ class EnsureAccessTokenHandler(
             }
         }
 
+        val registrationInfo = ctx.clientRegistrationStorage.getRegistrationInfo(ctx.resource)
+        checkNotNull(registrationInfo) { "The registration information could not be obtained" }
+        checkNotNull(registrationInfo.clientId) { "clientId could not be obtained from the registration" }
+        checkNotNull(registrationInfo.clientIdIssuedAt) { "clientIdIssuedAt could not be obtained from the registration" }
+
+        val clientAssessmentWithRegistrationInfo = clientSelfAssessment.copy(clientId = registrationInfo.clientId, registrationTimestamp = registrationInfo.clientIdIssuedAt!!)
+
         return AccessTokenParamsWithEndpoints(
             tokenEndpoint = tokenEndpoint,
             nonceEndpoint = nonceEndpoint,
@@ -109,6 +119,7 @@ class EnsureAccessTokenHandler(
                 expiration = authConfig.exp,
                 scopes = scopes,
                 audience = audienceFromIssuer(issuer),
+                clientAssessmentWithRegistrationInfo,
             ),
         )
     }

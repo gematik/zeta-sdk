@@ -76,7 +76,6 @@ public sealed class AddPrescriptionState : MviState {
 }
 
 private val SAMPLE_MODEL = PrescriptionModel(
-    id = 123,
     prescriptionId = "RX-2025-000123",
     patientId = "PAT-123456",
     practitionerId = "PRAC-98765",

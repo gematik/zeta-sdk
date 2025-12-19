@@ -25,8 +25,10 @@ package de.gematik.zeta;
 
 import de.gematik.zeta.logging.Log;
 import de.gematik.zeta.sdk.*;
+import de.gematik.zeta.sdk.attestation.model.PlatformProductId;
 import de.gematik.zeta.sdk.authentication.AuthConfig;
 import de.gematik.zeta.sdk.authentication.SubjectTokenProvider;
+import de.gematik.zeta.sdk.attestation.model.ClientSelfAssessment;
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider;
 import de.gematik.zeta.sdk.authentication.smcb.ConnectorApiImpl;
 import de.gematik.zeta.sdk.authentication.smcb.SmcbTokenProvider;
@@ -105,6 +107,7 @@ public class Main {
                     true,
                     getTokenProvider(props)
                 ),
+                new ClientSelfAssessment("name", "clientId", "manufacturerId", "manufacturerName", "test@manufacturertestmail.de", 0, new PlatformProductId.AppleProductId("apple","macos", List.of("bundleX"))),
                 new ZetaHttpClientBuilder("").disableServerValidation(disableServerValidation).logging(LogLevel.ALL, System.out::println),
                 null,
                 null

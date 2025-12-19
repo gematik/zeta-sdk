@@ -33,6 +33,7 @@ import kotlinx.serialization.json.Json
 
 interface ClientRegistrationStorage {
     suspend fun saveRegistration(authServer: String, registrationResponse: ClientRegistrationResponse)
+    suspend fun getRegistrationInfo(authServer: String): ClientRegistrationResponse?
     suspend fun getClientId(authServer: String): String?
     suspend fun clear()
 }
@@ -52,12 +53,14 @@ class ClientRegistrationStorageImpl(private val sdkStorage: SdkStorage) : Client
         storage.putMap(CLIENT_REGISTRATION_BY_AUTH_SERVER_KEY, map)
     }
 
-    override suspend fun getClientId(authServer: String): String? {
+    override suspend fun getClientId(authServer: String): String? = getRegistrationInfo(authServer)?.clientId
+
+    override suspend fun getRegistrationInfo(authServer: String): ClientRegistrationResponse? {
         val key = hostOf(authServer)
         val map = storage.getMap(CLIENT_REGISTRATION_BY_AUTH_SERVER_KEY) ?: return null
         val raw = map[key] ?: return null
 
-        return runCatching { Json.decodeFromString<ClientRegistrationResponse>(raw).clientId }
+        return runCatching { Json.decodeFromString<ClientRegistrationResponse>(raw) }
             .onFailure { e -> Log.e { "Failed to decode registration for $key: ${e.message}" } }
             .getOrNull()
     }

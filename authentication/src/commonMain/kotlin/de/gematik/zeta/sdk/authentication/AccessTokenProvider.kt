@@ -26,6 +26,7 @@ package de.gematik.zeta.sdk.authentication
 
 import AttestationApiImpl
 import de.gematik.zeta.logging.Log
+import de.gematik.zeta.sdk.attestation.model.ClientSelfAssessment
 import de.gematik.zeta.sdk.authentication.model.AccessTokenRequest
 import de.gematik.zeta.sdk.authentication.model.AccessTokenResponse
 import de.gematik.zeta.sdk.authentication.model.DPoPTokenClaims
@@ -44,11 +45,11 @@ data class AccessTokenParams(
     val expiration: Long,
     val scopes: List<String>,
     val audience: String,
+    val clientSelfAssessment: ClientSelfAssessment,
 )
 
 interface AccessTokenProvider {
     suspend fun getValidToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams): String
-    suspend fun refreshToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams, refreshToken: String): String
     suspend fun createDpopToken(method: String, url: String, nonceBytes: ByteArray? = null, accessTokenHash: String? = null): String
     suspend fun hash(token: String): String
 }
@@ -85,10 +86,11 @@ class AccessTokenProviderImpl(
         return issueNewAccessToken(tokenEndpoint, nonceEndpoint, params)
     }
 
-    override suspend fun refreshToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams, refreshToken: String): String {
+    private suspend fun refreshToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams, refreshToken: String): String {
         require(refreshToken.isNotBlank())
 
         val nonce = authApi.fetchNonce(nonceEndpoint)
+
         val clientAssertion = AttestationApiImpl(tpmProvider).createClientAssertion(
             params.productId,
             params.productVersion,
@@ -96,6 +98,7 @@ class AccessTokenProviderImpl(
             params.clientId,
             clock() + params.expiration,
             tokenEndpoint,
+            params.clientSelfAssessment,
         )
 
         val dpop = createDpopToken("POST", tokenEndpoint, nonce, null)
@@ -130,6 +133,7 @@ class AccessTokenProviderImpl(
             params.clientId,
             clock() + params.expiration,
             tokenEndpoint,
+            params.clientSelfAssessment,
         )
 
         // 3. self-made access token (SM(C)-B) to be signed/hashed externally

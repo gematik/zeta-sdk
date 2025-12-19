@@ -22,6 +22,8 @@
  * #L%
  */
 
+import de.gematik.zeta.sdk.attestation.model.ClientSelfAssessment
+import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.tpm.Tpm
 import de.gematik.zeta.sdk.tpm.TpmStorageImpl
@@ -40,6 +42,7 @@ import kotlin.test.assertTrue
 
 class AttestationApiTest {
     val fixedUuid = { "11111111-2222-3333-4444-555555555555" }
+    val clientSelfAssessment = ClientSelfAssessment("name", "clientId", "manufacturerId", "manufacturerName", "test@manufacturertestmail.de", registrationTimestamp = 0, PlatformProductId.AppleProductId("apple", "macos", listOf("bundleX")))
 
     @Test
     fun createClientAssertion_shallReturnJWTWithThreeParts() = runTest {
@@ -59,6 +62,7 @@ class AttestationApiTest {
             clientId = clientId,
             exp = exp,
             tokenEndpoint = tokenEndpoint,
+            clientSelfAssessment,
         )
 
         val parts = jwt.split('.')
@@ -83,6 +87,7 @@ class AttestationApiTest {
             clientId = clientId,
             exp = exp,
             tokenEndpoint = tokenEndpoint,
+            clientSelfAssessment,
         )
         val parts = jwt.split('.')
         val header = decodeJson(parts[0])
@@ -110,6 +115,7 @@ class AttestationApiTest {
             clientId = clientId,
             exp = exp,
             tokenEndpoint = tokenEndpoint,
+            clientSelfAssessment,
         )
         val parts = jwt.split('.')
         val payload = decodeJson(parts[1])

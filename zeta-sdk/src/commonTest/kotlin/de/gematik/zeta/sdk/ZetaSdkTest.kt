@@ -24,6 +24,8 @@
 
 package de.gematik.zeta.sdk
 
+import de.gematik.zeta.sdk.attestation.model.ClientSelfAssessment
+import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.authentication.AuthenticationApiImpl
 import de.gematik.zeta.sdk.authentication.model.AccessTokenRequest
@@ -60,6 +62,7 @@ class ZetaSdkTest {
                         SmbTokenProvider.Credentials("", "", ""),
                     ),
                 ),
+                clientSelfAssessment = ClientSelfAssessment("name", "clientId", "manufacturerId", "manufacturerName", "test@manufacturertestmail.de", registrationTimestamp = 0, PlatformProductId.AppleProductId("apple", "macos", listOf("bundleX"))),
             ),
         )
 

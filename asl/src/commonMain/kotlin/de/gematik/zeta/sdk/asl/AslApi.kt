@@ -31,10 +31,12 @@ import io.ktor.client.request.header
 import io.ktor.client.request.headers
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.encodedPath
 import io.ktor.http.takeFrom
+import io.ktor.util.encodeBase64
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.cbor.Cbor
 
@@ -77,6 +79,7 @@ public class AslApiImpl(
             append(HttpHeaders.ContentType, ContentType.Application.OctetStream.toString())
             append(HttpHeaders.Accept, ContentType.Application.OctetStream.toString())
             set(HttpAuthHeaders.Dpop, dpop)
+            if (enableAslTracingHeaders) setTracingHeaders(session)
         }
         request.setBody(extended)
 
@@ -110,6 +113,12 @@ public fun HttpRequestBuilder.copyAuthHeadersFrom(request: HttpRequestBuilder) {
     src[HttpHeaders.Authorization]?.let { value ->
         header(HttpHeaders.Authorization, value)
     }
+}
+
+private fun HeadersBuilder.setTracingHeaders(session: EstablishedSession) {
+    val client2Server = session.c2sAppDataKey.encodeBase64()
+    val server2Client = session.s2cAppDataKey.encodeBase64()
+    append("ZETA-ASL-nonPU-Tracing", "$client2Server $server2Client")
 }
 
 @OptIn(ExperimentalSerializationApi::class)
