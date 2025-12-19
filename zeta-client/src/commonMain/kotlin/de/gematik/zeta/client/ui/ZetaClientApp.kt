@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.ensody.reactivestate.ExperimentalReactiveStateApi
 import de.gematik.zeta.client.ui.environment.toggle.EnvToggleComponent
+import de.gematik.zeta.client.ui.hello.HelloZetaComponent
 import de.gematik.zeta.client.ui.prescription.list.PrescriptionListComponent
 
 @OptIn(ExperimentalReactiveStateApi::class)
@@ -53,6 +54,9 @@ public fun ZetaClientApp() {
                 modifier = Modifier.weight(1f),
             ) {
                 PrescriptionListComponent()
+            }
+            Box {
+                HelloZetaComponent()
             }
         }
 //        Box(

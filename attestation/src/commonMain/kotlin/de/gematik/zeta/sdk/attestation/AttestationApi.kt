@@ -24,6 +24,7 @@
 
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.attestation.model.ClientAssertionJwt
+import de.gematik.zeta.sdk.attestation.model.ClientSelfAssessment
 import de.gematik.zeta.sdk.attestation.model.ClientStatement
 import de.gematik.zeta.sdk.attestation.model.buildPosture
 import de.gematik.zeta.sdk.attestation.model.getPlatform
@@ -56,7 +57,7 @@ interface AttestationApi {
      *
      * @return Compact JWS string: `<base64url(header)>.<base64url(payload)>.<base64url(signature)>`.
      */
-    suspend fun createClientAssertion(productId: String, productVersion: String, nonce: ByteArray, clientId: String, exp: Long, tokenEndpoint: String): String
+    suspend fun createClientAssertion(productId: String, productVersion: String, nonce: ByteArray, clientId: String, exp: Long, tokenEndpoint: String, clientSelfAssessment: ClientSelfAssessment): String
 }
 
 /**
@@ -92,6 +93,7 @@ class AttestationApiImpl(
         clientId: String,
         exp: Long,
         tokenEndpoint: String,
+        clientSelfAssessment: ClientSelfAssessment,
     ): String {
         Log.d { "Getting client instant keys" }
         val clientInstanceKeys = tpmProvider.generateClientInstanceKey()
@@ -105,7 +107,7 @@ class AttestationApiImpl(
         Log.d { "Getting client assertion jwt" }
         val clientAssertion = ClientAssertionJwt(
             header = ClientAssertionJwt.Header(alg = AsymAlg.ES256.name, typ = "JWT", jwk = clientInstanceKeys.jwk),
-            payload = ClientAssertionJwt.Payload(clientId, clientId, listOf(tokenEndpoint), exp, jti, Json.encodeToJsonElement(statement)),
+            payload = ClientAssertionJwt.Payload(clientId, clientId, listOf(tokenEndpoint), exp, jti, Json.encodeToJsonElement(statement), clientSelfAssessment),
         )
 
         return getJwt(clientAssertion)
@@ -128,8 +130,12 @@ class AttestationApiImpl(
 
     /** Create JWS by signing base64url(header) + "." + base64url(payload). */
     private suspend fun getJwt(jwt: ClientAssertionJwt): String {
-        val headerB64 = b64url(Json.encodeToString(jwt.header).toByteArray(Charsets.UTF_8))
-        val payloadB64 = b64url(Json.encodeToString(jwt.payload).toByteArray(Charsets.UTF_8))
+        val json = Json {
+            encodeDefaults = true
+        }
+
+        val headerB64 = b64url(json.encodeToString(jwt.header).toByteArray(Charsets.UTF_8))
+        val payloadB64 = b64url(json.encodeToString(jwt.payload).toByteArray(Charsets.UTF_8))
 
         val signInput = "$headerB64.$payloadB64".toByteArray(Charsets.UTF_8)
         val sig = tpmProvider.signWithClientKey(signInput)

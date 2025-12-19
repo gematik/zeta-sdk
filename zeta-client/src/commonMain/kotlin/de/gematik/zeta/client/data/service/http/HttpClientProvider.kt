@@ -32,6 +32,8 @@ import de.gematik.zeta.sdk.BuildConfig
 import de.gematik.zeta.sdk.StorageConfig
 import de.gematik.zeta.sdk.TpmConfig
 import de.gematik.zeta.sdk.ZetaSdk
+import de.gematik.zeta.sdk.attestation.model.ClientSelfAssessment
+import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
 import de.gematik.zeta.sdk.authentication.smcb.SmcbTokenProvider
@@ -82,7 +84,17 @@ public class HttpClientProviderImpl : HttpClientProvider {
                             HardcodedTokenProvider()
                     },
                 ),
-                ZetaHttpClientBuilder("").disableServerValidation(DISABLE_SERVER_VALIDATION),
+                clientSelfAssessment = ClientSelfAssessment("name", "clientId", "manufacturerId", "manufacturerName", "test@manufacturertestmail.de", registrationTimestamp = 0, PlatformProductId.AppleProductId("apple", "macos", listOf("bundleX"))),
+                ZetaHttpClientBuilder("")
+                    .disableServerValidation(DISABLE_SERVER_VALIDATION)
+                    .logging(
+                        LogLevel.ALL,
+                        object : Logger {
+                            override fun log(message: String) {
+                                println(message)
+                            }
+                        },
+                    ),
             ),
         )
             .httpClient {

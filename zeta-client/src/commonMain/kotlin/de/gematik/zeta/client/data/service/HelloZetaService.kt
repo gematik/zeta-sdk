@@ -35,7 +35,7 @@ public interface HelloZetaService {
 public class HelloZetaServiceImpl : HelloZetaService {
     override suspend fun helloZeta(): String {
         return DIContainer.httpClientProvider.provideHttpClient()
-            .get("/hellozeta") {
+            .get("hellozeta") {
                 POPP_TOKEN?.let { headers.append(POPP_TOKEN_HEADER_NAME, it) }
             }
             .body()

@@ -140,6 +140,7 @@ private class ZetaSdkClientImpl(
             authConfig = cfg.authConfig,
             cfg.productId,
             cfg.productVersion,
+            cfg.clientSelfAssessment,
         )
     }
     private lateinit var aslApi: AslApi

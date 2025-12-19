@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk
 
+import de.gematik.zeta.sdk.attestation.model.ClientSelfAssessment
 import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
@@ -59,6 +60,7 @@ public data class BuildConfig(
     val storageConfig: StorageConfig,
     val tpmConfig: TpmConfig,
     val authConfig: AuthConfig,
+    val clientSelfAssessment: ClientSelfAssessment,
     val httpClientBuilder: ZetaHttpClientBuilder? = null,
     val registrationCallback: RegistrationCallback? = null,
     val authenticationCallback: AuthenticationCallback? = null,

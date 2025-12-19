@@ -40,10 +40,8 @@ public object HttpClientExtension {
 
     public fun HttpClient.httpGet(url: String, header: Map<String, String>): HttpResponseWrapper = runBlocking {
         val resp = get(url) {
-            headers {
-                header.entries.forEach {
-                    append(it.key, it.value)
-                }
+            header.entries.forEach {
+                headers.append(it.key, it.value)
             }
         }
         HttpResponseWrapper.from(resp)
@@ -51,10 +49,8 @@ public object HttpClientExtension {
 
     public fun HttpClient.httpPost(url: String, body: String, header: Map<String, String>): HttpResponseWrapper = runBlocking {
         val resp = post(url) {
-            headers {
-                header.entries.forEach {
-                    append(it.key, it.value)
-                }
+            header.entries.forEach {
+                headers.append(it.key, it.value)
             }
             setBody(body)
         }
