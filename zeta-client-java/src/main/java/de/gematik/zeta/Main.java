@@ -64,6 +64,7 @@ public class Main {
     public static final String SMCB_USER_ID = "SMCB_USER_ID";
     public static final String SMCB_CARD_HANDLE = "SMCB_CARD_HANDLE";
     public static final String DISABLE_SERVER_VALIDATION = "DISABLE_SERVER_VALIDATION";
+    public static final String ASL_PROD = "ASL_PROD";
     public static final String POPP_TOKEN = "POPP_TOKEN";
     public static final String POPP_TOKEN_HEADER_NAME = "PoPP";
     public static final String WS_SERVER_CONTEXT_PATH = "WS_SERVER_CONTEXT_PATH";
@@ -89,6 +90,8 @@ public class Main {
         }
 
         boolean disableServerValidation = "true".equalsIgnoreCase(getArg(props, DISABLE_SERVER_VALIDATION));
+        var argProd = getArg(props, ASL_PROD);
+        boolean aslProdEnv = argProd == null || "true".equalsIgnoreCase(argProd);
         // create a ZetaSdkClient instance using the configuration items given
         ZetaSdkClient sdkClient = ZetaSdk.INSTANCE.build(
             getFirstResourceUrl(props),
@@ -104,7 +107,7 @@ public class Main {
                         "zero:audience"
                     ),
                     30,
-                    true,
+                    aslProdEnv,
                     getTokenProvider(props)
                 ),
                 new ClientSelfAssessment("name", "clientId", "manufacturerId", "manufacturerName", "test@manufacturertestmail.de", 0, new PlatformProductId.AppleProductId("apple","macos", List.of("bundleX"))),

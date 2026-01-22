@@ -35,6 +35,10 @@ interface SdkStorage {
 }
 
 public class ExtendedStorage(private val storage: SdkStorage) {
+    companion object {
+        private const val HASH_RADIX = 36 // numbers and letters
+        private const val HASH_LENGTH = 8 // 36^8
+    }
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
     /** Loads a String -> String map or returns null if missing/corrupt. */
@@ -64,4 +68,32 @@ public class ExtendedStorage(private val storage: SdkStorage) {
     suspend fun get(key: String): String? = storage.get(key)
     suspend fun remove(key: String) = storage.remove(key)
     suspend fun clear() = storage.clear()
+
+    fun hash(fqdn: String): String {
+        return fqdn.hashCode()
+            .toString(HASH_RADIX) // chars and numbers
+            .takeLast(HASH_LENGTH) // very low collision prob.
+    }
+
+    suspend fun getHashes(hashIndexKey: String) =
+        storage.get(hashIndexKey)
+            ?.split(",")
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+
+    suspend fun registerHash(hashIndexKey: String, fqdn: String): String {
+        val shortHash = hash(fqdn)
+
+        val map = storage.get(hashIndexKey)
+            ?.split(";")
+            ?.filter { it.isNotBlank() }
+            ?.toSet()
+            ?: emptySet()
+
+        if (!map.contains(shortHash)) {
+            storage.put(hashIndexKey, (map + shortHash).joinToString(";"))
+        }
+
+        return shortHash
+    }
 }

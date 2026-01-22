@@ -28,13 +28,13 @@ import AttestationApiImpl
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.attestation.model.ClientSelfAssessment
 import de.gematik.zeta.sdk.authentication.model.AccessTokenRequest
-import de.gematik.zeta.sdk.authentication.model.AccessTokenResponse
 import de.gematik.zeta.sdk.authentication.model.DPoPTokenClaims
 import de.gematik.zeta.sdk.authentication.model.DPopTokenHeader
 import de.gematik.zeta.sdk.authentication.model.TokenType
 import de.gematik.zeta.sdk.crypto.hashWithSha256
 import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.utils.io.core.toByteArray
+import kotlinx.coroutines.delay
 import kotlin.io.encoding.Base64
 import kotlin.time.Clock.System
 
@@ -89,93 +89,96 @@ class AccessTokenProviderImpl(
     private suspend fun refreshToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams, refreshToken: String): String {
         require(refreshToken.isNotBlank())
 
-        val nonce = authApi.fetchNonce(nonceEndpoint)
-
-        val clientAssertion = AttestationApiImpl(tpmProvider).createClientAssertion(
-            params.productId,
-            params.productVersion,
-            nonce,
-            params.clientId,
-            clock() + params.expiration,
-            tokenEndpoint,
-            params.clientSelfAssessment,
-        )
-
-        val dpop = createDpopToken("POST", tokenEndpoint, nonce, null)
-        val request = AccessTokenRequest(
-            grantType = "refresh_token",
-            clientId = params.clientId,
-            requestedTokenType = "urn:ietf:params:oauth:token-type:refresh_token",
-            clientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-            clientAssertion = clientAssertion,
-            scope = params.scopes.joinToString(" "),
-            refreshToken = refreshToken,
-            subjectToken = null,
-            subjectTokenType = null,
-        )
-        val resp = authApi.requestAccessToken(tokenEndpoint, request, dpop)
-        persist(resp)
-
-        return resp.accessToken
+        return requestAccessToken("refresh_token", tokenEndpoint, nonceEndpoint, params, refreshToken)
     }
 
-    private suspend fun issueNewAccessToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams): String {
-        // 1. nonce → attestation challenge
+    private suspend fun issueNewAccessToken(
+        tokenEndpoint: String,
+        nonceEndpoint: String,
+        params: AccessTokenParams,
+    ): String {
         val nonce = authApi.fetchNonce(nonceEndpoint)
         Log.d { "issueNewAccessToken: nonce = $nonce" }
-        // val attChallenge = calculateAttestationChallenge(nonce)
 
-        // 2. client assertion JWT if your AS requires it
-        val clientAssertion = AttestationApiImpl(tpmProvider).createClientAssertion(
-            params.productId,
-            params.productVersion,
-            nonce,
-            params.clientId,
-            clock() + params.expiration,
-            tokenEndpoint,
-            params.clientSelfAssessment,
-        )
+        // Self-made access token (SM(C)-B) to be signed/hashed externally
+        val subjectToken = suspend {
+            authConfig.subjectTokenProvider.createSubjectToken(
+                params.clientId,
+                nonce,
+                params.audience,
+                clock(),
+                authConfig.exp,
+                tpmProvider,
+            )
+        }
 
-        // 3. self-made access token (SM(C)-B) to be signed/hashed externally
-        val subjectToken = authConfig.subjectTokenProvider.createSubjectToken(
-            params.clientId,
-            nonce,
-            params.audience,
-            clock(),
-            authConfig.exp,
-            tpmProvider,
-        )
-
-        // 4. external signature / proof
-        // val signature = authenticateExternal(smcbAccessToken)
-        // val tokenWithSig = addSignature(smcbAccessToken, signature)
-
-        // 5 Call AS: token-exchange (adjust fields as needed)
-
-        // 26. create DPoP Proof token
-        val dpop = createDpopToken("POST", tokenEndpoint, nonce, null)
-
-        // 27. request access token
-        val request = AccessTokenRequest(
+        return requestAccessToken(
             grantType = "urn:ietf:params:oauth:grant-type:token-exchange",
-            clientId = params.clientId,
+            tokenEndpoint = tokenEndpoint,
+            nonceEndpoint = nonceEndpoint,
+            params,
             subjectToken = subjectToken,
             subjectTokenType = "urn:ietf:params:oauth:token-type:jwt",
-            requestedTokenType = "urn:ietf:params:oauth:token-type:refresh_token",
-            clientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-            clientAssertion = clientAssertion,
-            scope = params.scopes.joinToString(" "),
         )
-        val resp = authApi.requestAccessToken(tokenEndpoint, request, dpop)
-        persist(resp)
-
-        return resp.accessToken
     }
 
-    private suspend fun persist(resp: AccessTokenResponse) {
-        val exp = clock() + resp.expiresIn
+    private suspend fun requestAccessToken(
+        grantType: String,
+        tokenEndpoint: String,
+        nonceEndpoint: String,
+        params: AccessTokenParams,
+        refreshToken: String? = null,
+        subjectToken: suspend () -> String? = { null },
+        subjectTokenType: String? = null,
+        maxRetries: Int = 1,
+    ): String {
+        var lastException: AuthenticationException? = null
 
-        authStorage.saveAccessTokens(resource, resp.accessToken, resp.refreshToken, exp)
+        repeat(maxRetries + 1) { attempt ->
+            try {
+                val nonce = authApi.fetchNonce(nonceEndpoint)
+
+                val clientAssertion = AttestationApiImpl(tpmProvider).createClientAssertion(
+                    params.productId,
+                    params.productVersion,
+                    nonce,
+                    params.clientId,
+                    clock() + params.expiration,
+                    tokenEndpoint,
+                    params.clientSelfAssessment,
+                )
+
+                val dpop = createDpopToken("POST", tokenEndpoint, nonce)
+
+                val request = AccessTokenRequest(
+                    grantType = grantType,
+                    clientId = params.clientId,
+                    requestedTokenType = "urn:ietf:params:oauth:token-type:refresh_token",
+                    clientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                    clientAssertion = clientAssertion,
+                    scope = params.scopes.joinToString(" "),
+                    refreshToken = refreshToken,
+                    subjectToken = subjectToken(),
+                    subjectTokenType = subjectTokenType,
+                )
+
+                val resp = authApi.requestAccessToken(tokenEndpoint, request, dpop)
+
+                authStorage.saveAccessTokens(resource, resp.accessToken, resp.refreshToken, clock() + resp.expiresIn)
+
+                return resp.accessToken
+            } catch (e: RecoverableAuthenticationException) {
+                Log.w { "Recoverable auth error on attempt $attempt: ${e.message}" }
+                lastException = e
+                if (attempt < maxRetries) {
+                    delay(1000L * (attempt + 1))
+                }
+            } catch (e: NonRecoverableAuthenticationException) {
+                Log.w { "Non recoverable auth error on attempt $attempt: ${e.message}" }
+                throw e
+            }
+        }
+        throw lastException ?: error("Request access token: unexpected error occurred")
     }
 
     override suspend fun createDpopToken(method: String, url: String, nonceBytes: ByteArray?, accessTokenHash: String?): String {

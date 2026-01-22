@@ -24,19 +24,21 @@
 
 package de.gematik.zeta.sdk.asl
 
+import de.gematik.zeta.sdk.asl.Environment
 import de.gematik.zeta.sdk.asl.vau.buildMessage1
 import de.gematik.zeta.sdk.asl.vau.buildMessage3
 import de.gematik.zeta.sdk.asl.vau.computeTranscriptHash
 import de.gematik.zeta.sdk.asl.vau.encryptKeyConfirmation
+import de.gematik.zeta.sdk.asl.vau.processMessage1Response
 import de.gematik.zeta.sdk.asl.vau.processMessage2AndDeriveMessage3
-import de.gematik.zeta.sdk.asl.vau.sendMessage1AndReceiveMessage2
+import de.gematik.zeta.sdk.asl.vau.sendMessage1
 import de.gematik.zeta.sdk.asl.vau.sendMessage3
 import de.gematik.zeta.sdk.asl.vau.validateMessage4AndFinalizeSession
 import de.gematik.zeta.sdk.authentication.AccessTokenProvider
+import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.crypto.EcdhP256Kem
 import de.gematik.zeta.sdk.crypto.ML768Kem
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
-import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.http.HttpHeaders
 import io.ktor.http.URLBuilder
@@ -59,12 +61,10 @@ public data class AslHandshakeState(
 ) {
     public companion object {
         public fun create(
-            httpClientBuilder: ZetaHttpClientBuilder,
+            httpClient: ZetaHttpClient,
             request: HttpRequestBuilder,
             accessTokenProvider: AccessTokenProvider,
         ): AslHandshakeState {
-            val httpClient = httpClientBuilder.build(aslUrl(request.url))
-
             return AslHandshakeState(
                 request = request,
                 httpClient = httpClient,
@@ -79,12 +79,14 @@ public data class AslHandshakeState(
 public suspend fun AslHandshakeState.performMessage1AndReceiveMessage2(): AslHandshakeState {
     val m1 = buildMessage1(mlKem, ecdhKem)
 
-    val result = sendMessage1AndReceiveMessage2(
+    val response = sendMessage1(
         request = request,
         messageEncoded = m1.encoded,
         httpClient = httpClient,
         state = this,
     )
+
+    val result = processMessage1Response(response, m1.encoded)
 
     return copy(
         message1 = m1,
@@ -125,7 +127,7 @@ public suspend fun AslHandshakeState.sendMessage3AndReceiveMessage4(): AslHandsh
     val m1Result = requireNotNull(message1Result) { "Message 1 result must be present before sending Message 3" }
     requireNotNull(m3Encoded) { "Message 3 must be encoded before sending" }
 
-    val result = sendMessage3(
+    val response = sendMessage3(
         request = request,
         httpClient = httpClient,
         cid = m1Result.cid,
@@ -133,12 +135,12 @@ public suspend fun AslHandshakeState.sendMessage3AndReceiveMessage4(): AslHandsh
         state = this,
     )
 
-    val m4 = cbor.decodeFromByteArray(Message4.serializer(), result)
+    val m4 = cbor.decodeFromByteArray(Message4.serializer(), response.bodyAsBytes())
 
     return copy(message4 = m4)
 }
 
-public fun AslHandshakeState.validateMessage4AndEstablishSession(): EstablishedSession {
+public fun AslHandshakeState.validateMessage4AndEstablishSession(aslProdEnvironment: Boolean): EstablishedSession {
     requireNotNull(m3Result) { "M3 result must be present before validating Message 4" }
     requireNotNull(message4) { "Message 4 must be present before validation" }
     requireNotNull(transcriptHash) { "Transcript hash must be present before validating Message 4" }
@@ -152,12 +154,13 @@ public fun AslHandshakeState.validateMessage4AndEstablishSession(): EstablishedS
         m3Result.k2.clientToServerAppDataKey,
         m3Result.k2.serverToClientAppDataKey,
         m1Result.cid,
+        pu = if (aslProdEnvironment) Environment.Production else Environment.Testing,
     )
 }
 
 public suspend fun AslHandshakeState.applyDpopFor(method: String, targetUrl: String): String {
     val auth = request.headers[HttpHeaders.Authorization] ?: error("Missing auth header")
-    val token = auth.removePrefix("Bearer").trim()
+    val token = auth.removePrefix(HttpAuthHeaders.Dpop).trim()
 
     val hashed = accessTokenProvider.hash(token)
     return accessTokenProvider.createDpopToken(method, targetUrl, null, hashed)
@@ -170,12 +173,4 @@ public fun aslUrl(url: URLBuilder, cid: String? = null): String {
         port = url.port
         encodedPath = cid ?: "/ASL"
     }.buildString()
-}
-
-public fun getTracingHeader(req: HttpRequestBuilder): String? {
-    return if (req.headers.contains(ZETA_ASL_TRACING)) {
-        req.headers[ZETA_ASL_TRACING].toString()
-    } else {
-        null
-    }
 }

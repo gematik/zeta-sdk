@@ -22,9 +22,52 @@
  * #L%
  */
 
+@file:OptIn(ExperimentalForeignApi::class)
+
 package de.gematik.zeta.platform
 
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.sizeOf
+import platform.windows.GetSystemInfo
+import platform.windows.GetVersionExW
+import platform.windows.OSVERSIONINFOW
+import platform.windows.PROCESSOR_ARCHITECTURE_AMD64
+import platform.windows.PROCESSOR_ARCHITECTURE_ARM
+import platform.windows.PROCESSOR_ARCHITECTURE_ARM64
+import platform.windows.PROCESSOR_ARCHITECTURE_INTEL
+import platform.windows.SYSTEM_INFO
+import platform.windows.VER_PLATFORM_WIN32_NT
+import platform.windows.VER_PLATFORM_WIN32_WINDOWS
+
 public actual fun platform(): Platform = Platform.Native.Windows
-public actual fun getPlatformInfo(): PlatformInfo {
-    TODO("Missing impl.")
+
+public actual fun getPlatformInfo(): PlatformInfo = memScoped {
+    val osInfo = alloc<OSVERSIONINFOW>()
+    osInfo.dwOSVersionInfoSize = sizeOf<OSVERSIONINFOW>().toUInt()
+
+    val result = GetVersionExW(osInfo.ptr)
+    if (result == 0) error("GetVersionExW: result = $result")
+
+    val osName = when (osInfo.dwPlatformId.toInt()) {
+        VER_PLATFORM_WIN32_NT -> "Windows NT"
+        VER_PLATFORM_WIN32_WINDOWS -> "Windows 9x"
+        else -> "Windows"
+    }
+    val osVersion = "${osInfo.dwMajorVersion}.${osInfo.dwMinorVersion} (Build ${osInfo.dwBuildNumber})"
+
+    val sysInfo = alloc<SYSTEM_INFO>()
+    GetSystemInfo(sysInfo.ptr)
+
+    val osArch = when (sysInfo.wProcessorArchitecture.toInt()) {
+        PROCESSOR_ARCHITECTURE_AMD64 -> "x86_64"
+        PROCESSOR_ARCHITECTURE_INTEL -> "x86"
+        PROCESSOR_ARCHITECTURE_ARM -> "ARM"
+        PROCESSOR_ARCHITECTURE_ARM64 -> "ARM64"
+        else -> "Unknown"
+    }
+
+    PlatformInfo(osName, osVersion, osArch)
 }

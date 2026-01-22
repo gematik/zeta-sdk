@@ -24,21 +24,37 @@
 
 package de.gematik.zeta.sdk.flow
 
+import Jwk
+import PublicKeyOut
+import de.gematik.zeta.sdk.clientregistration.ClientRegistrationApiImpl
+import de.gematik.zeta.sdk.configuration.ConfigurationStorage
+import de.gematik.zeta.sdk.configuration.models.ApiVersion
+import de.gematik.zeta.sdk.configuration.models.ApiVersionStatus
+import de.gematik.zeta.sdk.configuration.models.AuthorizationServerMetadata
+import de.gematik.zeta.sdk.configuration.models.ProtectedResourceMetadata
+import de.gematik.zeta.sdk.flow.RequestEvaluatorImplTest.FakeForwardingClient
+import de.gematik.zeta.sdk.flow.handler.ClientRegistrationHandler
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
 import de.gematik.zeta.sdk.storage.InMemoryStorage
+import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestBuilder
-import io.ktor.client.request.request
 import io.ktor.client.request.url
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import kotlin.uuid.Uuid
 
 /**
  * Unit tests for [FlowOrchestrator].
@@ -66,6 +82,35 @@ class FlowOrchestratorTest {
 
         // Assert
         assertEquals(200, resp.response.status.value)
+    }
+
+    @Test
+    fun run_returnsFlowAbortException_whenClientDataIsInvalid() = runTest {
+        // Arrange
+        val forwarding = getMockClient(HttpStatusCode.OK)
+        val dummyCtx = getDummyContextWithResource(forwarding)
+
+        val mock = MockEngine {
+            respond(
+                content = Json.encodeToString("response"),
+                status = HttpStatusCode.BadRequest,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        }
+
+        val orchestrator = FlowOrchestrator(
+            listOf(createHandler(mock)),
+            requestEvaluator = { _, _ -> listOf(FlowNeed.ClientRegistration) },
+        )
+
+        // Act
+        // Assert
+        val result = orchestrator.run(
+            HttpRequestBuilder().apply { url("https://test") },
+            dummyCtx,
+        )
+
+        assertEquals(HttpStatusCode.BadRequest, result.response.status)
     }
 
     /** Abort path: non-2xx (500) throws an exception. */
@@ -151,6 +196,113 @@ class FlowOrchestratorTest {
                 ktor.request {
                     takeFrom(builder)
                 }
+        }
+    }
+
+    private fun createClient(mockEngine: MockEngine): ZetaHttpClient =
+        ZetaHttpClientBuilder()
+            .build(mockEngine)
+
+    private fun createHandler(mock: MockEngine, maxRetries: Int = 3): ClientRegistrationHandler {
+        val client = createClient(mock)
+        val api = ClientRegistrationApiImpl(client)
+        val tpm = FakeTpmProvider(false)
+
+        return ClientRegistrationHandler("TestClientName", api, tpm, maxRetries)
+    }
+
+    private fun createContext(): FlowContext = FlowContextImpl("test", FakeForwardingClient(), InMemoryStorage(), configurationStorage = FakeConfigurationStorage())
+
+    private class FakeTpmProvider(override val isHardwareBacked: Boolean) : TpmProvider {
+        override suspend fun generateClientInstanceKey(): PublicKeyOut {
+            return PublicKeyOut(byteArrayOf(1), Jwk("", "", "", "", "", "", ""))
+        }
+
+        override suspend fun generateDpopKey(): PublicKeyOut {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun signWithClientKey(input: ByteArray): ByteArray {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun signWithDpopKey(input: ByteArray): ByteArray {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun readSmbCertificate(p12File: String, alias: String, password: String): ByteArray {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun signWithSmbKey(input: ByteArray, p12File: String, alias: String, password: String): ByteArray {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun randomUuid(): Uuid {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun getRegistrationNumber(certificate: ByteArray): String {
+            TODO("Not yet implemented")
+        }
+
+        override fun forget() {
+            TODO("Not yet implemented")
+        }
+    }
+
+    private class FakeConfigurationStorage : ConfigurationStorage {
+        override suspend fun getProtectedResource(resourceUrl: String): ProtectedResourceMetadata? {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun saveProtectedResource(protectedRes: String): ProtectedResourceMetadata {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun getAuthServers(): List<AuthorizationServerMetadata> {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun getAuthServer(resource: String): AuthorizationServerMetadata? {
+            return AuthorizationServerMetadata(
+                issuer = "issuer",
+                authorizationEndpoint = "",
+                tokenEndpoint = "token_endpoint",
+                nonceEndpoint = "",
+                openidProvidersEndpoint = "test open id",
+                jwksUri = "",
+                scopesSupported = listOf(""),
+                responseTypesSupported = listOf("TOKEN"),
+                responseModesSupported = listOf(""),
+                grantTypesSupported = listOf(""),
+                tokenEndpointAuthMethodsSupported = listOf(""),
+                tokenEndpointAuthSigningAlgValuesSupported = listOf(""),
+                serviceDocumentation = "",
+                uiLocalesSupported = listOf(""),
+                codeChallengeMethodsSupported = listOf(""),
+                apiVersionsSupported =
+                listOf(
+                    ApiVersion(
+                        majorVersion = 1,
+                        version = "",
+                        status = ApiVersionStatus.STABLE,
+                        documentationUri = "",
+                    ),
+                ),
+            )
+        }
+
+        override suspend fun linkResourceToAuthorizationServer(resource: String, authServerMetadata: AuthorizationServerMetadata) {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun aslRequired(resource: String): Boolean {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun clear() {
+            TODO("Not yet implemented")
         }
     }
 }

@@ -1,3 +1,4 @@
+import de.gematik.zeta.sdk.buildlogic.isMacOSEnabled
 import de.gematik.zeta.sdk.buildlogic.isNativeEnabled
 import de.gematik.zeta.sdk.buildlogic.setupBuildLogic
 import org.jetbrains.kotlin.gradle.dsl.ExplicitApiMode

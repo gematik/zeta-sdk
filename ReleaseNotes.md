@@ -2,7 +2,7 @@
 
 # Release Notes ZETA SDK
 
-## Release 0.2.6
+## Release: 0.2.10
 
 This version implements the "happy flow" for the ZETA protocol for the ZETA client SDK.
 
@@ -35,7 +35,27 @@ Not all validations are implemented yet and will follow in later releases.
 
 #### Functional
 
-- C++ API still unstable and crypto-functions missing
+- C++ API is implemented but websockets are not yet functional
+
+## Changes from 0.2.9
+
+- Update of release Notes
+
+## Changes from 0.2.8
+
+- Rollback of the netty version due to intermittent errors in the test framework
+
+## Changes from 0.2.7
+
+- Filtering of the included ktor-client-curl library
+
+## Changes from 0.2.6
+
+- Significant adjustments to the C++ client through integration of ktor-client-curl for updated OpenSSL version with support for post-quantum cryptography
+- Implemented cryptographic functions for desktop clients using OpenSSL
+- ASL debug mode implemented, including new "ASL_PROD" configuration for implemented clients
+- Improvements for ASL error handling
+- Version updates
 
 ## Changes from 0.2.5
 

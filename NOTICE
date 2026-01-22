@@ -1,0 +1,29 @@
+===============================================================================
+NOTICE - Third Party Dependencies
+===============================================================================
+
+This project includes modified versions of the following third-party software:
+
+-------------------------------------------------------------------------------
+ktor-client-curl (Modified)
+-------------------------------------------------------------------------------
+Original Source: https://github.com/ktorio/ktor
+Specific Path: ktor-client/ktor-client-curl
+Version: 3.3.3
+License: Apache License 2.0
+Copyright: 2014-2019 JetBrains s.r.o and contributors.
+
+MODIFICATIONS:
+- Modified to use native builds (https://github.com/ensody/native-builds) instead of prebuilt binaries
+- Updated to specify higher OpenSSL version for ML-KEM support
+- Reason: Required for ZETA SDK to support post-quantum cryptography (ML-KEM)
+- Modified files: libcurl.def
+- Modification date: January 2026
+- Modified by: EY Strategy & Transactions GmbH, 2025, licensed for gematik GmbH
+
+Original License:
+https://github.com/ktorio/ktor/blob/main/LICENSE
+
+The original unmodified source code can be obtained from:
+https://github.com/ktorio/ktor/releases/tag/3.3.3
+-------------------------------------------------------------------------------

@@ -44,7 +44,7 @@ public data class EstablishedSession(
     val c2sAppDataKey: ByteArray,
     val s2cAppDataKey: ByteArray,
     val cid: String? = null,
-    val pu: Environment = Environment.Production, // TODO: make it configurable for PROD
+    val pu: Environment = Environment.Production,
     // A_26927: increment per request
     var requestCounter: Long = 0L,
     // A_26926: increments per encryption, first used = 1

@@ -175,21 +175,22 @@ In a real client (like a practice management system) these should be provided by
 
 Here are the items you need to adapt:
 
-| Value                     | Description                                                                                                                     | Example                                                    |
-|---------------------------|---------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------|
-| FACHDIENST_URL            | URL of the resource server as reachable via the PEP                                                                             | https://fachdienst.host.example.com/pep/fachdienst_url/api |
-| SMB_KEYSTORE_FILE         | Path to the SM-B Certificate-File (in .p12 format)                                                                              | /smcb-certificates.p12                                     |
-| SMB_KEYSTORE_ALIAS        | Alias of the key in the SM-B Certificate file                                                                                   |                                                            |
-| SMB_KEYSTORE_PASSWORD     | Password for the private key                                                                                                    |                                                            |
-| SMCB_BASE_URL             | base url of the konnektor webservice interface (needs to include the "/ws")                                                     |                                                            |
-| SMCB_MANDANT_ID           | <mandanten-ID>  for connector calls                                                                                             |                                                            |
-| SMCB_CLIENT_SYSTEM_ID     | <client_system_id>  for connector calls                                                                                         |                                                            |
-| SMCB_WORKSPACE_ID         | <workspace_id> for connector calls                                                                                              |                                                            |
-| SMCB_USER_ID              | <user-id> - is required for SMC-B but is being ignored                                                                          |                                                            |
-| SMCB_CARD_HANDLE          | <smcb-card-handle>                                                                                                              |                                                            |
-| POPP_TOKEN                | Value of a PoPP Tokens, which is given to the PEP (optional)                                                                    | eyJhbGciOiJFUzI1NiI......                                  |
-| DISABLE_SERVER_VALIDATION | If set to "true" gesetzt, TLS server TLS certificate checks are disabled (for testing only!)                                    |                                                            |
-| WS_SERVER_CONTEXT_PATH    | Specifies the base context to target the resource server. It is used in the Java client to prefix STOMP Websockets destinations | /testfachdienst                                            |
+| Value                     | Description                                                                                                                                              | Example                                                    |
+|---------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------|
+| FACHDIENST_URL            | URL of the resource server as reachable via the PEP                                                                                                      | https://fachdienst.host.example.com/pep/fachdienst_url/api |
+| SMB_KEYSTORE_FILE         | Path to the SM-B Certificate-File (in .p12 format)                                                                                                       | /smcb-certificates.p12                                     |
+| SMB_KEYSTORE_ALIAS        | Alias of the key in the SM-B Certificate file                                                                                                            |                                                            |
+| SMB_KEYSTORE_PASSWORD     | Password for the private key                                                                                                                             |                                                            |
+| SMCB_BASE_URL             | base url of the konnektor webservice interface (needs to include the "/ws")                                                                              |                                                            |
+| SMCB_MANDANT_ID           | <mandanten-ID>  for connector calls                                                                                                                      |                                                            |
+| SMCB_CLIENT_SYSTEM_ID     | <client_system_id>  for connector calls                                                                                                                  |                                                            |
+| SMCB_WORKSPACE_ID         | <workspace_id> for connector calls                                                                                                                       |                                                            |
+| SMCB_USER_ID              | <user-id> - is required for SMC-B but is being ignored                                                                                                   |                                                            |
+| SMCB_CARD_HANDLE          | <smcb-card-handle>                                                                                                                                       |                                                            |
+| POPP_TOKEN                | Value of a PoPP Tokens, which is given to the PEP (optional)                                                                                             | eyJhbGciOiJFUzI1NiI......                                  |
+| DISABLE_SERVER_VALIDATION | If set to "true", TLS server TLS certificate checks are disabled (for testing only!)                                                                     |                                                            |
+| WS_SERVER_CONTEXT_PATH    | Specifies the base context to target the resource server. It is used in the Java client to prefix STOMP Websockets destinations                          | /testfachdienst                                            |
+| ASL_PROD                  | Defines whether the client runs in Productive or Non Productive mode. If set to "false" exposes the ASL symmetric keys: K2_c2s_app_data and K2_s2c_app   | by default is set to "true" (productive environment)       |
 
 Note that two sets of configuration variables for the SM(C)-B client authentication are provided,
 one for the SM-B certificate file, another for the SMC-B connector interface.
@@ -658,12 +659,12 @@ Details are still to be determined.
 
 The AuthConfig object configures the authentication process:
 
-| Attribute              | Description                                                                                  |
-|------------------------|----------------------------------------------------------------------------------------------|
-| scopes                 | Scope-values for the Access Tokens                                                           |
-| exp                    | The expiration time of the JWT as lifetime duration in seconds                               |
-| enableAslTracingHeader | this is required for non-production environment, so that ASL keys can be accessed in testing |
-| subjectTokenProvider   | a class that provides a subject token, either SM-B or SMC-B depending on the implementation  |
+| Attribute            | Description                                                                                                  |
+|----------------------|--------------------------------------------------------------------------------------------------------------|
+| scopes               | Scope-values for the Access Tokens                                                                           |
+| exp                  | The expiration time of the JWT as lifetime duration in seconds                                               |
+| aslProdEnvironment   | Determines if the client runs non/production environment. The ASL keys can be accessed if it is set to false |
+| subjectTokenProvider | a class that provides a subject token, either SM-B or SMC-B depending on the implementation                  |
 
 
 ### StorageConfig

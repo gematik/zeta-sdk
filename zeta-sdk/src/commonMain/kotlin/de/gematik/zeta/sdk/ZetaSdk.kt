@@ -57,6 +57,7 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
 import io.ktor.client.request.url
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.util.appendAll
 import kotlinx.coroutines.coroutineScope
 import kotlin.time.Clock.System
@@ -101,14 +102,17 @@ private class ZetaSdkClientImpl(
     private val cfg: BuildConfig,
 ) : ZetaSdkClient {
     private lateinit var mainHttpClient: ZetaHttpClient
-    private val httpClientBuilder: ZetaHttpClientBuilder = cfg.httpClientBuilder ?: ZetaHttpClientBuilder("").logging(
-        LogLevel.ALL,
-        object : Logger {
-            override fun log(message: String) {
-                println(message)
-            }
-        },
-    )
+    private val httpClientBuilder: ZetaHttpClientBuilder = (
+        cfg.httpClientBuilder
+            ?: ZetaHttpClientBuilder().logging(
+                LogLevel.ALL,
+                object : Logger {
+                    override fun log(message: String) {
+                        println(message)
+                    }
+                },
+            )
+        )
     private val forwardingClient = object : ForwardingClient {
         override suspend fun executeOnce(builder: HttpRequestBuilder): ZetaHttpResponse = mainHttpClient.request {
             takeFrom(builder)
@@ -122,7 +126,7 @@ private class ZetaSdkClientImpl(
     }
     val tpmProvider: TpmProvider = Tpm.provider(flowContext.tpmStorage)
     private val clientRegistrationHandler: ClientRegistrationHandler by lazy {
-        ClientRegistrationHandler(cfg.clientName, ClientRegistrationApiImpl(httpClientBuilder), tpmProvider)
+        ClientRegistrationHandler(cfg.clientName, ClientRegistrationApiImpl(httpClientBuilder.build()), tpmProvider)
     }
 
     private lateinit var accessTokenProvider: AccessTokenProvider
@@ -130,7 +134,7 @@ private class ZetaSdkClientImpl(
         accessTokenProvider = AccessTokenProviderImpl(
             resource,
             cfg.authConfig,
-            AuthenticationApiImpl(httpClientBuilder),
+            AuthenticationApiImpl(httpClientBuilder.build()),
             flowContext.authenticationStorage,
             { System.now().epochSeconds },
             tpmProvider,
@@ -145,7 +149,7 @@ private class ZetaSdkClientImpl(
     }
     private lateinit var aslApi: AslApi
     private val aslHandler: AslHandler by lazy {
-        aslApi = AslApiImpl(cfg.authConfig.enableAslTracingHeader, flowContext.aslStorage, httpClientBuilder, accessTokenProvider)
+        aslApi = AslApiImpl(resource, cfg.authConfig.aslProdEnvironment, flowContext.aslStorage, httpClientBuilder.build(), accessTokenProvider)
 
         AslHandler(aslApi)
     }
@@ -212,7 +216,7 @@ private class ZetaSdkClientImpl(
 
         wsClient.webSocket(request = {
             url(targetUrl)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Authorization, "${HttpAuthHeaders.Dpop} $token")
             header(HttpAuthHeaders.Dpop, dpop)
             header(HttpHeaders.Accept, "application/json")
             customHeaders?.let {

@@ -24,6 +24,7 @@ setupBuildLogic {
 
         sourceSets.jvmMain.dependencies {
             implementation("com.russhwolf:multiplatform-settings-jvm:1.3.0")
+            implementation(libs.java.keyring)
         }
 
         sourceSets.commonTest.dependencies {

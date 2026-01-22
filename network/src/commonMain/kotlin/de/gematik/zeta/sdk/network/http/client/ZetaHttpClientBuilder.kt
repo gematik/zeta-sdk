@@ -63,7 +63,7 @@ import io.ktor.http.HttpStatusCode
  *
  * Thread-safety: the builder is mutable and not thread-safe. Build once and share the resulting [HttpClient].
  */
-public class ZetaHttpClientBuilder(private val baseUrl: String) {
+public class ZetaHttpClientBuilder(private val baseUrl: String = "") {
     private var network: NetworkConfig = NetworkConfig()
     private var security: SecurityConfig = SecurityConfig()
     private var monitoring: MonitoringConfig = MonitoringConfig()

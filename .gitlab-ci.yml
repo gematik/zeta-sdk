@@ -216,6 +216,7 @@ sonar:
       -Dsonar.links.homepage=${CI_PROJECT_URL}
       -Dsonar.links.ci=${CI_PROJECT_URL}/-/pipelines
       -Dsonar.links.issue=${CI_PROJECT_URL}/-/issues
+      -Dsonar.exclusions=ktor-client-curl/**
 
 build:
   <<: *gradle_template

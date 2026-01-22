@@ -179,9 +179,15 @@ fun KotlinMultiplatformExtension.addAllTargets(
 }
 
 fun KotlinMultiplatformExtension.allDesktop() {
-    allMacos()
-    allLinux()
-    mingwX64()
+    if (project.isMacOSEnabled) {
+        allMacos()
+    }
+    if (project.isLinuxEnabled) {
+        allLinux()
+    }
+    if (project.isWindowsEnabled) {
+        mingwX64()
+    }
 }
 
 fun KotlinMultiplatformExtension.allLinux() {

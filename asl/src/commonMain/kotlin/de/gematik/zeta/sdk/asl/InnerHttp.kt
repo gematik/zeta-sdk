@@ -77,7 +77,6 @@ public class InnerHttpCodec {
         val (status, reason) = parseStatusLine(lines.first())
         val headers = parseHeaders(lines.drop(1)).toMutableMap()
 
-        // Always reflect the actual body size
         headers[HttpHeaders.ContentLength] = bodyBytes.size.toString()
 
         return InnerHttpResponse(

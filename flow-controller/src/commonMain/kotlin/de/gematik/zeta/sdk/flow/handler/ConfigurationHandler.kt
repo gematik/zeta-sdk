@@ -28,6 +28,7 @@ import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.configuration.ConfigurationApi
 import de.gematik.zeta.sdk.configuration.ConfigurationStorage
+import de.gematik.zeta.sdk.configuration.ServiceDiscoveryException
 import de.gematik.zeta.sdk.configuration.WellKnownSchemaValidation
 import de.gematik.zeta.sdk.configuration.WellKnownSchemaValidationImpl
 import de.gematik.zeta.sdk.configuration.WellKnownTypes
@@ -48,6 +49,10 @@ class ConfigurationHandler(
     private val authConfig: AuthConfig,
     private val validator: WellKnownSchemaValidation = WellKnownSchemaValidationImpl(),
 ) : CapabilityHandler {
+
+    companion object {
+        private const val SERVICE_DISCOVERY_ERROR_CODE = "SERVICE_DISCOVERY_ERROR"
+    }
     override fun canHandle(need: FlowNeed): Boolean = need == FlowNeed.ConfigurationFiles
 
     /**
@@ -58,20 +63,24 @@ class ConfigurationHandler(
         need: FlowNeed,
         ctx: FlowContext,
     ): CapabilityResult {
-        val storage = ctx.configurationStorage
+        return try {
+            val storage = ctx.configurationStorage
 
-        if (isMetadataAvailable(ctx.resource, storage)) {
-            return CapabilityResult.Done
+            if (isMetadataAvailable(ctx.resource, storage)) {
+                return CapabilityResult.Done
+            }
+
+            val protectedResourceMetadata = getProtectedResource(ctx.resource, storage)
+            val authorizationMetadata = getAuthorizationMetadata(protectedResourceMetadata.authorizationServers, storage)
+
+            validateScopes(authConfig.scopes, authorizationMetadata.scopesSupported)
+
+            storage.linkResourceToAuthorizationServer(ctx.resource, authorizationMetadata)
+
+            CapabilityResult.Done
+        } catch (e: ServiceDiscoveryException) {
+            CapabilityResult.Error(SERVICE_DISCOVERY_ERROR_CODE, e.message.toString(), e.response)
         }
-
-        val protectedResourceMetadata = getProtectedResource(ctx.resource, storage)
-        val authorizationMetadata = getAuthorizationMetadata(protectedResourceMetadata.authorizationServers, storage)
-
-        validateScopes(authConfig.scopes, authorizationMetadata.scopesSupported)
-
-        storage.linkResourceToAuthorizationServer(ctx.resource, authorizationMetadata)
-
-        return CapabilityResult.Done
     }
 
     /**

@@ -3,7 +3,9 @@
 bcprovJdk18on = "1.83"
 compileSdk = "36"
 cryptographyCore = "0.5.0"
+javaKeyring = "1.0.4"
 minSdk = "28"
+nettyCodecHttp = "4.1.129.Final"
 targetSdk = "36"
 versionCode = "1"
 versionName = "1.0.0"
@@ -30,6 +32,7 @@ navigationCompose = "2.9.1"
 ktor = "3.3.3"
 darwin= "3.0.0"
 okhttp= "5.3.2"
+okio= "3.9.0"
 schemaValidator= "0.5.3"
 
 # Testing
@@ -45,10 +48,35 @@ napierVersion = "2.7.1"
 slf4j = "2.0.17"
 kstore="1.0.0"
 
+# Cryptography
+openssl = "3.6.0.4"
+curl = "8.17.0.1"
+curl-headers = "8.17.0.4"
+ngtcp2 = "1.19.0"
+nghttp2 = "1.68.0.4"
+nghttp3 = "1.14.0"
+zlib = "1.3.1.4"
+nativebuilds = "0.7.1"
+
 [libraries]
 bcprov-jdk18on = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bcprovJdk18on" }
 cryptography-core = { module = "dev.whyoleg.cryptography:cryptography-core", version.ref = "cryptographyCore" }
 cryptography-provider-optimal = { module = "dev.whyoleg.cryptography:cryptography-provider-optimal", version.ref = "cryptographyCore" }
+cryptography-provider-jdk = { module = "dev.whyoleg.cryptography:cryptography-provider-jdk", version.ref = "cryptographyCore" }
+cryptography-provider-openssl3-shared = { module = "dev.whyoleg.cryptography:cryptography-provider-openssl3-shared", version.ref = "cryptographyCore" }
+cryptography-provider-openssl3-prebuilt = { module = "dev.whyoleg.cryptography:cryptography-provider-openssl3-prebuilt", version.ref = "cryptographyCore" }
+cryptography-provider-openssl3-api = { module = "dev.whyoleg.cryptography:cryptography-provider-openssl3-api", version.ref = "cryptographyCore" }
+java-keyring = { module = "com.github.javakeyring:java-keyring", version.ref = "javaKeyring" }
+nativebuilds-openssl-headers = { module = "com.ensody.nativebuilds:openssl-headers", version.ref = "openssl" }
+nativebuilds-openssl-libcrypto = { module = "com.ensody.nativebuilds:openssl-libcrypto", version.ref = "openssl" }
+nativebuilds-openssl-libssl = { module = "com.ensody.nativebuilds:openssl-libssl", version.ref = "openssl" }
+nativebuilds-curl-headers = { module = "com.ensody.nativebuilds:curl-headers", version.ref = "curl-headers" }
+nativebuilds-curl-libcurl = { module = "com.ensody.nativebuilds:curl", version.ref = "curl" }
+nativebuilds-ngtcp2-libngtcp2 = { module = "com.ensody.nativebuilds:ngtcp2-libngtcp2", version.ref = "ngtcp2" }
+nativebuilds-ngtcp2-libngtcp2CryptoOssl = { module = "com.ensody.nativebuilds:ngtcp2-libngtcp2_crypto_ossl", version.ref = "ngtcp2" }
+nativebuilds-nghttp2-libnghttp2 = { module = "com.ensody.nativebuilds:nghttp2-libnghttp2", version.ref = "nghttp2" }
+nativebuilds-nghttp3-libnghttp3 = { module = "com.ensody.nativebuilds:nghttp3-libnghttp3", version.ref = "nghttp3" }
+nativebuilds-zlib-libz = { module = "com.ensody.nativebuilds:zlib-libz", version.ref = "zlib" }
 datetime = "org.jetbrains.kotlinx:kotlinx-datetime:0.6.2"
 io-core = "org.jetbrains.kotlinx:kotlinx-io-core:0.8.2"
 coroutines-bom = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-bom", version.ref = "coroutines" }
@@ -65,6 +93,7 @@ kstore-file = { module = "io.github.xxfast:kstore-file", version.ref = "kstore" 
 androidx-startup = "androidx.startup:startup-runtime:1.2.0"
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+netty-codec-http = { module = "io.netty:netty-codec-http", version.ref = "nettyCodecHttp" }
 serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "serialization" }
 serialization-cbor = { module = "org.jetbrains.kotlinx:kotlinx-serialization-cbor", version.ref = "serialization" }
 serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
@@ -85,6 +114,7 @@ ktor-client-android = { module = "io.ktor:ktor-client-android", version.ref = "k
 ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 ktor-client-curl = { module = "io.ktor:ktor-client-curl", version.ref = "ktor" }
+ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 ktor-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
 ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor" }
 ktor-serialisation = { module = "io.ktor:ktor-client-serialization", version.ref = "ktor" }
@@ -92,6 +122,7 @@ ktor-kotlinx-serialization-json = { module = "io.ktor:ktor-serialization-kotlinx
 ktor-kotlinx-serialization-xml = { module = "io.ktor:ktor-serialization-kotlinx-xml", version.ref = "ktor" }
 ktor-client-logging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
 okhttp-tls = {module = "com.squareup.okhttp3:okhttp-tls", version.ref = "okhttp"}
+okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 
 # ReactiveState
 reactivestate-bom = { module = "com.ensody.reactivestate:reactivestate-bom", version.ref = "reactivestate" }
@@ -146,6 +177,7 @@ robolectric = { module = "org.robolectric:robolectric", version = "4.16" }
 [plugins]
 kotlinx-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 dependencyCheck = { id = "org.owasp.dependencycheck", version = "12.1.9" }
+nativebuilds = { id = "com.ensody.nativebuilds", version.ref = "nativebuilds" }
 
 [bundles]
 unit-tests = ["junit", "mockk-android", "google-truth"]

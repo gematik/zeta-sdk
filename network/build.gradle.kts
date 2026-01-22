@@ -44,7 +44,7 @@ setupBuildLogic {
 
         if (project.isNativeEnabled) {
             sourceSets.getByName("desktopMain").dependencies {
-                api(libs.ktor.client.curl)
+                api(project(":ktor-client-curl"))
             }
         }
 

@@ -22,9 +22,29 @@
  * #L%
  */
 
+@file:OptIn(ExperimentalForeignApi::class)
+
 package de.gematik.zeta.platform
 
-public actual fun platform(): Platform = Platform.Native.Macos
-public actual fun getPlatformInfo(): PlatformInfo {
-    TODO("Missing impl.")
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.nativeHeap
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.toKString
+import platform.posix.uname
+import platform.posix.utsname
+
+public actual fun platform(): Platform = Platform.Native.Linux
+
+public actual fun getPlatformInfo(): PlatformInfo = memScoped {
+    val info = nativeHeap.alloc<utsname>()
+
+    uname(info.ptr)
+    val osName = info.sysname.toKString()
+    val osVersion = info.version.toKString()
+    val osArch = info.machine.toKString()
+    nativeHeap.free(info.rawPtr)
+
+    return PlatformInfo(osName, osVersion, osArch)
 }

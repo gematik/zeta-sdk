@@ -80,6 +80,8 @@ public object DIContainer {
 
     public val POPP_TOKEN: String? = getConfig("POPP_TOKEN")
 
+    public val ASL_PROD: Boolean = "true".contentEquals((getConfig("ASL_PROD") ?: "true").lowercase())
+
     private fun getUrlEnvironments(): List<String> {
         return getConfig("ENVIRONMENTS")
             ?.trim()

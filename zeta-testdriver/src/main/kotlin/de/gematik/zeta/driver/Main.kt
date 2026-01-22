@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.driver
 
+import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.BuildConfig
 import de.gematik.zeta.sdk.StorageConfig
 import de.gematik.zeta.sdk.TpmConfig
@@ -70,7 +71,6 @@ import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
-import io.ktor.util.appendAll
 import io.ktor.utils.io.toByteArray
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.DefaultWebSocketSession
@@ -99,6 +99,8 @@ private val logger: Logger = object : Logger {
 }
 
 public fun main() {
+    Log.initDebugLogger()
+
     val host = System.getenv("LISTEN_HOST") ?: "0.0.0.0"
     val port = System.getenv("LISTEN_PORT")?.toInt() ?: 8080
 
@@ -398,8 +400,7 @@ private fun configureSdk(): ZetaSdkClient {
     val smcbMandantId = System.getenv("SMCB_MANDANT_ID") ?: ""
     val smcbUserId = System.getenv("SMCB_USER_ID") ?: ""
     val smcbWorkspaceId = System.getenv("SMCB_WORKSPACE_ID") ?: ""
-
-    val aslTracingHeader = System.getenv("ASL_TRACING_HEADER")?.toBoolean() ?: true
+    val aslProdEnv = System.getenv("ASL_PROD")?.toBoolean() ?: true
 
     val sdk = ZetaSdk.build(
         resource = testFachDienstUrl,
@@ -414,7 +415,7 @@ private fun configureSdk(): ZetaSdkClient {
                     "zero:audience",
                 ),
                 30,
-                enableAslTracingHeader = aslTracingHeader,
+                aslProdEnvironment = aslProdEnv,
                 when {
                     smbKeystoreFile.isNotEmpty() ->
                         SmbTokenProvider(
@@ -442,7 +443,9 @@ private fun configureSdk(): ZetaSdkClient {
                 },
             ),
             clientSelfAssessment = ClientSelfAssessment("name", "clientId", "manufacturerId", "manufacturerName", "test@manufacturertestmail.de", registrationTimestamp = 0, PlatformProductId.AppleProductId("apple", "macos", listOf("bundleX"))),
-            ZetaHttpClientBuilder("").disableServerValidation("true".contentEquals((System.getenv(DISABLE_SERVER_VALIDATION) ?: "").lowercase())),
+            ZetaHttpClientBuilder()
+                .disableServerValidation("true".contentEquals((System.getenv(DISABLE_SERVER_VALIDATION) ?: "").lowercase()))
+                .logging(LogLevel.ALL, logger),
         ),
     )
 

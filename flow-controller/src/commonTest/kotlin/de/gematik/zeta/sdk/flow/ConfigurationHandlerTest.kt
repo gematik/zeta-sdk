@@ -239,5 +239,5 @@ class ConfigurationHandlerTest {
     }
 
     private fun createAuthConfig(scopes: List<String> = emptyList()) =
-        AuthConfig(scopes, 0, true, SmbTokenProvider(SmbTokenProvider.Credentials("", "", "")))
+        AuthConfig(scopes, 300, true, SmbTokenProvider(SmbTokenProvider.Credentials("", "", "")))
 }

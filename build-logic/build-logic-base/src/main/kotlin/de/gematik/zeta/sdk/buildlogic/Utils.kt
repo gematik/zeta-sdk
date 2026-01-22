@@ -39,6 +39,12 @@ val Project.isIOSEnabled get() = findProperty("de.gematik.zeta.sdk.build-logic.e
 
 val Project.isNativeEnabled get() = findProperty("de.gematik.zeta.sdk.build-logic.enableNative") == "true"
 
+val Project.isWindowsEnabled get() = findProperty("de.gematik.zeta.sdk.build-logic.enableWindows") == "true"
+
+val Project.isLinuxEnabled get() = findProperty("de.gematik.zeta.sdk.build-logic.enableLinux") == "true"
+
+val Project.isMacOSEnabled get() = findProperty("de.gematik.zeta.sdk.build-logic.enableMacOS") == "true"
+
 fun shell(
     command: String,
     workingDir: File? = null,

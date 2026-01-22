@@ -25,6 +25,7 @@
 package de.gematik.zeta.sdk.authentication
 
 import de.gematik.zeta.logging.Log
+import de.gematik.zeta.sdk.storage.ExtendedStorage
 import de.gematik.zeta.sdk.storage.SdkStorage
 
 interface AuthenticationStorage {
@@ -44,33 +45,12 @@ interface AuthenticationStorage {
 class AuthenticationStorageImpl(
     private val storage: SdkStorage,
 ) : AuthenticationStorage {
-
+    private val extendedStorage: ExtendedStorage = ExtendedStorage(storage)
     companion object {
         private const val ACCESS_TOKEN_PREFIX = "at:"
         private const val REFRESH_TOKEN_PREFIX = "rt:"
         private const val TOKEN_EXPIRES_AT_PREFIX = "exp:"
         private const val HASH_INDEX_KEY = "hash_index"
-
-        private const val HASH_RADIX = 36 // numbers and letters
-        private const val HASH_LENGTH = 8 // 36^8
-    }
-
-    private fun shortHash(fqdn: String): String {
-        return fqdn.hashCode()
-            .toString(HASH_RADIX) // chars and numbers
-            .takeLast(HASH_LENGTH) // very low collision prob.
-    }
-
-    private suspend fun registerHash(hash: String) {
-        val map = storage.get(HASH_INDEX_KEY)
-            ?.split(";")
-            ?.filter { it.isNotBlank() }
-            ?.toSet()
-            ?: emptySet()
-
-        if (!map.contains(hash)) {
-            storage.put(HASH_INDEX_KEY, (map + hash).joinToString(";"))
-        }
     }
 
     private fun accessKey(hash: String) = "$ACCESS_TOKEN_PREFIX$hash"
@@ -83,8 +63,7 @@ class AuthenticationStorageImpl(
         refreshToken: String,
         expiresAt: Long,
     ) {
-        val hash = shortHash(fqdn)
-        registerHash(hash)
+        val hash = extendedStorage.registerHash(HASH_INDEX_KEY, fqdn)
 
         storage.put(accessKey(hash), accessToken)
         storage.put(refreshKey(hash), refreshToken)
@@ -92,27 +71,24 @@ class AuthenticationStorageImpl(
     }
 
     override suspend fun getAccessToken(fqdn: String): String? =
-        storage.get(accessKey(shortHash(fqdn)))
+        storage.get(accessKey(extendedStorage.hash(fqdn)))
 
     override suspend fun getRefreshToken(fqdn: String): String? =
-        storage.get(refreshKey(shortHash(fqdn)))
+        storage.get(refreshKey(extendedStorage.hash(fqdn)))
 
     override suspend fun getTokenExpiration(fqdn: String): String? =
-        storage.get(expiresKey(shortHash(fqdn)))
+        storage.get(expiresKey(extendedStorage.hash(fqdn)))
 
     override suspend fun clear() {
         Log.d { "Removing all auth tokens" }
 
-        val lookup = storage.get(HASH_INDEX_KEY)
-            ?.split(",")
-            ?.filter { it.isNotBlank() }
-            ?: emptyList()
-
-        lookup.forEach { hash ->
-            storage.remove(accessKey(hash))
-            storage.remove(refreshKey(hash))
-            storage.remove(expiresKey(hash))
-        }
+        extendedStorage
+            .getHashes(HASH_INDEX_KEY)
+            .forEach { hash ->
+                storage.remove(accessKey(hash))
+                storage.remove(refreshKey(hash))
+                storage.remove(expiresKey(hash))
+            }
 
         storage.remove(HASH_INDEX_KEY)
     }

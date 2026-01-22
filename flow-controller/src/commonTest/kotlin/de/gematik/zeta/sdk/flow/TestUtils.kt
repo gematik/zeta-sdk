@@ -116,13 +116,14 @@ class FakeValidator(
 fun getDummyAuthServerObject(
     issuer: String = "",
     token_endpoint: String = "",
+    openidProvidersEndpoint: String = "",
 ): AuthorizationServerMetadata =
     AuthorizationServerMetadata(
         issuer = issuer,
         authorizationEndpoint = "",
         tokenEndpoint = token_endpoint,
         nonceEndpoint = "",
-        openidProvidersEndpoint = "",
+        openidProvidersEndpoint = openidProvidersEndpoint,
         jwksUri = "",
         scopesSupported = listOf(""),
         responseTypesSupported = listOf("TOKEN"),
@@ -188,6 +189,9 @@ suspend fun getDummyContextWithResource(fwdClient: ForwardingClient = FakeForwar
     val ctx = FlowContextImpl("test", fwdClient, storage)
     val good = getDummyProtectedResourceObject("test", listOf("https://auth.example.com"))
     ctx.configurationStorage.saveProtectedResource(Json.encodeToString(good))
+
+    val authServer = getDummyAuthServerObject(openidProvidersEndpoint = "test", issuer = "issuer")
+    ctx.configurationStorage.linkResourceToAuthorizationServer("test", authServer)
 
     return ctx
 }

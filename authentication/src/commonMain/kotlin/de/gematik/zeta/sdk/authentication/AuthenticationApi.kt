@@ -29,10 +29,8 @@ import de.gematik.zeta.sdk.authentication.model.AccessTokenRequest
 import de.gematik.zeta.sdk.authentication.model.AccessTokenResponse
 import de.gematik.zeta.sdk.authentication.model.toParameters
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
-import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
 import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.int
@@ -42,7 +40,6 @@ import kotlin.io.encoding.Base64
 
 interface AuthenticationApi {
     suspend fun fetchNonce(nonceEndpoint: String): ByteArray
-    suspend fun authenticateExternal(hashedToken: String): String
     suspend fun requestAccessToken(
         fromEndpoint: String,
         accessTokenRequest: AccessTokenRequest,
@@ -50,24 +47,29 @@ interface AuthenticationApi {
     ): AccessTokenResponse
 }
 
-@Suppress("UnusedPrivateProperty")
 class AuthenticationApiImpl(
-    private val httpClientConfig: ZetaHttpClientBuilder,
+    private val zetaHttpClient: ZetaHttpClient,
 ) : AuthenticationApi {
 
     override suspend fun fetchNonce(nonceEndpoint: String): ByteArray {
-        val response = buildHttpClient(nonceEndpoint)
-            .get("")
-
-        val body = response.bodyAsText()
-
-        return Base64.UrlSafe
-            .withPadding(Base64.PaddingOption.PRESENT_OPTIONAL)
-            .decode(body)
+        val response = zetaHttpClient.get(nonceEndpoint)
+        return handleNonceResponse(response)
     }
-    override suspend fun authenticateExternal(hashedToken: String): String {
-        TODO("Not yet implemented")
-        return "signed"
+    private suspend fun handleNonceResponse(response: ZetaHttpResponse): ByteArray {
+        when (response.status) {
+            HttpStatusCode.OK -> {
+                val body = response.bodyAsText()
+
+                return Base64.UrlSafe
+                    .withPadding(Base64.PaddingOption.ABSENT)
+                    .decode(body)
+            }
+
+            else -> {
+                Log.e { "Failed to get nonce" }
+                throw AuthenticationException(response.raw, response.bodyAsText())
+            }
+        }
     }
 
     override suspend fun requestAccessToken(
@@ -75,39 +77,50 @@ class AuthenticationApiImpl(
         accessTokenRequest: AccessTokenRequest,
         dpopToken: String,
     ): AccessTokenResponse {
-        val response: ZetaHttpResponse = buildHttpClient(fromEndpoint)
+        val response: ZetaHttpResponse = zetaHttpClient
             .submitForm(
-                "",
+                fromEndpoint,
                 accessTokenRequest.toParameters(),
             ) {
                 headers[HttpAuthHeaders.Dpop] = dpopToken
             }
 
-        // Handle auth response
-        return handleResponse(response.raw)
+        return handleResponse(response)
     }
 
-    private fun buildHttpClient(fromEndpoint: String): ZetaHttpClient {
-        return httpClientConfig.build(fromEndpoint)
-    }
+    private suspend fun handleResponse(response: ZetaHttpResponse): AccessTokenResponse {
+        return when (response.status) {
+            HttpStatusCode.OK -> {
+                val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+                val accessToken = json["access_token"]?.jsonPrimitive?.content ?: ""
+                val expiresIn = json["expires_in"]?.jsonPrimitive?.int ?: 0
+                val refreshExpiresIn = json["refresh_expires_in"]?.jsonPrimitive?.int ?: 0
+                val tokenType = json["token_type"]?.jsonPrimitive?.content ?: ""
+                val notBeforePolicy = json["not-before-policy"]?.jsonPrimitive?.content ?: ""
+                val sessionState = json["session_state"]?.jsonPrimitive?.content ?: ""
+                val scope = json["scope"]?.jsonPrimitive?.content ?: ""
+                val issuedTokenType = json["issued_token_type"]?.jsonPrimitive?.content ?: ""
+                val refreshToken = json["refresh_token"]?.jsonPrimitive?.content ?: ""
 
-    private suspend fun handleResponse(response: HttpResponse): AccessTokenResponse {
-        if (response.status == HttpStatusCode.OK) {
-            val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
-            val accessToken = json["access_token"]?.jsonPrimitive?.content ?: ""
-            val expiresIn = json["expires_in"]?.jsonPrimitive?.int ?: 0
-            val refreshExpiresIn = json["refresh_expires_in"]?.jsonPrimitive?.int ?: 0
-            val tokenType = json["token_type"]?.jsonPrimitive?.content ?: ""
-            val notBeforePolicy = json["not-before-policy"]?.jsonPrimitive?.content ?: ""
-            val sessionState = json["session_state"]?.jsonPrimitive?.content ?: ""
-            val scope = json["scope"]?.jsonPrimitive?.content ?: ""
-            val issuedTokenType = json["issued_token_type"]?.jsonPrimitive?.content ?: ""
-            val refreshToken = json["refresh_token"]?.jsonPrimitive?.content ?: ""
+                AccessTokenResponse(accessToken, expiresIn, refreshExpiresIn, tokenType, notBeforePolicy, sessionState, scope, issuedTokenType, refreshToken)
+            }
 
-            return AccessTokenResponse(accessToken, expiresIn, refreshExpiresIn, tokenType, notBeforePolicy, sessionState, scope, issuedTokenType, refreshToken)
-        } else {
-            Log.e { "Invalid token response: ${response.status.value}" }
-            error("Failed to obtain authentication token")
+            HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized -> {
+                throw RecoverableAuthenticationException(response.raw, response.bodyAsText())
+            }
+
+            HttpStatusCode.Forbidden -> {
+                throw NonRecoverableAuthenticationException(response.raw, response.bodyAsText())
+            }
+
+            else -> {
+                Log.e { "Unexpected authentication error:Error: [${response.status.value}] ${response.status.description}" }
+                throw AuthenticationException(response.raw, "Client hat keine Berechtigung auf angef. Resource")
+            }
         }
     }
 }
+
+open class AuthenticationException(val response: HttpResponse, message: String) : Exception(message)
+class RecoverableAuthenticationException(response: HttpResponse, message: String) : AuthenticationException(response, message)
+class NonRecoverableAuthenticationException(response: HttpResponse, message: String) : AuthenticationException(response, message)

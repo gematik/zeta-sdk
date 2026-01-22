@@ -31,8 +31,9 @@ import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.headers
+import io.ktor.client.statement.bodyAsBytes
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import kotlinx.coroutines.runBlocking
 import kotlin.experimental.ExperimentalNativeApi
 
@@ -49,6 +50,7 @@ public object HttpClientExtension {
 
     public fun HttpClient.httpPost(url: String, body: String, header: Map<String, String>): HttpResponseWrapper = runBlocking {
         val resp = post(url) {
+            contentType(ContentType.Application.Json)
             header.entries.forEach {
                 headers.append(it.key, it.value)
             }
@@ -64,7 +66,7 @@ public data class HttpResponseWrapper(val status: Int, val headers: Map<String, 
             HttpResponseWrapper(
                 status = response.status.value,
                 headers = response.headers.entries().associate { it.key to it.value.joinToString(",") },
-                body = response.bodyAsText(),
+                body = response.bodyAsBytes().decodeToString(),
             )
     }
 }

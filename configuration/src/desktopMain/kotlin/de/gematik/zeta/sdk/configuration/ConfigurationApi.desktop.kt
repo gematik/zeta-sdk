@@ -29,6 +29,5 @@ import okio.Path.Companion.toPath
 
 actual fun loadResource(fileName: String): String {
     val filePath = "../configuration/src/commonMain/resources/$fileName".toPath()
-    println(filePath.toString())
     return FileSystem.SYSTEM.read(filePath) { readUtf8() }
 }

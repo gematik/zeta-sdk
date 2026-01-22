@@ -1,4 +1,6 @@
 import de.gematik.zeta.sdk.buildlogic.setupBuildLogic
+import kotlinx.kover.gradle.plugin.dsl.KoverVersions.version
+import org.gradle.api.internal.artifacts.dependencies.DefaultImmutableVersionConstraint.strictly
 
 plugins {
     id("de.gematik.zeta.sdk.build-logic.jvm")
