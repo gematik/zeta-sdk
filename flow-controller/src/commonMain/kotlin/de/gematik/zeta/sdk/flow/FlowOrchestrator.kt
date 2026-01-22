@@ -35,7 +35,7 @@ import io.ktor.util.AttributeKey
  *
  * The [FlowOrchestrator] is responsible for:
  * 1. Running a [RequestEvaluator] before the first network hop
- *    to decide if there are any pre-send needs (e.g. authentication).
+ *    to decide if there are any pre-send needs (service discovery, client registration, authentication, ASL).
  * 2. Executing those needs via the registered [CapabilityHandler]s,
  *    which can mutate the request (add headers, retry markers, etc.).
  * 3. Sending the request once (through [FlowContext.client]) and
@@ -70,42 +70,58 @@ class FlowOrchestrator(
     private val requestEvaluator: RequestEvaluator = RequestEvaluatorImpl(),
     private val responseEvaluator: ResponseEvaluator = ResponseEvaluatorImpl(),
 ) {
-    companion object {
-        private const val SAFETY_ITERATION_EXIT_COUNT: Int = 10
-    }
 
     /**
      * Executes the given [original] request inside a flow-aware loop.
      *
      * @param original the original request builder
      * @param ctx provides access to the client and storage
-     * @return the final [HttpResponse] once the flow succeeds
-     * @throws Exception if the response evaluator decides to abort
+     * @return the final [HttpClientCall] with successful/failure flow
      */
     suspend fun run(original: HttpRequestBuilder, ctx: FlowContext): HttpClientCall {
         val req = HttpRequestBuilder().takeFrom(original)
 
+        val prerequisiteError = executePrerequisites(req, ctx)
+        if (prerequisiteError != null) {
+            return prerequisiteError.call
+        }
+
+        return executeRequest(req, ctx)
+    }
+
+    private suspend fun executePrerequisites(req: HttpRequestBuilder, ctx: FlowContext): HttpResponse? {
         val requestNeeds = requestEvaluator.evaluate(req, ctx)
         Log.d { "Request needs: $requestNeeds" }
-        for (need in requestNeeds) executeNeed(need, req, ctx)
+        for (need in requestNeeds) {
+            val result = executeNeed(need, req, ctx)
+            if (result is CapabilityResult.Error) {
+                Log.e { "Prerequisite failed: $need - [${result.internalCode}] ${result.internalMessage}" }
+                return result.httpResponse
+            }
+        }
+        return null
+    }
 
+    private suspend fun executeRequest(req: HttpRequestBuilder, ctx: FlowContext): HttpClientCall {
+        val safetyIterationExitCount = 1
         var iteration = 0
+
         while (true) {
             req.attributes.put(OrchestratorBypassKey, true)
             iteration++
-            Log.d { "Orchestrator iteration $iteration" }
+            Log.i { "Orchestrator iteration $iteration" }
 
             val resp = ctx.client.executeOnce(req)
             Log.d { "Response status: ${resp.raw.status}" }
 
             when (val directive = responseEvaluator.evaluate(resp.raw.call, ctx)) {
                 is FlowDirective.Proceed -> {
-                    Log.d { "PROCEED: iteration=$iteration" }
+                    Log.i { "PROCEED: iteration=$iteration" }
                     return resp.raw.call
                 }
 
                 is FlowDirective.Perform -> {
-                    Log.d { "PERFORM: need=${directive.need}, iteration=$iteration" }
+                    Log.i { "PERFORM: need=${directive.need}, iteration=$iteration" }
                     executeNeed(directive.need, req, ctx, evaluatorMutation = directive.mutate)
                 }
 
@@ -115,8 +131,8 @@ class FlowOrchestrator(
                 }
             }
 
-            if (iteration > SAFETY_ITERATION_EXIT_COUNT) {
-                Log.e { "Too many iterations, breaking loop after $SAFETY_ITERATION_EXIT_COUNT iterations." }
+            if (iteration > safetyIterationExitCount) {
+                Log.e { "Too many iterations, breaking loop after $safetyIterationExitCount iterations." }
                 return resp.raw.call
             }
         }
@@ -131,23 +147,29 @@ class FlowOrchestrator(
         req: HttpRequestBuilder,
         ctx: FlowContext,
         evaluatorMutation: ((HttpRequestBuilder) -> Unit)? = null,
-    ) {
+    ): CapabilityResult {
         Log.i { "Before proceeding with the request, the flow needs must executed: $need" }
-        val handler = handlers.firstOrNull { it.canHandle(need) }
-            ?: error("No handler for need: $need")
+        val handler = handlers.first { it.canHandle(need) }
 
-        when (val result = handler.handle(need, ctx)) {
+        return when (val result = handler.handle(need, ctx)) {
             CapabilityResult.Done -> {
                 Log.i { "Flow executed successfully, proceeding with request" }
                 evaluatorMutation?.invoke(req)
+                result
             }
 
             is CapabilityResult.RetryRequest -> {
                 Log.i { "Retrying the request" }
                 result.mutate(req)
+                result
+            }
+
+            is CapabilityResult.Error -> {
+                Log.e { "Flow execution failed: [${result.internalCode}] ${result.internalMessage}}" }
+                result
             }
         }
     }
 }
 
-public val OrchestratorBypassKey = AttributeKey<Boolean>("OrchestratorBypass")
+val OrchestratorBypassKey = AttributeKey<Boolean>("OrchestratorBypass")

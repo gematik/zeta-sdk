@@ -35,6 +35,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.update
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
+import kotlin.time.DurationUnit
+import kotlin.time.Instant
 
 @OptIn(ExperimentalReactiveStateApi::class)
 public class AddPrescriptionViewModel(
@@ -81,7 +86,7 @@ private val SAMPLE_MODEL = PrescriptionModel(
     practitionerId = "PRAC-98765",
     medicationName = "Ibuprofen 400 mg",
     dosage = "1",
-    issuedAt = "2025-09-22T10:30:00Z",
-    expiresAt = "2025-12-31T23:59:59Z",
+    issuedAt = Clock.System.now().toString(),
+    expiresAt = Clock.System.now().plus(10.days).toString(),
     status = "CREATED",
 )

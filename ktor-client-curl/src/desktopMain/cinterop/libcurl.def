@@ -1,0 +1,13 @@
+package = libcurl
+headers = curl/curl.h
+headerFilter = curl/*
+
+# MinGW
+compilerOpts.mingw = -DCURL_STATICLIB
+linkerOpts.mingw = -liphlpapi -lsecur32 -lcrypt32 -lws2_32 -lucrt -lmsvcrt
+
+# MacOS
+linkerOpts.osx = -framework SystemConfiguration
+
+# Linux
+linkerOpts.linux = -lz

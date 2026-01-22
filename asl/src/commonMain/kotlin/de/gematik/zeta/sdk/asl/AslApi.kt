@@ -25,7 +25,7 @@
 package de.gematik.zeta.sdk.asl
 import de.gematik.zeta.sdk.authentication.AccessTokenProvider
 import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
-import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
 import io.ktor.client.request.headers
@@ -46,9 +46,10 @@ public interface AslApi {
 }
 
 public class AslApiImpl(
-    internal val enableAslTracingHeaders: Boolean,
+    private val resource: String,
+    internal val aslProdEnvironment: Boolean,
     private val aslStorage: AslStorage,
-    private val httpClientBuilder: ZetaHttpClientBuilder,
+    private val zetaHttpClient: ZetaHttpClient,
     private val accessTokenProvider: AccessTokenProvider,
 ) : AslApi {
     @OptIn(ExperimentalSerializationApi::class)
@@ -59,11 +60,11 @@ public class AslApiImpl(
         val extended = session.encryptRequest(innerHttp)
         val bearerHeader = request.headers[HttpHeaders.Authorization]
 
-        aslStorage.saveSession(session)
+        aslStorage.saveSession(resource, session)
 
         requireNotNull(session.cid) { "ASL Session has not been correctly established. CID is missing" }
         val accessToken = bearerHeader
-            ?.removePrefix("Bearer")
+            ?.removePrefix(HttpAuthHeaders.Dpop)
             ?.trim()
         val hash = accessToken?.let { token ->
             accessTokenProvider.hash(token)
@@ -79,7 +80,7 @@ public class AslApiImpl(
             append(HttpHeaders.ContentType, ContentType.Application.OctetStream.toString())
             append(HttpHeaders.Accept, ContentType.Application.OctetStream.toString())
             set(HttpAuthHeaders.Dpop, dpop)
-            if (enableAslTracingHeaders) setTracingHeaders(session)
+            if (!aslProdEnvironment) setTracingHeaders(session)
         }
         request.setBody(extended)
 
@@ -87,7 +88,7 @@ public class AslApiImpl(
     }
 
     override suspend fun decrypt(extended: ByteArray): ByteArray {
-        val session = aslStorage.getCurrentSession()
+        val session = aslStorage.getCurrentSession(resource)
         requireNotNull(session) { "Decryption failed: The current ASL session could not be obtained" }
 
         return session.decryptResponse(extended)
@@ -95,15 +96,15 @@ public class AslApiImpl(
 
     @OptIn(ExperimentalSerializationApi::class)
     private suspend fun ensureHandshake(request: HttpRequestBuilder): EstablishedSession {
-        aslStorage.getCurrentSession()?.let { return it }
+        aslStorage.getCurrentSession(resource)?.let { return it }
 
-        var state = AslHandshakeState.create(httpClientBuilder, request, accessTokenProvider)
+        var state = AslHandshakeState.create(zetaHttpClient, request, accessTokenProvider)
         state = state
             .performMessage1AndReceiveMessage2()
             .processMessage2AndBuildMessage3()
             .sendMessage3AndReceiveMessage4()
 
-        return state.validateMessage4AndEstablishSession()
+        return state.validateMessage4AndEstablishSession(aslProdEnvironment)
     }
 }
 

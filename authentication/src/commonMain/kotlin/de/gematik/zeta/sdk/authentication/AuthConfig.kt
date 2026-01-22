@@ -27,6 +27,10 @@ package de.gematik.zeta.sdk.authentication
 public data class AuthConfig(
     val scopes: List<String>,
     val exp: Long,
-    val enableAslTracingHeader: Boolean,
+    val aslProdEnvironment: Boolean = true,
     val subjectTokenProvider: SubjectTokenProvider,
-)
+) {
+    init {
+        check(exp > 0) { "The expiration shall be greater than 0" }
+    }
+}

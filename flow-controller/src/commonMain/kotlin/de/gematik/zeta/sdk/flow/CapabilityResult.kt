@@ -25,6 +25,7 @@
 package de.gematik.zeta.sdk.flow
 
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.statement.HttpResponse
 
 /**
  * Outcome of executing a [CapabilityHandler].
@@ -35,6 +36,12 @@ sealed interface CapabilityResult {
      * The orchestrator may still apply an evaluator-provided mutation.
      */
     object Done : CapabilityResult
+
+    /**
+     * The need was not satisfied; no flow continuation.
+     * The orchestrator shall abort the current flow and inform accordingly.
+     */
+    data class Error(val internalCode: String, val internalMessage: String, val httpResponse: HttpResponse) : CapabilityResult
 
     /**
      * Ask the orchestrator to retry the same request, after applying [mutate].

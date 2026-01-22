@@ -27,43 +27,70 @@ package de.gematik.zeta.sdk.clientregistration
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationRequest
 import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationResponse
-import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 
 interface ClientRegistrationApi {
-    public suspend fun register(endpoint: String, request: ClientRegistrationRequest): ClientRegistrationResponse
+    suspend fun register(endpoint: String, request: ClientRegistrationRequest): ClientRegistrationResponse
 }
 
-public class ClientRegistrationApiImpl(
-    private val httpClientBuilder: ZetaHttpClientBuilder,
+class ClientRegistrationApiImpl(
+    private val zetaHttpClient: ZetaHttpClient,
 ) : ClientRegistrationApi {
 
     override suspend fun register(endpoint: String, request: ClientRegistrationRequest): ClientRegistrationResponse {
         Log.d { "Client registration will proceed" }
 
-        val client = httpClientBuilder.build(endpoint)
-
-        val response = client.post("") {
+        val response = zetaHttpClient.post(endpoint) {
             contentType(ContentType.Application.Json)
             setBody(request)
         }
 
         // [A_27799](06): Handle registration response
-        // TODO: remove also when registration endpoint works.
-        return handleResponse(response)
+        return handleResponse(request, response)
     }
 
-    private suspend fun handleResponse(response: ZetaHttpResponse): ClientRegistrationResponse {
-        return if (response.status == HttpStatusCode.Created) {
-            Log.d { "Registration succeeded" }
-            response.body()
-        } else {
-            Log.e { "Registration failed: $response" }
-            error("Registration failed: ${response.status}")
+    private suspend fun handleResponse(request: ClientRegistrationRequest, response: ZetaHttpResponse): ClientRegistrationResponse {
+        return when (response.status) {
+            HttpStatusCode.Created -> {
+                Log.d { "Registration for client ${request.clientName} succeeded" }
+                response.body()
+            }
+
+            HttpStatusCode.BadRequest -> {
+                Log.e { "Error while registering client: ${request.clientName}" }
+                throw ClientRegistrationException(response.raw, "Invalid client data")
+            }
+
+            HttpStatusCode.Unauthorized -> {
+                Log.e { "Authentication failed for client: ${request.clientName}" }
+                throw ClientRegistrationException(response.raw, "Client authentication failed")
+            }
+
+            HttpStatusCode.Forbidden -> {
+                Log.e { "Authentication failed for client: ${request.clientName}" }
+                throw ClientRegistrationException(response.raw, "Registration denied for client: ${request.clientName} ")
+            }
+
+            HttpStatusCode.Conflict -> {
+                Log.e { "Authentication failed for client: ${request.clientName}" }
+                throw ClientRegistrationException(response.raw, "Client is already registered: ${request.clientName} ")
+            }
+
+            else -> {
+                Log.e { "Unexpected registration error for client: ${request.clientName}. Error: ${response.status.description}" }
+                throw ClientRegistrationException(response.raw, "Unexpected registration error: ${response.status.description}")
+            }
         }
     }
 }
+
+class ClientRegistrationException(
+    val response: HttpResponse,
+    message: String,
+) : Throwable(message)

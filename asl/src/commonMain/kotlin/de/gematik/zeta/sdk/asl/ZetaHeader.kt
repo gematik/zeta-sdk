@@ -36,8 +36,8 @@ internal const val KEYID_OFFSET = 11 // 32 bytes
 internal const val HEADER_LEN = 43 // 1 + 1 + 1 + 8 + 32
 
 public enum class Environment {
-    Production,
     Testing,
+    Production,
 }
 
 public data class ZetaHeader(
@@ -53,8 +53,8 @@ public data class ZetaHeader(
         val out = ByteArray(HEADER_LEN)
         out[VERSION_OFFSET] = version
         out[PU_OFFSET] = when (pu) {
-            Environment.Production -> 0.toByte()
-            Environment.Testing -> 1.toByte()
+            Environment.Testing -> 0.toByte()
+            Environment.Production -> 1.toByte()
         }
         out[KIND_OFFSET] = kind.v
 
@@ -73,8 +73,8 @@ public data class ZetaHeader(
             require(version == 0x02.toByte()) { "Invalid version: $version" }
 
             val pu = when (extended[PU_OFFSET]) {
-                0.toByte() -> Environment.Production
-                1.toByte() -> Environment.Testing
+                0.toByte() -> Environment.Testing
+                1.toByte() -> Environment.Production
                 else -> error("Invalid PU byte: ${extended[PU_OFFSET]}")
             }
             val kind = when (extended[KIND_OFFSET]) {

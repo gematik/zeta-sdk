@@ -31,6 +31,7 @@ import de.gematik.zeta.sdk.authentication.model.AccessTokenHeader
 import de.gematik.zeta.sdk.authentication.model.TokenType
 import de.gematik.zeta.sdk.crypto.hashWithSha256
 import de.gematik.zeta.sdk.tpm.TpmProvider
+import io.ktor.util.encodeBase64
 import io.ktor.utils.io.core.toByteArray
 import kotlin.io.encoding.Base64
 

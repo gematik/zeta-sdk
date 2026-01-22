@@ -26,6 +26,7 @@ package de.gematik.zeta.sdk.flow.handler
 
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.asl.AslApi
+import de.gematik.zeta.sdk.asl.AslException
 import de.gematik.zeta.sdk.flow.CapabilityHandler
 import de.gematik.zeta.sdk.flow.CapabilityResult
 import de.gematik.zeta.sdk.flow.FlowContext
@@ -61,14 +62,18 @@ class AslHandler(
      * @throws IllegalStateException if the protected resource cannot be resolved.
      */
     override suspend fun handle(need: FlowNeed, ctx: FlowContext): CapabilityResult {
-        return if (ctx.configurationStorage.aslRequired(ctx.resource)) {
-            Log.d { "Starting ASL encryption for resource $ctx.resource" }
-            CapabilityResult.RetryRequest { req ->
-                asl.encrypt(req)
+        return try {
+            if (ctx.configurationStorage.aslRequired(ctx.resource)) {
+                Log.d { "Starting ASL encryption for resource $ctx.resource" }
+                CapabilityResult.RetryRequest { req ->
+                    asl.encrypt(req)
+                }
+            } else {
+                Log.d { "Resource $ctx.resource does not require ASL" }
+                CapabilityResult.Done
             }
-        } else {
-            Log.d { "Resource $ctx.resource does not require ASL" }
-            CapabilityResult.Done
+        } catch (e: AslException) {
+            CapabilityResult.Error("ASL_ERROR", e.message.toString(), e.response.raw)
         }
     }
 }

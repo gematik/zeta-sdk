@@ -102,7 +102,7 @@ class ZetaSdkTest {
             scope = "zero:audience",
         )
 
-        val api = AuthenticationApiImpl(ZetaHttpClientBuilder(""))
+        val api = AuthenticationApiImpl(ZetaHttpClientBuilder().build())
 
         val response = api.requestAccessToken(
             "",

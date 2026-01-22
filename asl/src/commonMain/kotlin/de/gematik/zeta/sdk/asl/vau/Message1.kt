@@ -33,10 +33,12 @@ import de.gematik.zeta.sdk.asl.applyDpopFor
 import de.gematik.zeta.sdk.asl.aslUrl
 import de.gematik.zeta.sdk.asl.cbor
 import de.gematik.zeta.sdk.asl.copyAuthHeadersFrom
+import de.gematik.zeta.sdk.asl.handleMessageResponse
 import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.crypto.EcPointP256
 import de.gematik.zeta.sdk.crypto.Kem
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.accept
 import io.ktor.client.request.header
@@ -45,7 +47,6 @@ import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
-import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToByteArray
@@ -72,16 +73,17 @@ internal fun buildMessage1(mlKemKeyGenerator: Kem, ecdhKeyGenerator: Kem): Messa
     return Message1Bundle(bytes, keys)
 }
 
-internal suspend fun sendMessage1AndReceiveMessage2(
+internal suspend fun sendMessage1(
     request: HttpRequestBuilder,
     messageEncoded: ByteArray,
     httpClient: ZetaHttpClient,
     state: AslHandshakeState,
-): Message1Result {
+): ZetaHttpResponse {
     val dpop = state.applyDpopFor(HttpMethod.Post.value, aslUrl(request.url))
 
+    val url = aslUrl(request.url)
     val response = httpClient
-        .post("/ASL") {
+        .post(url) {
             contentType(ContentType.Application.Cbor)
             accept(ContentType.Application.Cbor)
             setBody(messageEncoded)
@@ -89,8 +91,13 @@ internal suspend fun sendMessage1AndReceiveMessage2(
             header(HttpAuthHeaders.Dpop, dpop)
         }
 
-    require(response.status == HttpStatusCode.OK) { "VAU: expected 200, got: ${response.status}" }
+    return handleMessageResponse(response)
+}
 
+internal suspend fun processMessage1Response(
+    response: ZetaHttpResponse,
+    messageEncoded: ByteArray,
+): Message1Result {
     val cid = getCid(response.raw.headers)
 
     val message1Result = response.bodyAsBytes()

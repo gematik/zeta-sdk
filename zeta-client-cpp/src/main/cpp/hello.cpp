@@ -149,13 +149,34 @@ void runWSSessionSample(ZetaSdk_HttpClient* zetaHttpClient, char* wsBaseUrl) {
     std::cout.flush();
 }
 
-void runHttpClientSample(ZetaSdk_HttpClient* zetaHttpClient) {
+void runReceiptPost(ZetaSdk_HttpClient* zetaHttpClient, char* poppToken) {
+    ZetaSdk_HttpHeader httpHeaders[] = {
+            {"PoPP", poppToken },
+    };
+    ZetaSdk_HttpRequest httpPostRequest = {
+            "api/erezept",
+            "{\"prescriptionId\":\"RX-2025-000003\",\"patientId\":\"PAT-123456\",\"practitionerId\":\"PRAC-98765\",\"medicationName\":\"Ibuprofen 400 mg\",\"dosage\":\"1\",\"issuedAt\":\"2025-09-22T10:30:00Z\",\"expiresAt\":\"2025-12-31T23:59:59Z\",\"status\":\"CREATED\"}",
+            httpHeaders,
+            ARRAY_SIZE(httpHeaders)
+    };
+
+    ZetaSdk_HttpResponse* httpPostResponse = ZetaHttpClient_httpPost(zetaHttpClient, &httpPostRequest);
+
+    if (httpPostResponse->error == NULL) {
+        std::cout << "Response status: " << httpPostResponse->status << "\n";
+        std::cout << "Response body: " << httpPostResponse->body << "\n";
+        std::cout.flush();
+    } else {
+        std::cout << "Error during httpPost: " << httpPostResponse->error << "\n";
+    }
+}
+
+void runHttpClientSample(ZetaSdk_HttpClient* zetaHttpClient, char* poppToken) {
     std::cout << "HttpClient Sample: start\n";
     std::cout.flush();
 
     ZetaSdk_HttpHeader httpHeaders[] = {
-        {"Header1", "Value1"},
-        {"Header2", "Value2"}
+            {"PoPP", poppToken },
     };
 
     ZetaSdk_HttpRequest httpGetRequest = {
@@ -174,20 +195,7 @@ void runHttpClientSample(ZetaSdk_HttpClient* zetaHttpClient) {
     }
     ZetaHttpResponse_destroy(httpGetResponse);
 
-    ZetaSdk_HttpRequest httpPostRequest = {
-        "hellozeta",
-        "{}",
-        httpHeaders,
-        ARRAY_SIZE(httpHeaders)
-    };
-    ZetaSdk_HttpResponse* httpPostResponse = ZetaHttpClient_httpPost(zetaHttpClient, &httpPostRequest);
-    if (httpPostResponse->error == NULL) {
-        std::cout << "Response status: " << httpPostResponse->status << "\n";
-        std::cout << "Response body: " << httpPostResponse->body << "\n";
-        std::cout.flush();
-    } else {
-        std::cout << "Error during httpPost: " << httpPostResponse->error << "\n";
-    }
+    runReceiptPost(zetaHttpClient, poppToken);
 
     std::cout << "HttpClient Sample: end\n";
     std::cout.flush();
@@ -210,6 +218,15 @@ int main() {
     char* cardHandle = std::getenv("SMCB_CARD_HANDLE");
 
     char* wsBaseUrl = std::getenv("WS_BASE_URL");
+    char* poppToken = std::getenv("POPP_TOKEN");
+
+    const char* envValue = std::getenv("ASL_PROD");
+    bool aslProdEnv = false;
+    if (envValue == nullptr) {
+        aslProdEnv = true;
+    } else {
+        aslProdEnv = (std::string(envValue).compare(std::string("true")) == 0);
+    }
 
     char* productId = "demo_client";
     char* productVersion = "0.2.0";
@@ -235,7 +252,7 @@ int main() {
             scopes,
             ARRAY_SIZE(scopes),
             30,
-            true,
+            aslProdEnv,
             &smbConfig,
             &smcbConfig
     };
@@ -252,8 +269,8 @@ int main() {
     ZetaSdk_Client* zetaSdkClient = ZetaSdk_buildZetaClient(&buildConfig);
     ZetaSdk_HttpClient* zetaHttpClient = ZetaSdk_buildHttpClient(zetaSdkClient);
 
-    runWSSessionSample(zetaHttpClient, wsBaseUrl);
-    runHttpClientSample(zetaHttpClient);
+//    runWSSessionSample(zetaHttpClient, wsBaseUrl);
+    runHttpClientSample(zetaHttpClient, poppToken);
 
     ZetaSdk_clearHttpClient(zetaHttpClient);
     ZetaSdk_clearZetaClient(zetaSdkClient);

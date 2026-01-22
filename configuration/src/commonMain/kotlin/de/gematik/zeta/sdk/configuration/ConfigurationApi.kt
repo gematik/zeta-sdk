@@ -24,7 +24,11 @@
 
 package de.gematik.zeta.sdk.configuration
 
+import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.Url
 
 /**
@@ -49,6 +53,11 @@ class ConfigurationApiImpl(
     private val httpClientBuilder: ZetaHttpClientBuilder,
 ) : ConfigurationApi {
 
+    companion object {
+        private const val PROTECTED_RESOURCE_PATH = "oauth-protected-resource"
+        private const val AUTH_SERVER_PATH = "oauth-authorization-server"
+    }
+
     /**
      * Fetches the *Protected Resource* well-known document.
      *
@@ -58,9 +67,11 @@ class ConfigurationApiImpl(
      */
     override suspend fun fetchResourceMetadata(resourceUrl: String): String {
         val baseUrl = protectedBaseUrl(resourceUrl)
-        return httpClientBuilder.build(baseUrl)
-            .get("oauth-protected-resource")
-            .bodyAsText()
+
+        val response = httpClientBuilder.build(baseUrl)
+            .get(PROTECTED_RESOURCE_PATH)
+
+        return handleResponse(resourceUrl + PROTECTED_RESOURCE_PATH, response)
     }
 
     /**
@@ -72,9 +83,11 @@ class ConfigurationApiImpl(
      */
     override suspend fun fetchAuthorizationMetadata(authFqdns: String): String {
         val baseUrl = protectedBaseUrl(authFqdns)
-        return httpClientBuilder.build(baseUrl)
-            .get("oauth-authorization-server")
-            .bodyAsText()
+
+        val response = httpClientBuilder.build(baseUrl)
+            .get(AUTH_SERVER_PATH)
+
+        return handleResponse(authFqdns + AUTH_SERVER_PATH, response)
     }
 
     /**
@@ -107,6 +120,18 @@ private fun protectedBaseUrl(resourceUrl: String): String {
     return "https://$hostPart$portPart/.well-known/"
 }
 
+private suspend fun handleResponse(resourceUrl: String, response: ZetaHttpResponse): String {
+    return when (response.status) {
+        HttpStatusCode.OK -> {
+            response.bodyAsText()
+        }
+
+        else -> {
+            throw ServiceDiscoveryException(response.raw, "Service discovery failed to load resource: $resourceUrl")
+        }
+    }
+}
+
 /**
  * Loads a text resource packaged with the application.
  *
@@ -117,3 +142,8 @@ private fun protectedBaseUrl(resourceUrl: String): String {
  * @throws IllegalStateException if the resource cannot be found or read (platform-dependent).
  */
 expect fun loadResource(fileName: String): String
+
+class ServiceDiscoveryException(
+    val response: HttpResponse,
+    message: String,
+) : Exception(message)

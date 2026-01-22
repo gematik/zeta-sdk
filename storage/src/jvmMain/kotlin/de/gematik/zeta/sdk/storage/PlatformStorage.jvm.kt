@@ -24,7 +24,10 @@
 
 package de.gematik.zeta.sdk.storage
 
+import com.github.javakeyring.Keyring
+import com.github.javakeyring.PasswordAccessException
 import com.russhwolf.settings.PreferencesSettings
+import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.crypto.AesGcmCipher
 import java.util.prefs.Preferences
 
@@ -43,36 +46,51 @@ actual fun provideSdkStorage(aesB64Key: String): SdkStorage {
 }
 
 fun createOsSecretStore(service: String = "de.gematik.zeta.sdk"): SecretStore? {
-    val os = (System.getProperty("os.name") ?: "").lowercase()
-    return when {
-        os.contains("mac") -> MacKeychainStore(service)
-
-        os.contains("linux") -> null
-
-        // TODO()
-        os.contains("win") -> null
-
-        // TODO()
-        else -> error("Unsupported OS for SecretStore: $os")
+    return try {
+        val keyring = Keyring.create()
+        Log.i { "Using native keyring: ${keyring.keyringStorageType}" }
+        KeyringSecretStore(service, keyring)
+    } catch (ex: Exception) {
+        Log.e(ex) { "Failed to initialize keyring" }
+        null
     }
 }
 
-class MacKeychainStore(private val service: String) : SecretStore {
-    override fun put(name: String, value: String) { keychainSet(service, name, value) }
-    override fun get(name: String): String? = keychainGet(service, name)
-    override fun remove(name: String) { runSecurity("delete-generic-password", "-s", service, "-a", name) }
-    override fun clearNamespace() { TODO() }
-}
+class KeyringSecretStore(private val service: String, private val keyring: Keyring) : SecretStore {
+    override fun put(name: String, value: String) {
+        try {
+            keyring.setPassword(service, name, value)
+        } catch (ex: Exception) {
+            Log.e(ex) { "Failed to store secret: $name: ${ex.message}" }
+        }
+    }
 
-private fun runSecurity(vararg args: String): Pair<Int, String> {
-    val pb = ProcessBuilder(listOf("security") + args).redirectErrorStream(true)
-    val p = pb.start(); val out = p.inputStream.bufferedReader().readText().trim(); val code = p.waitFor(); return code to out
-}
-private fun keychainGet(service: String, account: String): String? {
-    val (code, out) = runSecurity("find-generic-password", "-s", service, "-a", account, "-w")
-    return if (code == 0) out else null
-}
-private fun keychainSet(service: String, account: String, secret: String) {
-    val (code, out) = runSecurity("add-generic-password", "-s", service, "-a", account, "-w", secret, "-U")
-    require(code == 0) { "Keychain set failed ($service/$account): $out" }
+    override fun get(name: String): String? {
+        return try {
+            val secret = keyring.getPassword(service, name)
+            Log.d { "Retrieved secret found for: $name" }
+            secret
+        } catch (e: PasswordAccessException) {
+            Log.e { "No secret found for: $name" }
+            null
+        } catch (ex: Exception) {
+            Log.e(ex) { "Failed to get secret: $name" }
+            null
+        }
+    }
+
+    override fun remove(name: String) {
+        return try {
+            keyring.deletePassword(service, name)
+            Log.d { "Retrieved secret found for: $name" }
+        } catch (e: PasswordAccessException) {
+            Log.e { "No secret found or already deleted for: $name" }
+        } catch (ex: Exception) {
+            Log.e(ex) { "Failed to delete secret: $name" }
+        }
+    }
+
+    override fun clearNamespace() {
+        TODO("Not yet implemented")
+    }
 }

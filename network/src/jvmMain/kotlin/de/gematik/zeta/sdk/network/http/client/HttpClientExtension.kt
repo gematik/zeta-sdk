@@ -25,6 +25,8 @@
 package de.gematik.zeta.sdk.network.http.client
 
 import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.util.appendAll
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +54,7 @@ public object HttpClientExtension {
     public fun ZetaHttpClient.postAsync(url: String, headerMap: Map<String, String>, body: String): CompletableFuture<ZetaHttpResponse> =
         scope.future {
             post(url) {
+                contentType(ContentType.Application.Json)
                 setBody(body)
                 headers.appendAll(headerMap)
             }

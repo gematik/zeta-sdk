@@ -1,0 +1,15 @@
+package = de.gematik.zeta.sdk.crypto.openssl
+headerFilter = openssl/*
+headers = openssl/evp.h \
+          openssl/kdf.h \
+          openssl/err.h \
+          openssl/encoder.h \
+          openssl/decoder.h \
+          openssl/ec.h \
+          openssl/pkcs12.h \
+          openssl/pem.h \
+          openssl/asn1.h \
+          openssl/bio.h \
+          openssl/ml_kem.h \
+          openssl/core_names.h
+compilerOpts = -DOPENSSL_NO_DEPRECATED

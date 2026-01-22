@@ -27,4 +27,5 @@ azure-configs.properties
 
 .jenkins
 .githubignore
+.dependencyLicenses
 

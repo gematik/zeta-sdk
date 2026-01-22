@@ -25,6 +25,7 @@
 package de.gematik.zeta.client.data.service.http
 
 import de.gematik.zeta.client.data.service.smb.HardcodedTokenProvider
+import de.gematik.zeta.client.di.DIContainer.ASL_PROD
 import de.gematik.zeta.client.di.DIContainer.DISABLE_SERVER_VALIDATION
 import de.gematik.zeta.client.di.DIContainer.SMB_KEYSTORE_CREDENTIALS
 import de.gematik.zeta.client.di.DIContainer.SMCB_CONNECTOR_CONFIG
@@ -72,7 +73,7 @@ public class HttpClientProviderImpl : HttpClientProvider {
                         "zero:audience",
                     ),
                     30,
-                    true,
+                    ASL_PROD,
                     when {
                         SMB_KEYSTORE_CREDENTIALS.keystoreFile.isNotEmpty() ->
                             SmbTokenProvider(SMB_KEYSTORE_CREDENTIALS)
@@ -85,7 +86,7 @@ public class HttpClientProviderImpl : HttpClientProvider {
                     },
                 ),
                 clientSelfAssessment = ClientSelfAssessment("name", "clientId", "manufacturerId", "manufacturerName", "test@manufacturertestmail.de", registrationTimestamp = 0, PlatformProductId.AppleProductId("apple", "macos", listOf("bundleX"))),
-                ZetaHttpClientBuilder("")
+                ZetaHttpClientBuilder()
                     .disableServerValidation(DISABLE_SERVER_VALIDATION)
                     .logging(
                         LogLevel.ALL,

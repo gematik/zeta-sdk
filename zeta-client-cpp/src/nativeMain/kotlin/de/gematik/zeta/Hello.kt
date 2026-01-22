@@ -37,6 +37,7 @@ import de.gematik.zeta.sdk.authentication.smcb.SmcbTokenProvider
 import de.gematik.zeta.sdk.network.http.client.HttpClientExtension.httpGet
 import de.gematik.zeta.sdk.network.http.client.HttpClientExtension.httpPost
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import interop.ZetaSdk_BuildConfig
 import interop.ZetaSdk_Client
@@ -59,6 +60,7 @@ import kotlinx.cinterop.nativeHeap
 import kotlinx.cinterop.pointed
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.toKString
+import platform.posix.free
 import platform.posix.strdup
 import kotlin.experimental.ExperimentalNativeApi
 
@@ -105,7 +107,7 @@ fun ZetaSdk_buildSdkClient(
         }
         AuthConfig(
             authConfig.scopes?.toKList(authConfig.scopesCount)?.filterNotNull().orEmpty(),
-            authConfig.exp,
+            authConfig.exp.toLong(),
             authConfig.enableAslTracingHeader,
             subjectTokenProvider,
         )
@@ -121,6 +123,11 @@ fun ZetaSdk_buildSdkClient(
                 tpmConfig!!,
                 authConfig!!,
                 clientSelfAssessment = ClientSelfAssessment("name", "clientId", "manufacturerId", "manufacturerName", "test@manufacturertestmail.de", registrationTimestamp = 0, PlatformProductId.AppleProductId("apple","macos",listOf("bundleX"))),
+                ZetaHttpClientBuilder().disableServerValidation(true).logging(LogLevel.ALL, object : Logger {
+                    override fun log(message: String) {
+                        println(message)
+                    }
+                }),
             )
         )
     }
@@ -147,11 +154,12 @@ fun ZetaSdk_buildHttpClient(
     val zetaSdkClient = sdkClient.pointed.zetaSdkClient!!.asStableRef<ZetaSdkClient>().get()
     val logger = object : Logger {
         override fun log(message: String) {
-            println("CPP Log :$message")
+            println(message)
         }
     }
     val zetaHttpClient = zetaSdkClient.httpClient {
         logging(LogLevel.ALL, logger)
+        disableServerValidation(true)
     }
     return nativeHeap.alloc<ZetaSdk_HttpClient>().let { httpClient ->
         httpClient.zetaHttpClient = StableRef.create(zetaHttpClient).asCPointer()
@@ -255,8 +263,12 @@ fun ZetaHttpResponse_destroy(
     httpResponse: CPointer<ZetaSdk_HttpResponse>,
 ) {
     httpResponse.pointed.let { httpResponse ->
-        httpResponse.body?.let { nativeHeap.free(it.rawValue)  }
-        httpResponse.error?.let { nativeHeap.free(it.rawValue)  }
+        httpResponse.body?.let { free(it)  }
+        httpResponse.error?.let { free(it)  }
+        httpResponse.headers?.toKList(httpResponse.headersCount)?.forEach {
+            it?.key?.let { free(it) }
+            it?.value?.let { free(it) }
+        }
     }
     nativeHeap.free(httpResponse.rawValue)
 }

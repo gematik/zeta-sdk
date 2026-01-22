@@ -29,8 +29,6 @@ import de.gematik.zeta.sdk.crypto.KeyPair
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-public const val ZETA_ASL_TRACING: String = "ZETA-ASL-nonPU-Tracing"
-
 @Serializable
 public data class Message1(
     @SerialName("MessageType") val type: String,
@@ -127,4 +125,11 @@ public data class M3InnerLayer(
     @SerialName("ML-KEM-768_ct") val mlKemCiphertext: ByteArray,
     @SerialName("ERP") val erpEnabled: Boolean,
     @SerialName("ESO") val esoEnabled: Boolean,
+)
+
+@Serializable
+public data class AslErrorMessage(
+    @SerialName("MessageType") val messageType: String,
+    @SerialName("ErrorCode") val errorCode: String,
+    @SerialName("ErrorMessage") val errorMessage: String,
 )

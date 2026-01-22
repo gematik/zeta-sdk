@@ -140,10 +140,16 @@ fun Project.setupBuildLogic(block: Project.() -> Unit) {
                             }
                         }
                     }
-                    macosArm64(configure)
-                    macosX64(configure)
-                    linuxX64(configure)
-                    mingwX64(configure)
+                    if (isMacOSEnabled) {
+                        macosArm64(configure)
+                        macosX64(configure)
+                    }
+                    if (isLinuxEnabled) {
+                        linuxX64(configure)
+                    }
+                    if (isWindowsEnabled) {
+                        mingwX64(configure)
+                    }
                 }
                 sourceSets["jvmCommonTest"].dependencies {
                     junit4()
@@ -204,7 +210,8 @@ fun Project.setupBuildLogic(block: Project.() -> Unit) {
                 javadocJar = isRunningOnCi,
                 sourcesJar = true,
             )
-            prepareForMavenCentralPublishing(project)
+            if(isRunningOnCi)
+                prepareForMavenCentralPublishing(project)
         }
 
         extensions.findByType<DesktopExtension>()?.apply {

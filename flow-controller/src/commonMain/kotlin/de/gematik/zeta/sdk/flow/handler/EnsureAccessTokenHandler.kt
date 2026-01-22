@@ -28,6 +28,7 @@ import de.gematik.zeta.sdk.attestation.model.ClientSelfAssessment
 import de.gematik.zeta.sdk.authentication.AccessTokenParams
 import de.gematik.zeta.sdk.authentication.AccessTokenProvider
 import de.gematik.zeta.sdk.authentication.AuthConfig
+import de.gematik.zeta.sdk.authentication.AuthenticationException
 import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.flow.CapabilityHandler
 import de.gematik.zeta.sdk.flow.CapabilityResult
@@ -46,38 +47,37 @@ class EnsureAccessTokenHandler(
     val productVersion: String,
     val clientSelfAssessment: ClientSelfAssessment,
 ) : CapabilityHandler {
+    companion object {
+        private const val AUTHENTICATION_ERROR_CODE = "AUTHENTICATION_ERROR"
+    }
+
     override fun canHandle(need: FlowNeed): Boolean = need == FlowNeed.Authentication
 
     override suspend fun handle(need: FlowNeed, ctx: FlowContext): CapabilityResult {
+        return try {
+            val authToken = getAuthToken(ctx)
+            val hashedToken = tokenProvider.hash(authToken)
+
+            return CapabilityResult.RetryRequest { req ->
+                if (!req.headers.contains(HttpHeaders.Authorization)) {
+                    val dpop = tokenProvider.createDpopToken(req.method.value, req.url.toString(), null, hashedToken)
+                    req.headers[HttpHeaders.Authorization] = "${HttpAuthHeaders.Dpop} $authToken"
+                    req.headers[HttpAuthHeaders.Dpop] = dpop
+                }
+            }
+        } catch (e: AuthenticationException) {
+            CapabilityResult.Error(AUTHENTICATION_ERROR_CODE, e.message.toString(), e.response)
+        }
+    }
+
+    suspend fun getAuthToken(ctx: FlowContext): String {
         val cfg = buildAccessTokenParams(ctx)
 
-        val issuer = requireNotNull(ctx.configurationStorage.getAuthServer(ctx.resource)?.issuer) {
-            "Missing issuer for resource: $ctx.resource"
-        }
-
-        val token = tokenProvider.getValidToken(
+        return tokenProvider.getValidToken(
             cfg.tokenEndpoint,
             cfg.nonceEndpoint,
-            AccessTokenParams(
-                cfg.params.clientId,
-                productId,
-                productVersion,
-                authConfig.exp,
-                cfg.params.scopes,
-                audienceFromIssuer(issuer),
-                cfg.params.clientSelfAssessment,
-            ),
+            cfg.params,
         )
-
-        val hashedToken = tokenProvider.hash(token)
-
-        return CapabilityResult.RetryRequest { req ->
-            if (!req.headers.contains(HttpHeaders.Authorization)) {
-                val dpop = tokenProvider.createDpopToken(req.method.value, req.url.toString(), null, hashedToken)
-                req.headers[HttpHeaders.Authorization] = "Bearer $token"
-                req.headers[HttpAuthHeaders.Dpop] = dpop
-            }
-        }
     }
 
     private suspend fun buildAccessTokenParams(ctx: FlowContext): AccessTokenParamsWithEndpoints {
@@ -131,14 +131,7 @@ class EnsureAccessTokenHandler(
     )
 
     /** Helper you can call from ws() to get a valid access token */
-    suspend fun getValidAccessToken(ctx: FlowContext): String {
-        val cfg = buildAccessTokenParams(ctx)
-        return tokenProvider.getValidToken(
-            cfg.tokenEndpoint,
-            cfg.nonceEndpoint,
-            cfg.params,
-        )
-    }
+    suspend fun getValidAccessToken(ctx: FlowContext): String = getAuthToken(ctx)
 }
 
 fun audienceFromIssuer(issuer: String): String {

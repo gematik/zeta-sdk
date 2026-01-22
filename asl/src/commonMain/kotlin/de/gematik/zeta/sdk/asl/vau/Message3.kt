@@ -28,15 +28,16 @@ import de.gematik.zeta.sdk.asl.Message3
 import de.gematik.zeta.sdk.asl.applyDpopFor
 import de.gematik.zeta.sdk.asl.aslUrl
 import de.gematik.zeta.sdk.asl.copyAuthHeadersFrom
+import de.gematik.zeta.sdk.asl.handleMessageResponse
 import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.accept
 import io.ktor.client.request.header
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
-import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.serialization.ExperimentalSerializationApi
 
@@ -47,22 +48,22 @@ internal suspend fun sendMessage3(
     cid: String,
     messageEncoded: ByteArray,
     state: AslHandshakeState,
-): ByteArray {
+): ZetaHttpResponse {
     val dpop = state.applyDpopFor(HttpMethod.Post.value, aslUrl(request.url, cid))
-
+    val url = aslUrl(request.url, cid)
     val response = httpClient
-        .post(cid) {
+        .post(url) {
             contentType(ContentType.Application.Cbor)
             accept(ContentType.Application.Cbor)
             setBody(messageEncoded)
             copyAuthHeadersFrom(request)
             header(HttpAuthHeaders.Dpop, dpop)
         }
-    require(response.status == HttpStatusCode.OK) { "VAU: expected 200, got: ${response.status}" }
-    val m4 = response.bodyAsBytes()
 
-    return m4
+    return handleMessageResponse(response)
 }
+
+public suspend fun processMessage3Response(response: ZetaHttpResponse): ByteArray = response.bodyAsBytes()
 
 internal fun buildMessage3(innerCipherText: ByteArray, keyConfCipherText: ByteArray): Message3 =
     Message3(
