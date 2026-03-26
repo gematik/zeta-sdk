@@ -25,12 +25,12 @@
 package de.gematik.zeta.sdk.asl.vau
 import de.gematik.zeta.sdk.asl.Message3Result
 import de.gematik.zeta.sdk.asl.Message4
-import de.gematik.zeta.sdk.crypto.AesGcmCipher
+import de.gematik.zeta.sdk.crypto.AesGcmCipherImpl
 
 internal fun validateMessage4AndFinalizeSession(m4: Message4, message3result: Message3Result, transcriptHash: ByteArray) {
     require(m4.type == "M4") { "Unexpected MessageType: ${m4.type}" }
 
-    val serverHash = AesGcmCipher()
+    val serverHash = AesGcmCipherImpl()
         .decrypt(message3result.k2.serverToClientConfirmationKey, m4.aeadKeyConfirmationCiphertext)
 
     if (!serverHash.contentEquals(transcriptHash)) {

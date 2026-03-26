@@ -38,6 +38,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -48,7 +49,14 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.SendChannel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.future.await
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertArrayEquals
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -69,6 +77,7 @@ class WsClientAsyncExtensionTest {
     private lateinit var mockSession: DefaultClientWebSocketSession
     private lateinit var incomingChannel: Channel<Frame>
     private lateinit var outgoingChannel: Channel<Frame>
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     @OptIn(DelicateCoroutinesApi::class)
     @BeforeTest
@@ -102,14 +111,11 @@ class WsClientAsyncExtensionTest {
 
     @Test
     fun sendText_sendTextCalled_textFrameSent() = runTest {
-        // Arrange
         val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
         val session = WsAsyncSession(mockSession, scope)
 
-        // Act
         session.sendText("Hello Zeta").get(1, TimeUnit.SECONDS)
 
-        // Assert
         coVerify { mockSession.send(match<Frame.Text> { it.readText() == "Hello Zeta" }) }
         scope.cancel()
     }
@@ -170,11 +176,8 @@ class WsClientAsyncExtensionTest {
         val session = WsAsyncSession(mockSession, scope)
         val listener = object : WsAsyncSession.WsMessageListener {
             override fun onText(text: String) {}
-
             override fun onBinary(data: ByteArray) {}
-
             override fun onClose() {}
-
             override fun onError(error: Throwable) {}
         }
 
@@ -191,13 +194,16 @@ class WsClientAsyncExtensionTest {
     }
 
     @Test
-    fun awaitClose_messageLoopNotStarted_completedFutureReturned() = runTest {
+    fun awaitClose_incomingChannelClosed_futureCompletes() = runTest {
         // Arrange
         val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
         val session = WsAsyncSession(mockSession, scope)
 
+        incomingChannel.close()
+
         // Act
         val awaitFuture = session.awaitClose()
+        awaitFuture.get(500, TimeUnit.MILLISECONDS)
 
         // Assert
         assertTrue(awaitFuture.isDone)
@@ -219,7 +225,6 @@ class WsClientAsyncExtensionTest {
         ) { session ->
             session.awaitClose()
         }
-
         // Assert
         val exception = assertFailsWith<Exception> { future.get(2, TimeUnit.SECONDS) }
         assertTrue(exception.cause is RuntimeException)
@@ -238,18 +243,13 @@ class WsClientAsyncExtensionTest {
 
         val texts = CopyOnWriteArrayList<String>()
         val listener = object : WsAsyncSession.WsMessageListener {
-            override fun onText(text: String) {
-                texts += text
-            }
-
+            override fun onText(text: String) { texts += text }
             override fun onBinary(data: ByteArray) {}
-
             override fun onClose() {}
-
             override fun onError(error: Throwable) {}
         }
 
-        // Act
+        // Acr
         val loopFuture = sut.onMessage(listener)
         fake.incomingCh.send(Frame.Text("hello"))
         fake.incomingCh.send(Frame.Close())
@@ -267,16 +267,12 @@ class WsClientAsyncExtensionTest {
         val fake = FakeWebSocketSession()
         val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
         val sut = WsAsyncSession(fake, scope)
-        val closed = CountDownLatch(1)
 
         val binaries = CopyOnWriteArrayList<ByteArray>()
         val listener = object : WsAsyncSession.WsMessageListener {
             override fun onText(text: String) {}
-            override fun onBinary(data: ByteArray) {
-                binaries += data
-            }
-
-            override fun onClose() { closed.countDown() }
+            override fun onBinary(data: ByteArray) { binaries += data }
+            override fun onClose() {}
             override fun onError(error: Throwable) {}
         }
 
@@ -304,11 +300,7 @@ class WsClientAsyncExtensionTest {
         val listener = object : WsAsyncSession.WsMessageListener {
             override fun onText(text: String) {}
             override fun onBinary(data: ByteArray) {}
-
-            override fun onClose() {
-                closed.countDown()
-            }
-
+            override fun onClose() { closed.countDown() }
             override fun onError(error: Throwable) {}
         }
 
@@ -321,6 +313,375 @@ class WsClientAsyncExtensionTest {
         // Assert
         assertTrue(closed.await(1, TimeUnit.SECONDS))
         scope.cancel()
+    }
+
+    @Test
+    fun wsAsync_sendText_sendsFramesInCorrectOrder() = runTest {
+        // Arrange
+        val sentFrames = mutableListOf<String>()
+        val latch = CountDownLatch(3)
+
+        coEvery { mockSession.send(any<Frame>()) } answers {
+            val frame = firstArg<Frame.Text>()
+            sentFrames.add(frame.readText())
+            latch.countDown()
+        }
+
+        // Act
+        val session = WsAsyncSession(mockSession, scope)
+        session.sendText("first").get()
+        session.sendText("second").get()
+        session.sendText("third").get()
+
+        // Assert
+        assertTrue(latch.await(2, TimeUnit.SECONDS))
+        assertEquals(listOf("first", "second", "third"), sentFrames)
+    }
+
+    @Test
+    fun wsAsync_slowListener_doesNotBlockFastListener() = runBlocking {
+        // Arrange
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val fake = FakeWebSocketSession()
+        val session = WsAsyncSession(fake, scope)
+        val fastReceived = CopyOnWriteArrayList<String>()
+        val slowBlocker = Semaphore(permits = 1, acquiredPermits = 1)
+        val slowStarted = CompletableDeferred<Unit>()
+        val fastDone = CompletableDeferred<Unit>()
+
+        session.onMessage(object : WsAsyncSession.WsMessageListener {
+            override fun onText(text: String) {
+                slowStarted.complete(Unit)
+                runBlocking { slowBlocker.acquire() }
+            }
+            override fun onBinary(data: ByteArray) {}
+            override fun onClose() {}
+            override fun onError(error: Throwable) {}
+        })
+        session.onMessage(object : WsAsyncSession.WsMessageListener {
+            override fun onText(text: String) {
+                fastReceived.add(text)
+                fastDone.complete(Unit)
+            }
+            override fun onBinary(data: ByteArray) {}
+            override fun onClose() {}
+            override fun onError(error: Throwable) {}
+        })
+
+        // Act
+        fake.incomingCh.send(Frame.Text("hello"))
+
+        withTimeout(2_000) { slowStarted.await() }
+        withTimeout(2_000) { fastDone.await() }
+
+        // Assert
+        assertEquals(listOf("hello"), fastReceived)
+
+        slowBlocker.release()
+        scope.cancel()
+    }
+
+    @Test
+    fun wsAsync_slowListener_doesNotBlockMultipleMessages() = runBlocking {
+        // Arrange
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val fake = FakeWebSocketSession()
+        val session = WsAsyncSession(fake, scope)
+        val fastReceived = CopyOnWriteArrayList<String>()
+        val received = Channel<String>(capacity = 3)
+        val slowBlocker = Semaphore(permits = 1, acquiredPermits = 1)
+
+        session.onMessage(object : WsAsyncSession.WsMessageListener {
+            override fun onText(text: String) { runBlocking { slowBlocker.acquire() } }
+            override fun onBinary(data: ByteArray) {}
+            override fun onClose() {}
+            override fun onError(error: Throwable) {}
+        })
+        session.onMessage(object : WsAsyncSession.WsMessageListener {
+            override fun onText(text: String) {
+                fastReceived.add(text)
+                received.trySend(text)
+            }
+            override fun onBinary(data: ByteArray) {}
+            override fun onClose() {}
+            override fun onError(error: Throwable) {}
+        })
+
+        // Act
+        fake.incomingCh.send(Frame.Text("message1"))
+        fake.incomingCh.send(Frame.Text("message2"))
+        fake.incomingCh.send(Frame.Text("message3"))
+
+        // Assert
+        withTimeout(2_000) {
+            val results = listOf(received.receive(), received.receive(), received.receive())
+            assertEquals(listOf("message1", "message2", "message3"), results.sorted())
+        }
+
+        slowBlocker.release()
+        scope.cancel()
+    }
+
+    @Test
+    fun wsAsync_listenerException_doesNotAffectOtherListeners() = runBlocking {
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val fake = FakeWebSocketSession()
+        val session = WsAsyncSession(fake, scope)
+        val fastReceived = CopyOnWriteArrayList<String>()
+        val done = CompletableDeferred<Unit>()
+
+        session.onMessage(object : WsAsyncSession.WsMessageListener {
+            override fun onText(text: String) { error("slow crashed") }
+            override fun onBinary(data: ByteArray) {}
+            override fun onClose() {}
+            override fun onError(error: Throwable) {}
+        })
+        session.onMessage(object : WsAsyncSession.WsMessageListener {
+            override fun onText(text: String) {
+                fastReceived.add(text)
+                done.complete(Unit)
+            }
+            override fun onBinary(data: ByteArray) {}
+            override fun onClose() {}
+            override fun onError(error: Throwable) {}
+        })
+
+        fake.incomingCh.send(Frame.Text("hello"))
+
+        withTimeout(2_000) { done.await() }
+        assertEquals(listOf("hello"), fastReceived)
+
+        scope.cancel()
+    }
+
+    @Test
+    fun parallelSessions_receiveIndependently() = runTest {
+        // Arrange
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val scope1 = CoroutineScope(dispatcher + SupervisorJob())
+        val scope2 = CoroutineScope(dispatcher + SupervisorJob())
+        val s1 = FakeWebSocketSession()
+        val s2 = FakeWebSocketSession()
+        val ws1 = WsAsyncSession(s1, scope1)
+        val ws2 = WsAsyncSession(s2, scope2)
+        val r1 = CopyOnWriteArrayList<String>()
+        val r2 = CopyOnWriteArrayList<String>()
+
+        ws1.onMessage(testListener(onText = { r1 += it }))
+        ws2.onMessage(testListener(onText = { r2 += it }))
+
+        // Act
+        s1.incomingCh.send(Frame.Text("a1"))
+        s2.incomingCh.send(Frame.Text("b1"))
+        s1.incomingCh.send(Frame.Text("a2"))
+        s2.incomingCh.send(Frame.Text("b2"))
+        s1.incomingCh.send(Frame.Close())
+        s2.incomingCh.send(Frame.Close())
+        s1.incomingCh.close()
+        s2.incomingCh.close()
+
+        val f1 = ws1.awaitClose()
+        val f2 = ws2.awaitClose()
+
+        testScheduler.advanceUntilIdle()
+
+        // Assert
+        assertTrue(f1.isDone)
+        assertTrue(f2.isDone)
+        assertEquals(listOf("a1", "a2"), r1)
+        assertEquals(listOf("b1", "b2"), r2)
+
+        scope1.cancel()
+        scope2.cancel()
+    }
+
+    @Test
+    fun parallelSessions_sendOrderingIsPerSession() = runTest {
+        // Arrange
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val scope1 = CoroutineScope(dispatcher + SupervisorJob())
+        val scope2 = CoroutineScope(dispatcher + SupervisorJob())
+        val s1 = FakeWebSocketSession()
+        val s2 = FakeWebSocketSession()
+        val ws1 = WsAsyncSession(s1, scope1)
+        val ws2 = WsAsyncSession(s2, scope2)
+
+        // Act
+        ws1.sendText("1a")
+        ws2.sendText("2a")
+        ws1.sendText("1b")
+        ws2.sendText("2b")
+        testScheduler.advanceUntilIdle()
+
+        // Assert
+        assertEquals(listOf("1a", "1b"), s1.sentTexts)
+        assertEquals(listOf("2a", "2b"), s2.sentTexts)
+
+        ws1.close().await()
+        ws2.close().await()
+        scope1.cancel()
+        scope2.cancel()
+    }
+
+    @Test
+    fun parallelSessions_realThreads() = runBlocking {
+        // Arrange
+        val scope1 = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val scope2 = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val s1 = FakeWebSocketSession()
+        val s2 = FakeWebSocketSession()
+        val ws1 = WsAsyncSession(s1, scope1)
+        val ws2 = WsAsyncSession(s2, scope2)
+        val r1 = CopyOnWriteArrayList<String>()
+        val r2 = CopyOnWriteArrayList<String>()
+        val ws1Blocker = Semaphore(permits = 1, acquiredPermits = 1)
+        val done1 = CompletableDeferred<Unit>()
+        val done2 = CompletableDeferred<Unit>()
+
+        ws1.onMessage(
+            testListener(onText = { payload ->
+                scope1.launch {
+                    ws1Blocker.acquire()
+                    r1 += payload
+                    done1.complete(Unit)
+                }
+            }),
+        )
+        ws2.onMessage(
+            testListener(onText = { payload ->
+                scope2.launch {
+                    r2 += payload
+                    done2.complete(Unit)
+                }
+            }),
+        )
+
+        val close1 = ws1.awaitClose()
+        ws2.awaitClose()
+
+        // Act
+        coroutineScope {
+            launch(Dispatchers.Default) {
+                s1.incomingCh.send(Frame.Text("a1"))
+                s1.incomingCh.send(Frame.Close())
+                s1.incomingCh.close()
+            }
+            launch(Dispatchers.Default) {
+                s2.incomingCh.send(Frame.Text("b1"))
+                s2.incomingCh.send(Frame.Close())
+                s2.incomingCh.close()
+            }
+        }
+
+        // Assert
+        withTimeout(2_000) { done2.await() }
+        assertEquals(listOf("b1"), r2)
+
+        ws1Blocker.release()
+        withTimeout(2_000) { done1.await() }
+        withTimeout(2_000) { close1.await() }
+        assertEquals(listOf("a1"), r1)
+
+        scope1.cancel()
+        scope2.cancel()
+    }
+
+    @Test
+    fun incomingClosedWithCause_notifiesOnError() = runTest {
+        // Arrange
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val fake = FakeWebSocketSession()
+        val sut = WsAsyncSession(fake, scope)
+
+        val errors = CopyOnWriteArrayList<String>()
+        sut.onMessage(testListener(onError = { errors += it.message ?: it::class.java.name }))
+
+        // Act
+        fake.incomingCh.send(Frame.Text("hello"))
+        fake.incomingCh.close(RuntimeException("boom"))
+
+        // Assert
+        val ex = assertFailsWith<Exception> { sut.awaitClose().await() }
+        assertTrue((ex.cause?.message ?: ex.message).orEmpty().contains("boom"))
+        assertTrue(errors.any { it.contains("boom") })
+
+        scope.cancel()
+    }
+
+    @Test
+    fun closeAsync_terminatesLoop_and_awaitCloseCompletes() = runTest {
+        // Arrange
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val fake = FakeWebSocketSession()
+        val sut = WsAsyncSession(fake, scope)
+
+        val closed = CountDownLatch(1)
+        sut.onMessage(testListener(onClose = { closed.countDown() }))
+
+        sut.close().await()
+
+        // Act
+        fake.incomingCh.send(Frame.Close(CloseReason(CloseReason.Codes.NORMAL, "")))
+        fake.incomingCh.close()
+
+        sut.awaitClose().await()
+
+        // Assert
+        assertTrue(closed.await(1, TimeUnit.SECONDS))
+
+        scope.cancel()
+    }
+
+    @Test
+    fun closeAsync_incomingClosed_awaitCloseCompletes() = runTest {
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val fake = FakeWebSocketSession()
+        val sut = WsAsyncSession(fake, scope)
+
+        sut.close().await()
+        fake.incomingCh.close()
+        sut.awaitClose().await()
+
+        scope.cancel()
+    }
+
+    @Test
+    fun listenerThrows_doesNotAffectOtherListeners() = runBlocking {
+        // Arrange
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val fake = FakeWebSocketSession()
+        val sut = WsAsyncSession(fake, scope)
+        val received = CopyOnWriteArrayList<String>()
+
+        sut.onMessage(testListener(onText = { error("listener crashed") }))
+        sut.onMessage(testListener(onText = { received += it }))
+
+        val closed = sut.awaitClose()
+
+        // Act
+        fake.incomingCh.send(Frame.Text("m1"))
+        fake.incomingCh.send(Frame.Text("m2"))
+        fake.incomingCh.send(Frame.Text("m3"))
+        fake.incomingCh.send(Frame.Close())
+        fake.incomingCh.close()
+
+        withTimeout(2_000) { closed.await() }
+
+        // Assert
+        assertEquals(listOf("m1", "m2", "m3"), received)
+
+        scope.cancel()
+    }
+
+    private fun testListener(
+        onText: (String) -> Unit = {},
+        onClose: () -> Unit = {},
+        onError: (Throwable) -> Unit = {},
+    ) = object : WsAsyncSession.WsMessageListener {
+        override fun onText(text: String) = onText(text)
+        override fun onBinary(data: ByteArray) {}
+        override fun onClose() = onClose()
+        override fun onError(error: Throwable) = onError(error)
     }
 }
 
@@ -339,9 +700,13 @@ class FakeWebSocketSession(
     override val outgoing: SendChannel<Frame> get() = outgoingCh
 
     override val extensions: List<WebSocketExtension<*>> = emptyList()
+    val sentTexts = CopyOnWriteArrayList<String>()
 
     override suspend fun send(frame: Frame) {
         outgoingCh.send(frame)
+        if (frame is Frame.Text) {
+            sentTexts += frame.readText()
+        }
     }
 
     override suspend fun flush() {}

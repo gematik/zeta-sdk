@@ -25,6 +25,7 @@
 package de.gematik.zeta.client.data.repository
 
 import de.gematik.zeta.client.data.service.PrescriptionService
+import de.gematik.zeta.client.di.DIContainer
 import de.gematik.zeta.client.model.PrescriptionModel
 import de.gematik.zeta.sdk.ZetaSdk
 
@@ -62,6 +63,6 @@ public class PrescriptionRepositoryImpl(
     }
 
     override suspend fun forgetAuthorization() {
-        ZetaSdk.forget()
+        DIContainer.httpClientProvider.forget()
     }
 }

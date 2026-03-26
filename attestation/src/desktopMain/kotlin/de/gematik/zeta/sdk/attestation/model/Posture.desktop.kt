@@ -43,8 +43,8 @@ actual suspend fun getPlatform(): Platform {
 actual fun getPostureType(): PostureType {
     when (platform()) {
         is de.gematik.zeta.platform.Platform.Native.Macos -> return PostureType.APPLE
-        is de.gematik.zeta.platform.Platform.Native.Linux -> return PostureType.TPM
-        is de.gematik.zeta.platform.Platform.Native.Windows -> return PostureType.TPM
+        is de.gematik.zeta.platform.Platform.Native.Linux -> return PostureType.SOFTWARE
+        is de.gematik.zeta.platform.Platform.Native.Windows -> return PostureType.SOFTWARE
         else -> error("unknown platform")
     }
 }

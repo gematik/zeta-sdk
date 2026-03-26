@@ -25,7 +25,7 @@
 package de.gematik.zeta.sdk.asl
 
 import de.gematik.zeta.concat
-import de.gematik.zeta.sdk.crypto.AesGcmCipher
+import de.gematik.zeta.sdk.crypto.AesGcmCipherImpl
 import de.gematik.zeta.sdk.crypto.unpackAead
 import de.gematik.zeta.toBigEndian8
 import kotlinx.serialization.Serializable
@@ -61,7 +61,7 @@ public data class EstablishedSession(
         val header = buildHeader(requestCounter)
         val iv = buildIv()
 
-        val cipher = AesGcmCipher()
+        val cipher = AesGcmCipherImpl()
         val blob = cipher.encrypt(c2sAppDataKey, plainText, iv, header)
         val aeadParts = blob.unpackAead()
 
@@ -94,7 +94,7 @@ public data class EstablishedSession(
 
         val aad = header.toBytes()
 
-        return AesGcmCipher().decrypt(s2cAppDataKey, ct, iv, aad)
+        return AesGcmCipherImpl().decrypt(s2cAppDataKey, ct, iv, aad)
     }
 
     private fun buildHeader(nextReqCtr: Long): ByteArray = ZetaHeader(

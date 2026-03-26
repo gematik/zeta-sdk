@@ -25,9 +25,10 @@
 package de.gematik.zeta.sdk.attestation.interfaces
 
 import ServiceConfig
+import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.attestation.model.FileIntegrityResult
 import de.gematik.zeta.sdk.attestation.model.VerifyIntegrityResponse
-import de.gematik.zeta.sdk.attestation.tpm.TpmAccess
+import de.gematik.zeta.sdk.attestation.tpm.TpmAccessOperations
 import io.ktor.util.encodeBase64
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,17 +36,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class FileIntegrity(
-    private val tpm: TpmAccess,
-    private val fileScanner: FileScanner,
-    private val hashCalculator: FileHashCalculator,
+    private val tpm: TpmAccessOperations,
+    private val fileScanner: FileScannerOperations,
+    private val hashCalculator: FileHashCalculatorOperations,
     private val config: ServiceConfig,
-) {
+) : FileIntegrityOperations {
     private val scope = CoroutineScope(Dispatchers.Default)
     private var monitorJob: Job? = null
     private var expectedHashes: Map<String, String?> = emptyMap()
     private val subscribers = mutableSetOf<(VerifyIntegrityResponse) -> Unit>()
 
-    fun initialize(resetIntegrity: Boolean = false): Map<String, String?> {
+    override fun initialize(resetIntegrity: Boolean): Map<String, String?> {
         val fileHashes = fileScanner.scanFiles(config.files)
         val scannedHash = hashCalculator.computeMasterHash(fileHashes)
 
@@ -58,17 +59,17 @@ class FileIntegrity(
         return fileHashes
     }
 
-    fun isIntact(): Boolean {
+    override fun isIntact(): Boolean {
         val fileHashes = try {
             fileScanner.scanFiles(config.files)
         } catch (e: Exception) {
-            println("FileIntegrity.isIntact: scan failed: ${e.message}")
+            Log.e { "FileIntegrity.isIntact: scan failed: ${e.message}" }
             return false
         }
 
         val missingFiles = fileHashes.filter { it.value == null }
         if (missingFiles.isNotEmpty()) {
-            println("FileIntegrity.isIntact: VIOLATION - missing files: ${missingFiles.keys.joinToString()}")
+            Log.w { "FileIntegrity.isIntact: VIOLATION - missing files: ${missingFiles.keys.joinToString()}" }
             return false
         }
 
@@ -76,12 +77,12 @@ class FileIntegrity(
         val expectedPcrValue = hashCalculator.computeExpectedPcr(scannedHash)
         val storedPcrValue = obtainMasterHash()
 
-        println("FileIntegrity.isIntact: expected: ${expectedPcrValue.encodeBase64()}, stored: ${storedPcrValue.encodeBase64()}")
+        Log.i { "FileIntegrity.isIntact: expected: ${expectedPcrValue.encodeBase64()}, stored: ${storedPcrValue.encodeBase64()}" }
 
         return expectedPcrValue.contentEquals(storedPcrValue)
     }
 
-    fun verifyIntegrity(
+    override fun verifyIntegrity(
         filePaths: List<String>,
     ): VerifyIntegrityResponse {
         val currentExpected = expectedHashes
@@ -92,7 +93,7 @@ class FileIntegrity(
             val actualHash = try {
                 hashCalculator.calculateSHA256(path)
             } catch (e: Exception) {
-                println("FileIntegrity.verifyIntegrity: failed for $path: ${e.message}")
+                Log.e { "FileIntegrity.verifyIntegrity: failed for $path: ${e.message}" }
                 null
             }
 
@@ -107,11 +108,11 @@ class FileIntegrity(
         return VerifyIntegrityResponse(results, results.all { it.value.isValid })
     }
 
-    fun currentIntegrityState(): VerifyIntegrityResponse {
+    override fun currentIntegrityState(): VerifyIntegrityResponse {
         return verifyIntegrity(config.files)
     }
 
-    fun subscribe(onUpdate: (VerifyIntegrityResponse) -> Unit): () -> Unit {
+    override fun subscribe(onUpdate: (VerifyIntegrityResponse) -> Unit): () -> Unit {
         val wasEmpty = subscribers.isEmpty()
         subscribers.add(onUpdate)
         if (wasEmpty) {
@@ -125,7 +126,7 @@ class FileIntegrity(
         }
     }
 
-    fun stopIntegrityMonitor() {
+    override fun stopIntegrityMonitor() {
         monitorJob?.cancel()
         monitorJob = null
         fileScanner.stopMonitoring()

@@ -29,6 +29,8 @@ import io.ktor.client.call.HttpClientCall
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.statement.HttpResponse
 import io.ktor.util.AttributeKey
+import kotlin.time.TimeSource
+import kotlin.time.measureTimedValue
 
 /**
  * Coordinates request execution with the Flow components.
@@ -79,14 +81,19 @@ class FlowOrchestrator(
      * @return the final [HttpClientCall] with successful/failure flow
      */
     suspend fun run(original: HttpRequestBuilder, ctx: FlowContext): HttpClientCall {
+        val orchestratorStart = TimeSource.Monotonic.markNow()
         val req = HttpRequestBuilder().takeFrom(original)
+        val url = req.url.buildString()
 
-        val prerequisiteError = executePrerequisites(req, ctx)
+        val (prerequisiteError, prereqTime) = measureTimedValue { executePrerequisites(req, ctx) }
+        Log.i { "[ORCHESTRATOR-TIMING] url=$url prerequisites=$prereqTime" }
         if (prerequisiteError != null) {
             return prerequisiteError.call
         }
 
-        return executeRequest(req, ctx)
+        val (result, execTime) = measureTimedValue { executeRequest(req, ctx) }
+        Log.i { "[ORCHESTRATOR-TIMING] url=$url executeRequest=$execTime total=${orchestratorStart.elapsedNow()}" }
+        return result
     }
 
     private suspend fun executePrerequisites(req: HttpRequestBuilder, ctx: FlowContext): HttpResponse? {
@@ -151,7 +158,9 @@ class FlowOrchestrator(
         Log.i { "Before proceeding with the request, the flow needs must executed: $need" }
         val handler = handlers.first { it.canHandle(need) }
 
-        return when (val result = handler.handle(need, ctx)) {
+        val (result, handlerTime) = measureTimedValue { handler.handle(need, ctx) }
+        Log.i { "[ORCHESTRATOR-TIMING] handler=${handler::class.simpleName} need=$need time=$handlerTime" }
+        return when (result) {
             CapabilityResult.Done -> {
                 Log.i { "Flow executed successfully, proceeding with request" }
                 evaluatorMutation?.invoke(req)

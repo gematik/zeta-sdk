@@ -34,11 +34,16 @@ import io.ktor.websocket.readText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.future.future
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CopyOnWriteArrayList
 
 object WsClientAsyncExtension {
     @OptIn(DelicateCoroutinesApi::class)
@@ -69,68 +74,88 @@ object WsClientAsyncExtension {
         private val session: WebSocketSession,
         private val scope: CoroutineScope,
     ) {
+        private val listeners = CopyOnWriteArrayList<WsMessageListener>()
+
+        @Volatile
         private var messageLoopFuture: CompletableFuture<Unit>? = null
+        private val maxFramesQueued = 64
+        private val sendChannel = Channel<Frame>(capacity = maxFramesQueued)
+
+        init {
+            scope.launch {
+                for (frame in sendChannel) {
+                    session.send(frame)
+                }
+            }
+
+            messageLoopFuture = scope.future {
+                val listenerJobs = mutableListOf<Job>()
+                try {
+                    for (frame in session.incoming) {
+                        when (frame) {
+                            is Frame.Text -> {
+                                val text = frame.readText()
+                                Log.i { "Received text frame: $text" }
+                                listenerJobs.addAll(notifyListeners { onText(text) })
+                            }
+
+                            is Frame.Binary -> {
+                                val bytes = frame.readBytes()
+                                Log.i { "Received binary frame size: ${bytes.size}" }
+                                listenerJobs.addAll(notifyListeners { onBinary(bytes) })
+                            }
+
+                            is Frame.Close -> {
+                                Log.i { "Received close frame" }
+                                listenerJobs.addAll(notifyListeners { onClose() })
+                                break
+                            }
+
+                            else -> Log.i { "Ignoring frame: ${frame::class.simpleName}" }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e { "Exception during incoming frame: $e" }
+                    listeners.forEach { it.onError(e) }
+                    throw e
+                } finally {
+                    listenerJobs.joinAll()
+                    sendChannel.close()
+                }
+            }
+        }
 
         @JvmName("sendTextAsync")
         fun sendText(text: String): CompletableFuture<Unit> {
             return scope.future {
-                Log.d { "Sending text frame: $text" }
-                session.send(Frame.Text(text))
+                Log.i { "Sending text frame: $text" }
+                sendChannel.send(Frame.Text(text))
             }
         }
 
         @JvmName("sendBinaryAsync")
         fun sendBinary(data: ByteArray): CompletableFuture<Unit> {
             return scope.future {
-                Log.d { "Sending binary frame size: ${data.size}" }
-                session.send(Frame.Binary(true, data))
+                Log.i { "Sending binary frame size: ${data.size}" }
+                sendChannel.send(Frame.Binary(true, data))
             }
         }
 
         @JvmName("onMessageAsync")
         fun onMessage(listener: WsMessageListener): CompletableFuture<Unit> {
-            val future = scope.future {
-                try {
-                    for (frame in session.incoming) {
-                        when (frame) {
-                            is Frame.Text -> {
-                                val text = frame.readText()
-                                Log.d { "Received text frame: $text" }
-                                listener.onText(text)
-                            }
+            listeners.add(listener)
+            return messageLoopFuture ?: CompletableFuture.completedFuture(Unit)
+        }
 
-                            is Frame.Binary -> {
-                                val bytes = frame.readBytes()
-                                Log.d { "Received binary frame size: ${bytes.size}" }
-                                listener.onBinary(bytes)
-                            }
-
-                            is Frame.Close -> {
-                                Log.d { "Received close frame" }
-                                listener.onClose()
-                                break
-                            }
-
-                            else -> {
-                                Log.i { "Ignoring frame: ${frame::class.simpleName}" }
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    Log.e { "Exception during income frame: ${e.printStackTrace()}" }
-                    listener.onError(e)
-                    throw e
-                }
-            }
-            messageLoopFuture = future
-            return future
+        @JvmName("removeListenerAsync")
+        fun removeListener(listener: WsMessageListener) {
+            listeners.remove(listener)
         }
 
         @JvmName("closeAsync")
         fun close(): CompletableFuture<Unit> {
             return scope.future {
-                Log.d { "Closing websocket session" }
+                Log.i { "Closing websocket session" }
                 session.close()
             }
         }
@@ -147,6 +172,18 @@ object WsClientAsyncExtension {
 
         fun interface WsHandler {
             fun handle(session: WsAsyncSession): CompletableFuture<Unit>
+        }
+
+        private fun notifyListeners(block: suspend WsMessageListener.() -> Unit): List<Job> {
+            return listeners.map { l ->
+                scope.launch {
+                    try {
+                        l.block()
+                    } catch (e: Exception) {
+                        Log.w { "Listener error: ${e.message}" }
+                    }
+                }
+            }
         }
 
         interface WsMessageListener {

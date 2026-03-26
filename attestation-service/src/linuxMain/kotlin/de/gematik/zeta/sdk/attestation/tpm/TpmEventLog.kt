@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.attestation.tpm
 
+import de.gematik.zeta.logging.Log
 import okio.FileSystem
 import okio.Path.Companion.toPath
 
@@ -33,7 +34,7 @@ internal fun readTpmEventLog(): ByteArray {
     val tpmDevices = findTpmDevices()
 
     if (tpmDevices.isEmpty()) {
-        println("Using Software TPM. Logs not available")
+        Log.i { "Using Software TPM. Logs not available" }
         return ByteArray(0)
     }
 
@@ -50,12 +51,12 @@ internal fun readTpmEventLog(): ByteArray {
                 }
             }
         } catch (e: Exception) {
-            println("Error while getting TPM system logs: ${e.message}")
+            Log.e { "Error while getting TPM system logs: ${e.message}" }
             continue
         }
     }
 
-    println("No TPM logs found")
+    Log.e { "No TPM logs found" }
     return ByteArray(0)
 }
 
@@ -73,7 +74,7 @@ private fun findTpmDevices(): List<String> {
             emptyList()
         }
     } catch (e: Exception) {
-        println("Error while getting list of TPMs: ${e.message}")
+        Log.e { "Error while getting list of TPMs: ${e.message}" }
         emptyList()
     }
 }

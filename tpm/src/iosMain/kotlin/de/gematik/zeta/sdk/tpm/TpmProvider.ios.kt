@@ -24,6 +24,6 @@
 
 package de.gematik.zeta.sdk.tpm
 
-internal actual fun platformDefaultProvider(storage: TpmStorage): TpmProvider {
+public actual fun platformDefaultProvider(storage: TpmStorage): TpmProvider {
     TODO("hardware backed provider")
 }

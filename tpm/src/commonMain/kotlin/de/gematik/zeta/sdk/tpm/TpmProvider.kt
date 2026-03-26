@@ -47,11 +47,16 @@ interface TpmProvider {
     /** Sign a hashed digest using the client key of DPoP behind. */
     suspend fun signWithDpopKey(input: ByteArray): ByteArray
 
-    /** Get SM-B x509 certificate */
+    /** Get SM-B x509  */
     suspend fun readSmbCertificate(p12File: String, alias: String, password: String): ByteArray
+
+    /** Get SM-B x509 certificate */
+    suspend fun readSmbCertificateFromBytes(data: ByteArray, alias: String, password: String): ByteArray
 
     /** Sign a hashed digest using the SM-B key private behind. */
     suspend fun signWithSmbKey(input: ByteArray, p12File: String, alias: String, password: String): ByteArray
+
+    suspend fun signWithSmbKeyFromBytes(input: ByteArray, keystoreBytes: ByteArray, alias: String, password: String): ByteArray
 
     /** Generate random UUID */
     suspend fun randomUuid(): Uuid
@@ -64,7 +69,7 @@ interface TpmProvider {
 }
 
 /** Platform chooses the best default provider (HW if available, otherwise software). */
-internal expect fun platformDefaultProvider(storage: TpmStorage): TpmProvider
+public expect fun platformDefaultProvider(storage: TpmStorage): TpmProvider
 
 /** Singleton facade */
 object Tpm {

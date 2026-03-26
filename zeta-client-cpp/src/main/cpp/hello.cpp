@@ -27,9 +27,11 @@
 #include <cstring>
 #include <iostream>
 
-#include "hello_api.h"
-#include "ws_client_api.h"
-
+#ifdef _WIN32
+    #include "zeta_sdk_api.h"
+#else
+    #include "libzeta_sdk_api.h"
+#endif
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 #define BUFFER_SIZE 1024
 
@@ -99,7 +101,7 @@ void connectAndSubscribe(ZetaSdk_WSSession* wsSession, char* host, char* wsConte
     ZetaSdk_WSSession_sendBinary(wsSession, connectFrame, connectFrameSize);
     free(connectFrame);
 
-    ZetaSdk_WSMessage* message = ZetaSdk_WSSession_receiveNext(wsSession);
+    ZetaSdk_WSMessage* message = (ZetaSdk_WSMessage*)ZetaSdk_WSSession_receiveNext(wsSession);
     if (message->type == WS_TEXT) {
         std::cout << "CONNECTED frame: \"" << message->data.text.text << "\"\n";
         std::cout.flush();
@@ -118,7 +120,7 @@ void connectAndSubscribe(ZetaSdk_WSSession* wsSession, char* host, char* wsConte
 
 void receiveMessages(ZetaSdk_WSSession* wsSession) {
     for (int i = 0; i < 2; i++) {
-        ZetaSdk_WSMessage* incoming = ZetaSdk_WSSession_receiveNext(wsSession);
+        ZetaSdk_WSMessage* incoming = (ZetaSdk_WSMessage*)ZetaSdk_WSSession_receiveNext(wsSession);
 
         if (incoming->type == WS_CLOSE) {
             std::cout << "WebSocket closed.\n";
@@ -175,7 +177,9 @@ void runWSSessionSample(ZetaSdk_Client* zetaSdkClient, char* wsBaseUrl, char* ws
             {"PoPP", poppToken },
     };
 
-    ZetaSdk_Client_ws(zetaSdkClient, wsBaseUrl, wsHandler, httpHeaders, ARRAY_SIZE(httpHeaders));
+
+    int wsBaseUrlLen = strlen(wsBaseUrl);
+    ZetaSdk_Client_ws(zetaSdkClient, wsBaseUrl, wsBaseUrlLen, (void*)wsHandler, httpHeaders, ARRAY_SIZE(httpHeaders));
 
     std::cout << "WSSession Sample: end\n";
     std::cout.flush();
@@ -192,7 +196,7 @@ void runReceiptPost(ZetaSdk_HttpClient* zetaHttpClient, char* poppToken) {
             ARRAY_SIZE(httpHeaders)
     };
 
-    ZetaSdk_HttpResponse* httpPostResponse = ZetaHttpClient_httpPost(zetaHttpClient, &httpPostRequest);
+    ZetaSdk_HttpResponse* httpPostResponse = (ZetaSdk_HttpResponse*)ZetaHttpClient_post(zetaHttpClient, &httpPostRequest);
 
     if (httpPostResponse->error == NULL) {
         std::cout << "Response status: " << httpPostResponse->status << "\n";
@@ -217,7 +221,7 @@ void runHttpClientSample(ZetaSdk_HttpClient* zetaHttpClient, char* poppToken) {
         httpHeaders,
         ARRAY_SIZE(httpHeaders)
     };
-    ZetaSdk_HttpResponse* httpGetResponse = ZetaHttpClient_httpGet(zetaHttpClient, &httpGetRequest);
+    ZetaSdk_HttpResponse* httpGetResponse = (ZetaSdk_HttpResponse*)ZetaHttpClient_get(zetaHttpClient, &httpGetRequest);
     if (httpGetResponse->error == NULL) {
         std::cout << "Response status: " << httpGetResponse->status << "\n";
         std::cout << "Response body: " << httpGetResponse->body << "\n";
@@ -237,7 +241,7 @@ int main() {
     std::cout << "Hello from C++!\n";
     std::cout.flush();
 
-    char* resource = std::getenv("RESOURCE_URL");
+    char* resource = std::getenv("FACHDIENST_URL");
     char* keystoreFile = std::getenv("SMB_KEYSTORE_FILE");
     char* alias = std::getenv("SMB_KEYSTORE_ALIAS");
     char* password = std::getenv("SMB_KEYSTORE_PASSWORD");
@@ -253,6 +257,14 @@ int main() {
     char* wsContextPath = std::getenv("WS_SERVER_CONTEXT_PATH");
     char* poppToken = std::getenv("POPP_TOKEN");
 
+    char* disableTlsValue = std::getenv("DISABLE_SERVER_VALIDATION");
+    bool disableTlsValidation = false;
+    if (disableTlsValue == nullptr) {
+      disableTlsValidation = false;
+    } else {
+      disableTlsValidation = strcmp(disableTlsValue, "true") == 0;
+    }
+
     const char* envValue = std::getenv("ASL_PROD");
     bool aslProdEnv = false;
     if (envValue == nullptr) {
@@ -262,7 +274,7 @@ int main() {
     }
 
     char* productId = "demo-client";
-    char* productVersion = "0.2.0";
+    char* productVersion = "0.4.0";
     char* clientName = "sdk-client";
     char* scopes[] = {"zero:audience"};
 
@@ -299,8 +311,8 @@ int main() {
             &authConfig
     };
 
-    ZetaSdk_Client* zetaSdkClient = ZetaSdk_buildZetaClient(&buildConfig);
-    ZetaSdk_HttpClient* zetaHttpClient = ZetaSdk_buildHttpClient(zetaSdkClient);
+    ZetaSdk_Client* zetaSdkClient = (ZetaSdk_Client*)ZetaSdk_buildZetaClient(&buildConfig, disableTlsValidation);
+    ZetaSdk_HttpClient* zetaHttpClient = (ZetaSdk_HttpClient*)ZetaSdk_buildHttpClient(zetaSdkClient);
 
     runHttpClientSample(zetaHttpClient, poppToken);
     runWSSessionSample(zetaSdkClient, wsBaseUrl, wsContextPath, poppToken);

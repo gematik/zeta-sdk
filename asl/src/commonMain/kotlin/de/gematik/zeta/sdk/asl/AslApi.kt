@@ -51,6 +51,7 @@ public class AslApiImpl(
     private val aslStorage: AslStorage,
     private val zetaHttpClient: ZetaHttpClient,
     private val accessTokenProvider: AccessTokenProvider,
+    private val tlsValidationEnabled: Boolean = true,
 ) : AslApi {
     @OptIn(ExperimentalSerializationApi::class)
     override suspend fun encrypt(request: HttpRequestBuilder): HttpRequestBuilder {
@@ -98,10 +99,10 @@ public class AslApiImpl(
     private suspend fun ensureHandshake(request: HttpRequestBuilder): EstablishedSession {
         aslStorage.getCurrentSession(resource)?.let { return it }
 
-        var state = AslHandshakeState.create(zetaHttpClient, request, accessTokenProvider)
+        var state = AslHandshakeState.create(zetaHttpClient, request, accessTokenProvider, tlsValidationEnabled)
         state = state
             .performMessage1AndReceiveMessage2()
-            .processMessage2AndBuildMessage3()
+            .processMessage2AndBuildMessage3(aslProdEnvironment)
             .sendMessage3AndReceiveMessage4()
 
         return state.validateMessage4AndEstablishSession(aslProdEnvironment)

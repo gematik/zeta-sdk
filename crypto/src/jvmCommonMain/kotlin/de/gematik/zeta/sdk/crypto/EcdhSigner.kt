@@ -24,7 +24,10 @@
 
 package de.gematik.zeta.sdk.crypto
 
+import org.bouncycastle.asn1.ASN1Integer
+import org.bouncycastle.asn1.DERSequence
 import org.bouncycastle.jce.provider.BouncyCastleProvider
+import java.math.BigInteger
 import java.security.KeyFactory
 import java.security.Security
 import java.security.Signature
@@ -52,12 +55,17 @@ actual class EcdhSigner actual constructor() {
     actual fun verify(publicKey: ByteArray, data: ByteArray, signature: ByteArray): Boolean {
         val kf = KeyFactory.getInstance("EC", "BC")
         val pub = kf.generatePublic(X509EncodedKeySpec(publicKey)) as ECPublicKey
-
         val verifier = Signature.getInstance("SHA256withECDSA", "BC").apply {
             initVerify(pub)
             update(data)
         }
+        val derSignature = if (signature.size == 64) rawToDer(signature) else signature
+        return verifier.verify(derSignature)
+    }
 
-        return verifier.verify(signature)
+    private fun rawToDer(raw: ByteArray): ByteArray {
+        val r = BigInteger(1, raw.copyOfRange(0, 32))
+        val s = BigInteger(1, raw.copyOfRange(32, 64))
+        return DERSequence(arrayOf(ASN1Integer(r), ASN1Integer(s))).encoded
     }
 }

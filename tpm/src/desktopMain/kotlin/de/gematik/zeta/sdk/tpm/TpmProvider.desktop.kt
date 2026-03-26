@@ -38,7 +38,6 @@ import dev.whyoleg.cryptography.algorithms.EC.PrivateKey
 import dev.whyoleg.cryptography.algorithms.EC.PublicKey
 import dev.whyoleg.cryptography.algorithms.ECDSA
 import dev.whyoleg.cryptography.algorithms.SHA256
-import io.ktor.util.encodeBase64
 import kotlin.io.encoding.Base64
 import kotlin.uuid.Uuid
 
@@ -121,12 +120,22 @@ private class SoftwareCryptoProvider(
         return x509PemReader.loadCertificate(p12File, alias, password)
     }
 
+    override suspend fun readSmbCertificateFromBytes(data: ByteArray, alias: String, password: String): ByteArray {
+        check(data.isNotEmpty()) { "SM-B certificate bytes are empty " }
+        return x509PemReader.loadCertificateFromBytes(data, alias, password)
+    }
+
     override suspend fun getRegistrationNumber(certificate: ByteArray): String {
         return x509PemReader.getRegistrationNumber(certificate).orEmpty()
     }
 
     override suspend fun signWithSmbKey(input: ByteArray, p12File: String, alias: String, password: String): ByteArray {
         val smbKey = x509PemReader.loadPrivateKey(p12File, alias, password)
+        return signForJwsBp(smbKey, input)
+    }
+
+    override suspend fun signWithSmbKeyFromBytes(input: ByteArray, keystoreBytes: ByteArray, alias: String, password: String): ByteArray {
+        val smbKey = x509PemReader.loadPrivateKeyFromBytes(input, alias, password)
         return signForJwsBp(smbKey, input)
     }
 
@@ -218,7 +227,11 @@ private class SoftwareCryptoProvider(
 
         // Compute the JWK kid from SHA-256 hash of {"crv":"P-256","kty":"EC","x":"xB","y":"yB"}
         val jwkJson = """{"crv":"P-256","kty":"EC","x":"$xB","y":"$yB"}"""
-        val kid = hashWithSha256(jwkJson.encodeToByteArray()).encodeBase64() // urlSafe = true
+
+        val kid = Base64
+            .UrlSafe
+            .withPadding(Base64.PaddingOption.ABSENT)
+            .encode(hashWithSha256(jwkJson.encodeToByteArray()))
 
         return Jwk(
             kid = kid,
@@ -232,4 +245,4 @@ private class SoftwareCryptoProvider(
     }
 }
 
-internal actual fun platformDefaultProvider(storage: TpmStorage): TpmProvider = SoftwareCryptoProvider(storage, X509PemReader())
+public actual fun platformDefaultProvider(storage: TpmStorage): TpmProvider = SoftwareCryptoProvider(storage, X509PemReader())

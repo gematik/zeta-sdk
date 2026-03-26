@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.attestation.interfaces
 
+import de.gematik.zeta.logging.Log
 import io.ktor.http.RequestConnectionPoint
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.convert
@@ -142,7 +143,7 @@ actual class ProcessMonitor actual constructor(private val allowedExecutables: L
             fclose(file)
         }
 
-        println("entries: $entries")
+        Log.d { "entries: $entries" }
 
         return entries
     }

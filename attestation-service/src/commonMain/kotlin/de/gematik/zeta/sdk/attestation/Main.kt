@@ -26,16 +26,22 @@ package de.gematik.zeta.sdk.attestation
 
 import AttestationService
 import ServiceConfig
+import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.attestation.config.CliArgs
 import de.gematik.zeta.sdk.attestation.config.Config
 import de.gematik.zeta.sdk.attestation.config.Config.getConfig
 import de.gematik.zeta.sdk.attestation.interfaces.FileHashCalculator
+import de.gematik.zeta.sdk.attestation.interfaces.FileHashCalculatorOperations
 import de.gematik.zeta.sdk.attestation.interfaces.FileIntegrity
 import de.gematik.zeta.sdk.attestation.interfaces.FileIntegrity.Companion.PCR_ID
 import de.gematik.zeta.sdk.attestation.interfaces.FileScanner
+import de.gematik.zeta.sdk.attestation.interfaces.FileScannerOperations
 import de.gematik.zeta.sdk.attestation.interfaces.ProcessMonitor
+import de.gematik.zeta.sdk.attestation.interfaces.ProcessMonitorOperations
 import de.gematik.zeta.sdk.attestation.server.AttestationServer
 import de.gematik.zeta.sdk.attestation.tpm.TpmAccess
+import de.gematik.zeta.sdk.attestation.tpm.TpmAccessOperations
+import io.ktor.http.RequestConnectionPoint
 
 fun main(args: Array<String>) {
     CliArgs.init(args)
@@ -47,6 +53,11 @@ fun main(args: Array<String>) {
     val serverPort = getConfig("SERVER_PORT")?.toInt() ?: 8081
     val pcrId = getConfig("PCR_ID")?.toInt() ?: PCR_ID
     val allowedExecutables = getConfig("ALLOWED_EXECUTABLES")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+    val enableFileIntegrity = getConfig("ENABLE_FILE_INTEGRITY")?.toBooleanStrict() ?: true
+    val enableQuote = getConfig("ENABLE_QUOTE")?.toBooleanStrict() ?: true
+    val enablePcrLog = getConfig("ENABLE_PCR_LOG")?.toBooleanStrict() ?: true
+    val enableEKCertificate = getConfig("ENABLE_EK_CERTIFICATE")?.toBooleanStrict() ?: true
+    val enableProcessOrigin = getConfig("ENABLE_PROCESS_ORIGIN")?.toBooleanStrict() ?: true
     checkNotNull(files) { "Config property 'FILES' is missing" }
 
     val config = ServiceConfig(
@@ -54,38 +65,42 @@ fun main(args: Array<String>) {
         port = serverPort,
         pcrId = pcrId,
         resetFileIntegrity = CliArgs.contains("reset-file-integrity"),
+        enableFileIntegrity = enableFileIntegrity,
+        enableQuote = enableQuote,
+        enablePcrLog = enablePcrLog,
+        enableEKCertificate = enableEKCertificate,
+        enableProcessOrigin = enableProcessOrigin,
         allowedExecutables = allowedExecutables,
     )
 
     // Prepare components
     val tpm = TpmAccess()
     if (!tpm.isAvailable()) {
-        println("TMP not available")
+        Log.i { "TMP not available" }
     } else {
-        println("TMP available")
+        Log.i { "TMP available" }
     }
     // testPCR(tpm)
     // testGetQuote(tpm)
     // testTPMKeyStorage(tpm)
 
-    val processMonitor = ProcessMonitor(config.allowedExecutables)
-
-    val hashCalculator = FileHashCalculator
-
-    val fileScanner = FileScanner()
+    val tpmOps = TpmAccessAdapter(tpm)
+    val processMonitorOps = ProcessMonitorAdapter(ProcessMonitor(config.allowedExecutables))
+    val hashCalculatorOps = FileHashCalculatorAdapter(FileHashCalculator)
+    val fileScannerOps = FileScannerAdapter(FileScanner())
 
     val fileIntegrity = FileIntegrity(
-        tpm = tpm,
-        fileScanner = fileScanner,
-        hashCalculator = hashCalculator,
+        tpm = tpmOps,
+        fileScanner = fileScannerOps,
+        hashCalculator = hashCalculatorOps,
         config = config,
     )
 
     // Start server
     val service = AttestationService(
-        tpm = tpm,
-        monitor = processMonitor,
-        fileScanner = fileScanner,
+        tpm = tpmOps,
+        monitor = processMonitorOps,
+        fileScanner = fileScannerOps,
         fileIntegrity = fileIntegrity,
         config = config,
     )
@@ -97,7 +112,7 @@ fun main(args: Array<String>) {
 
 fun testPCR(tpm: TpmAccess) {
     val initial = tpm.readPCRs(listOf(10))
-    println("Initial: ${initial[23]?.toHexString()}")
+    Log.d { "Initial: ${initial[23]?.toHexString()}" }
 
     val hash = byteArrayOf(
         0x6c.toByte(), 0xa1.toByte(), 0x3d.toByte(), 0x52.toByte(),
@@ -113,32 +128,32 @@ fun testPCR(tpm: TpmAccess) {
     tpm.extendPCR(23, hash)
 
     val updated = tpm.readPCRs(listOf(23))
-    println("After extend:  ${updated[23]?.toHexString()}")
+    Log.d { "After extend:  ${updated[23]?.toHexString()}" }
 
     tpm.resetPCR(23)
     val reset = tpm.readPCRs(listOf(23))
 
-    println("After reset:  ${reset[23]?.toHexString()}")
+    Log.d { "After reset:  ${reset[23]?.toHexString()}" }
 }
 
 fun testGetQuote(tpm: TpmAccess) {
-    println("TEST GENERATE QUOTE")
+    Log.i { "TEST GENERATE QUOTE" }
 
     try {
         if (!tpm.isAvailable()) {
-            println("TPM not available")
+            Log.d { "TPM not available" }
             return
         }
-        println("TPM is available")
+        Log.i { "TPM is available" }
 
         val nonce = generateRandomNonce(32)
 
         val result = tpm.generateQuote(nonce, listOf(23))
-        println("QUOTE:" + result.quote)
-        println("SIGNATURE:" + result.signature)
-        println("ATTESTATION KEY:" + result.attestationKey)
+        Log.d { "QUOTE:" + result.quote }
+        Log.d { "SIGNATURE:" + result.signature }
+        Log.d { "ATTESTATION KEY:" + result.attestationKey }
     } catch (e: Exception) {
-        println(e.message)
+        Log.d { e.message.toString() }
     }
 }
 
@@ -146,4 +161,36 @@ fun generateRandomNonce(size: Int): ByteArray {
     return ByteArray(size) {
         (kotlin.random.Random.nextInt(256)).toByte()
     }
+}
+
+private class TpmAccessAdapter(private val delegate: TpmAccess) : TpmAccessOperations {
+    override fun isAvailable() = delegate.isAvailable()
+    override fun readPCRs(pcrSelection: List<Int>) = delegate.readPCRs(pcrSelection)
+    override fun extendPCR(pcrIndex: Int, data: ByteArray) = delegate.extendPCR(pcrIndex, data)
+    override fun resetPCR(pcrIndex: Int) = delegate.resetPCR(pcrIndex)
+    override fun getEventLog() = delegate.getEventLog()
+    override fun getEKCertificateChain() = delegate.getEKCertificateChain()
+    override fun provisionAttestationKey() = delegate.provisionAttestationKey()
+    override fun removeAttestationKey() = delegate.removeAttestationKey()
+    override fun generateQuote(attChallengeBytes: ByteArray, pcrSelection: List<Int>) = delegate.generateQuote(attChallengeBytes, pcrSelection)
+}
+
+private class FileScannerAdapter(private val delegate: FileScanner) : FileScannerOperations {
+    override fun scanFiles(files: List<String>) = delegate.scanFiles(files)
+    override fun startMonitoring(files: List<String>, onModified: (String, String) -> Unit) = delegate.startMonitoring(files, onModified)
+    override fun stopMonitoring() = delegate.stopMonitoring()
+}
+
+private class FileHashCalculatorAdapter(private val delegate: FileHashCalculator) : FileHashCalculatorOperations {
+    override fun calculateSHA256(filePath: String) = delegate.calculateSHA256(filePath)
+    override fun computeExpectedPcr(hash: ByteArray) = delegate.computeExpectedPcr(hash)
+    override fun computeMasterHash(fileHashes: Map<String, String?>) = delegate.computeMasterHash(fileHashes)
+}
+
+private class ProcessMonitorAdapter(private val delegate: ProcessMonitor) : ProcessMonitorOperations {
+    override fun isRunning(processName: String) = delegate.isRunning(processName)
+    override fun findSocketAndPid(origin: RequestConnectionPoint) = delegate.findSocketAndPid(origin)
+    override fun getProcessName(pid: Int?) = delegate.getProcessName(pid)
+    override fun getProcessExecutablePath(pid: Int?) = delegate.getProcessExecutablePath(pid)
+    override fun isProcessAllowed(origin: RequestConnectionPoint) = delegate.isProcessAllowed(origin)
 }

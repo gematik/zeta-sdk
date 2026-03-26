@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk
 
+import de.gematik.zeta.sdk.ZetaSdk.forget
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
@@ -99,10 +100,10 @@ class ZetaSdkTest {
     fun forget_returnsSuccess_whenNoErrors() = runTest {
         // Arrange
         val config = createTestBuildConfig()
-        ZetaSdk.build("https://api.example.com", config)
+        val client = ZetaSdk.build("https://api.example.com", config)
 
         // Act
-        val result = ZetaSdk.forget()
+        val result = client.forget()
 
         // Assert
         assertTrue(result.isSuccess)
@@ -298,12 +299,12 @@ class ZetaSdkTest {
     fun forget_canBeCalledMultipleTimes_doesNotFail() = runTest {
         // Arrange
         val config = createMinimalConfig()
-        ZetaSdk.build("https://api.example.com", config)
+        val client = ZetaSdk.build("https://api.example.com", config)
 
         // Act
-        val result1 = ZetaSdk.forget()
-        val result2 = ZetaSdk.forget()
-        val result3 = ZetaSdk.forget()
+        val result1 = client.forget()
+        val result2 = client.forget()
+        val result3 = client.forget()
 
         // Assert
         assertTrue(result1.isSuccess)

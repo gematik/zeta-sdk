@@ -315,6 +315,9 @@ publish_artifacts:
     - find . -path ./reporting -prune -o -name 'bom.xml' -exec cp --parents '{}' ./reporting/zeta-sdk/ \;
     # Container scan
     - find . -path ./reporting -prune -o -name 'gl-container-scanning-report.json' -exec cp --parents '{}' ./reporting/zeta-sdk/ \;
+    # Dependency Check Report
+    - find . -path ./reporting -prune -o -name 'dependency-check-report.*' -exec cp --parents '{}' ./reporting/zeta-sdk/ \;
+    - find . -path ./reporting -prune -o -name 'problems-report.*' -exec cp --parents '{}' ./reporting/zeta-sdk/ \;
     - cd reporting
     - git config user.email "ci@${CI_SERVER_FQDN}"
     - git config  user.name "ci"
@@ -387,6 +390,10 @@ trigger_helm:
     - if: '$CI_COMMIT_BRANCH == "develop"'
       variables:
         TESTDRIVER_IMAGE_TAG: "develop"
+    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "develop" && $RELEASE_VERSION_WEB == "latest"
+      when: on_success
+      variables:
+        TESTDRIVER_IMAGE_TAG: "develop-mr-$CI_COMMIT_SHORT_SHA"
     - when: never
   trigger:
     project: zeta/devops/zeta-guard-helm
@@ -414,7 +421,7 @@ container_scan:
     - job: build-image
     - job: build-image-testdriver
   image:
-    name: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/aquasec/trivy:latest
+    name: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/aquasec/trivy:0.69.3@sha256:7228e304ae0f610a1fad937baa463598cadac0c2ac4027cc68f3a8b997115689
     entrypoint: [ "" ]
   script:
     - trivy --version

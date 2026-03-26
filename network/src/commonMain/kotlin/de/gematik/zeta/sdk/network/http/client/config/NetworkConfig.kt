@@ -36,10 +36,28 @@ import io.ktor.http.HttpStatusCode
  * @property maxRetries              Max number of retries (0 disables all retry logic).
  * @property retryOnlyIdempotent     If true, only retry idempotent methods (GET/HEAD/PUT/DELETE).
  */
-internal data class NetworkConfig(
+public data class NetworkConfig(
     val connectionTimeoutMillis: Long = 15_000,
     val requestTimeoutMillis: Long = 30_000,
+    val socketTimeoutMillis: Long = 60_000,
+    val maxRequest: Int = 30,
+    val maxRequestPerHost: Int = 30,
     val retryStatusCodes: Set<HttpStatusCode> = emptySet(),
     val maxRetries: Int = 0,
     val retryOnlyIdempotent: Boolean = true,
+    val proxyConfig: ProxyConfig? = null,
+
 )
+
+public class ProxyConfig(
+    public val type: ProxyType = ProxyType.HTTP,
+    public val host: String,
+    public val port: Int,
+    public val username: String? = null,
+    public val password: CharArray? = null,
+)
+
+public enum class ProxyType {
+    HTTP,
+    SOCKS,
+}

@@ -26,6 +26,7 @@ package de.gematik.zeta.sdk.network.http.client
 
 import de.gematik.zeta.sdk.network.http.client.config.MonitoringConfig
 import de.gematik.zeta.sdk.network.http.client.config.NetworkConfig
+import de.gematik.zeta.sdk.network.http.client.config.ProxyConfig
 import de.gematik.zeta.sdk.network.http.client.config.SecurityConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
@@ -84,6 +85,13 @@ public class ZetaHttpClientBuilder(private val baseUrl: String = "") {
         )
     }
 
+    public fun dispatcher(maxRequest: Int? = null, maxRequestPerHost: Int? = null): ZetaHttpClientBuilder = apply {
+        network = network.copy(
+            maxRequest = maxRequest ?: network.maxRequest,
+            maxRequestPerHost = maxRequestPerHost ?: network.maxRequestPerHost,
+        )
+    }
+
     /**
      * Configure automatic retry behavior for responses with specific HTTP status codes.
      *
@@ -132,6 +140,10 @@ public class ZetaHttpClientBuilder(private val baseUrl: String = "") {
         security = security.copy(additionalCaPem = security.additionalCaPem + pem)
     }
 
+    public fun addCaPemFile(pemPath: String): ZetaHttpClientBuilder = apply {
+        security = security.copy(additionalCaFile = pemPath)
+    }
+
     /**
      * Replace the entire list of additional trusted CAs.
      *
@@ -151,6 +163,16 @@ public class ZetaHttpClientBuilder(private val baseUrl: String = "") {
      */
     public fun logging(level: LogLevel, logProvider: Logger = Logger.DEFAULT): ZetaHttpClientBuilder = apply {
         monitoring = monitoring.copy(logLevel = level, logProvider = logProvider)
+    }
+
+    /**
+     * Set client proxy.
+     *
+     * @param proxyConfig Desired [ProxyConfig].
+     * @return This builder for chaining.
+     */
+    public fun proxy(proxyConfig: ProxyConfig): ZetaHttpClientBuilder = apply {
+        network = network.copy(proxyConfig = proxyConfig)
     }
 
     /**
@@ -227,4 +249,7 @@ public class ZetaHttpClientBuilder(private val baseUrl: String = "") {
             },
         )
     }
+
+    public val isServerValidationDisabled: Boolean
+        get() = security.disableServerValidation
 }

@@ -27,7 +27,7 @@ package de.gematik.zeta.sdk.asl.vau
 import de.gematik.zeta.sdk.asl.EncapsulationResult
 import de.gematik.zeta.sdk.asl.Message2
 import de.gematik.zeta.sdk.asl.cbor
-import de.gematik.zeta.sdk.crypto.AesGcmCipher
+import de.gematik.zeta.sdk.crypto.AesGcmCipherImpl
 import de.gematik.zeta.sdk.crypto.EcPointP256
 import de.gematik.zeta.sdk.crypto.hashWithSha256
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -337,7 +337,7 @@ class Message2And3Test {
 
         // Act
         val encrypted = encryptKeyConfirmation(key, hash)
-        val decrypted = AesGcmCipher().decrypt(key, encrypted)
+        val decrypted = AesGcmCipherImpl().decrypt(key, encrypted)
 
         // Assert
         assertContentEquals(hash, decrypted)

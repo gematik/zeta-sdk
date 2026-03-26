@@ -33,7 +33,8 @@ package de.gematik.zeta.sdk.network.http.client.config
  * @property disableServerValidation when set to true, disable server certificate and hostname checks
  *                           Defaults to false as secure default.
  */
-internal data class SecurityConfig(
+public data class SecurityConfig(
     val additionalCaPem: List<String> = emptyList(),
+    val additionalCaFile: String? = null,
     val disableServerValidation: Boolean = false,
 )

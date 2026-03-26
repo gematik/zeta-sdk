@@ -41,23 +41,26 @@ clients.
 
 Folders for core SDK functionality and clients.
 
-| Verzeichnis         | Beschreibung                                           |
-|---------------------|--------------------------------------------------------|
-| zeta-sdk            | Core SDK Modul                                         |
-| zeta-client         | Code for the demo client                               |
-| zeta-client-java    | Code for the Java client                               |
-| zeta-client-cpp     | Code for the C++ client                                |
-| zeta-client         | Code for the demo client                               |
-| zeta-testdriver     | Code for the test proxy client                         |
-| attestation-service | Code for the attestation service for Windows and Linux |
-| docs                | Further code-related documentation                     |
+| Verzeichnis           | Beschreibung                                                                                                                |
+|-----------------------|-----------------------------------------------------------------------------------------------------------------------------|
+| zeta-sdk              | Core SDK Module                                                                                                             |
+| zeta-client           | Code for the demo client                                                                                                    |
+| zeta-client-java      | Code for the Java client                                                                                                    |
+| zeta-client-cpp       | Code for the C++ client (HTTP CRUD and WebSocket demo)                                                                      |
+| zeta-nativeclient-cpp | Standalone C++ client using the SDK shared library directly. Samples can be run using a Makefile for (macOS, Linux, Windows) |
+| zeta-client           | Code for the demo client                                                                                                    |
+| zeta-testdriver       | Code for the test proxy client and load test driver                                                                         |
+| attestation-service   | Code for the attestation service for Windows and Linux                                                                      |
+| docs                  | Further code-related documentation                                                                                          |
 
 The different clients serve different purposes:
 
 - The demo client is a pure kotlin client and running in a JVM, and features all the functions to access the test Fachdienst
 - The proxy client is running in a container and works as an HTTP proxy, to be used in testing.
 - The Java client is a Proof-of-concept and shows how to configure and use the client from a Java application, but only implements the hellozeta call of the test Fachdienst.
-- The C++ client is a Proof-of-concept and shows how to configure and use the client from a C++ application, but also only implements the hellozeta call
+- The C++ client demonstrates how to integrate the SDK from a C++ application.
+  It implements HTTP CRUD (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS)
+  and WebSocket STOMP communication with a resource server.
 
 The clients, how to build and how to use them are described in more detail below.
 
@@ -107,6 +110,24 @@ or the platform specific implementations
 
 ## Integrating into your own code
 
+### kotlin
+
+If you want to include the SDK into your own kotlin projects, you can get it from
+a maven repository already.
+
+To do this, add this dependency to your maven pom file:
+````
+<!-- https://mvnrepository.com/artifact/de.gematik.zeta/zeta-sdk-jvm -->
+<dependency>
+  <groupId>de.gematik.zeta</groupId>
+  <artifactId>zeta-sdk</artifactId>
+  <version>x.y.z</version>
+</dependency>
+````
+Here is [The Maven repository homepage](https://mvnrepository.com/artifact/de.gematik.zeta/zeta-sdk-jvm).
+
+### Java
+
 If you want to include the SDK into your own Java projects, you can get it from
 a maven repository already.
 
@@ -119,15 +140,31 @@ To do this, add this dependency to your maven pom file:
   <version>x.y.z</version>
 </dependency>
 ````
+
+Note that the artifactId has an additional `-jvm` compared to the kotlin version.
+
 Here is [The Maven repository homepage](https://mvnrepository.com/artifact/de.gematik.zeta/zeta-sdk-jvm).
+
+### C++
+
+The build process for the C++ SDK creates a number of DLL files, that need to be linked
+to your C++ application. This highly depends on your own build process.
+
+The C++ API is defined in a single generated header file:
+- `libzeta_sdk_api.h` (Linux / macOS)
+- `zeta_sdk_api.h` (Windows)
+
+This header is automatically generated and enriched with the SDK type definitions
+during the SDK build process.
 
 ## The clients
 
 The next sections contain information about the clients.
 
 All clients implement at least the "hellozeta" call to show how the integration of the
-kotlin code/library is done. The Java and C++ base clients also show how to use
-the websockets interface.
+kotlin code/library is done. The Java client is a proof-of-technology client that implements the hellozeta call and
+WebSocket STOMP communication. The C++ native client additionally implements full HTTP
+CRUD operations (GET, POST, PUT, DELETE, HEAD, OPTIONS).
 
 The demo-client can use the functional interface of the Test Fachdienst (test resource server),
 and can thus create presciptions, show them, modify them, and delete them.
@@ -147,6 +184,13 @@ In addition, they use the websockets functionality to connect to the test resour
 
 The build process is using the gradle tool. It can be customized using some
 values in the "gradle.properties" and the "local.properties" file.
+
+#### Publishing the SDK locally
+
+Before building any client that depends on the SDK via Maven, publish it to the local Maven repository:
+```
+./gradlew publishJvmPublicationToMavenLocal
+```
 
 #### gradle.properties
 
@@ -180,23 +224,24 @@ In a real client (like a practice management system) these should be provided by
 
 Here are the items you need to adapt:
 
-| Value                     | Description                                                                                                                                            | Example                                                   |
-|---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
+| Value                     | Description                                                                                                                                            | Example                                                    |
+|---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------|
 | FACHDIENST_URL            | URL of the resource server as reachable via the PEP                                                                                                    | https://fachdienst.host.example.com/pep/fachdienst_url/api |
-| SMB_KEYSTORE_FILE         | Path to the SM-B Certificate-File (in .p12 format)                                                                                                     | /smcb-certificates.p12                                    |
-| SMB_KEYSTORE_ALIAS        | Alias of the key in the SM-B Certificate file                                                                                                          |                                                           |
-| SMB_KEYSTORE_PASSWORD     | Password for the private key                                                                                                                           |                                                           |
-| SMCB_BASE_URL             | base url of the konnektor webservice interface (needs to include the "/ws")                                                                            |                                                           |
-| SMCB_MANDANT_ID           | <mandanten-ID>  for connector calls                                                                                                                    |                                                           |
-| SMCB_CLIENT_SYSTEM_ID     | <client_system_id>  for connector calls                                                                                                                |                                                           |
-| SMCB_WORKSPACE_ID         | <workspace_id> for connector calls                                                                                                                     |                                                           |
-| SMCB_USER_ID              | <user-id> - is required for SMC-B but is being ignored                                                                                                 |                                                           |
-| SMCB_CARD_HANDLE          | <smcb-card-handle>                                                                                                                                     |                                                           |
-| POPP_TOKEN                | Value of a PoPP Tokens, which is given to the PEP (optional)                                                                                           | eyJhbGciOiJFUzI1NiI......                                 |
-| DISABLE_SERVER_VALIDATION | If set to "true", TLS server TLS certificate checks are disabled (for testing only!)                                                                   |                                                           |
-| WS_SERVER_CONTEXT_PATH    | Specifies the base context to target the resource server. It is used in the Java client to prefix STOMP Websockets destinations                        | /testfachdienst                                           |
-| WS_BASE_URL               | Defines the Websocket base URL (including protocol: ws/wss)                                                                                            | wss://host/resource/ws                                    |
-| ASL_PROD                  | Defines whether the client runs in Productive or Non Productive mode. If set to "false" exposes the ASL symmetric keys: K2_c2s_app_data and K2_s2c_app | by default is set to "true" (productive environment)      |
+| SMB_KEYSTORE_FILE         | Path to the SM-B Certificate-File (in .p12 format)                                                                                                     | /smcb-certificates.p12                                     |
+| SMB_KEYSTORE_ALIAS        | Alias of the key in the SM-B Certificate file                                                                                                          |                                                            |
+| SMB_KEYSTORE_PASSWORD     | Password for the private key                                                                                                                           |                                                            |
+| SMB_KEYSTORE_B64          | base64-encoded Keystore being used in the load driver; must be present, empty string if not used.                                                      |                                                            |
+| SMCB_BASE_URL             | base url of the konnektor webservice interface (needs to include the "/ws")                                                                            |                                                            |
+| SMCB_MANDANT_ID           | <mandanten-ID>  for connector calls                                                                                                                    |                                                            |
+| SMCB_CLIENT_SYSTEM_ID     | <client_system_id>  for connector calls                                                                                                                |                                                            |
+| SMCB_WORKSPACE_ID         | <workspace_id> for connector calls                                                                                                                     |                                                            |
+| SMCB_USER_ID              | <user-id> - is required for SMC-B but is being ignored                                                                                                 |                                                            |
+| SMCB_CARD_HANDLE          | <smcb-card-handle>                                                                                                                                     |                                                            |
+| POPP_TOKEN                | Value of a PoPP Tokens, which is given to the PEP (optional)                                                                                           | eyJhbGciOiJFUzI1NiI......                                  |
+| DISABLE_SERVER_VALIDATION | If set to "true", TLS server TLS certificate checks are disabled (for testing only!)                                                                   |                                                            |
+| WS_SERVER_CONTEXT_PATH    | Specifies the base context to target the resource server. It is used in the Java client to prefix STOMP Websockets destinations                        | /testfachdienst                                            |
+| WS_BASE_URL               | Defines the Websocket base URL (including protocol: ws/wss)                                                                                            | wss://host/resource/ws                                     |
+| ASL_PROD                  | Defines whether the client runs in Productive or Non Productive mode. If set to "false" exposes the ASL symmetric keys: K2_c2s_app_data and K2_s2c_app | by default is set to "true" (productive environment)       |
 
 
 Note that two sets of configuration variables for the SM(C)-B client authentication are provided,
@@ -395,6 +440,105 @@ included .gitlab-ci.yml file, that you need to adapt to your development process
 .gitlab-ci.yml
 ````
 
+### The load test driver (proxy client for load testing)
+
+This load driver extends the test driver functionality to support concurrent testing scenarios with independent SDK instances.
+
+#### Key differences from the test driver:
+
+- Supports multiple SDK instances with independent state
+- Per-instance configuration via CONFIG_FILE file
+
+#### Load driver endpoints
+
+The load driver exposes endpoints:
+
+| endpoint                                     | access type      | purpose                                                                                                                                                                                |
+|----------------------------------------------|------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| /load/create_instances?count=N&autoInit=true | POST             | Create N SDK instances. With autoInit=true, instances are automatically discovered, registered, and authenticated in parallel.                                                         |
+| /load/list_instances                         | GET              | List all SDK instances with their current state (CREATED, INITIALIZING, READY, FAILED) and any error messages                                                                          |
+| /load/delete_instances                       | DELETE           | Clean up SDK instances. Optionally specify ?id=1&id=2 to delete specific instances, or omit parameters to delete all instances.                                                        |
+| /load/{instanceIndex}/*                      | all HTTP methods | HTTP methodsForward requests through a specific SDK instance. The instanceIndex identifies which instance to use (e.g., /load/1/endpoint uses instance 1). Includes WebSocket support. |
+| /loaddriver-api/{instanceIndex}/discover     | GET              | see: /testdriver-api/discover                                                                                                                                                          |
+| /loaddriver-api/{instanceIndex}/register     | GET              | see: /testdriver-api/register                                                                                                                                                          |
+| /loaddriver-api/{instanceIndex}/authenticate | GET              | see: /testdriver-api/authenticate                                                                                                                                                      |
+| /loaddriver-api/{instanceIndex}/reset        | GET              | see: /testdriver-api/reset                                                                                                                                                             |
+
+### Instance configuration
+
+#### Configuration via API
+
+Instances can be configured by passing configuration in the POST body to `/load/create_instances`
+
+```bash
+curl -X POST http://0.0.0.0:8080/load/create_instances \
+  -H "Content-Type: application/json" \
+  -d '{
+    "count": 3,
+    "autoInit": true,
+    "instances": [
+      {
+        "id": 1,
+        "fachdienstUrl": "https://example/pep/resource1/",
+        "smbKeystoreFile": "/keystores/keystore1.p12",
+        "smbKeystoreAlias": "cert1",
+        "smbKeystorePassword": "secret1"
+      },
+      {
+        "id": 2,
+        "fachdienstUrl": "https://example/pep/resource2/",
+        "smbKeystoreFile": "/keystores/keystore2.p12",
+        "smbKeystoreAlias": "cert2",
+        "smbKeystorePassword": "secret2"
+      }
+    ]
+  }'
+```
+
+**Response:**
+```json
+{
+  "created": 2,
+  "ids": [1, 2],
+  "autoInit": true
+}
+```
+
+You can then access instances using their IDs:
+- `http://0.0.0.0:8080/load/1/hellozeta` (uses instance 1)
+- `http://0.0.0.0:8080/loaddriver-api/2/reset` (resets instance 2)
+
+**NOTE**: Custom instance IDs can be specified (optional)
+
+#### Configuration file
+The location of the config file can be configured via the `CONFIG_FILE` environment variable.
+
+Instances can be configured individually via the CONFIG_FILE file with instance-specific properties:
+
+````
+# Instance 1 configuration
+FACHDIENST_URL_1=https://example/pep/resource1/
+SMB_FILE_1=/keystores/keystore1.p12
+SMB_ALIAS_1=cert1
+SMB_PASSWORD_1=secret1
+
+# Instance 2 configuration
+FACHDIENST_URL_2=https://example/pep/resource1/
+SMB_FILE_2=keystores/keystore2.p12
+SMB_ALIAS_2=cert2
+SMB_PASSWORD_2=secret2
+````
+
+**Note:** If the `CONFIG_FILE` file contains instance 1 configuration, the test driver (non-load) will use those values instead of environment variables.
+
+#### Configuration priority
+
+Configuration is resolved in this order:
+1. **API body** (instances array in POST request)
+2. **Config file** (CONFIG_FILE environment variable)
+3. **Environment variables** (fallback)
+
+
 ## The Java client
 
 The Java client shows how the ZETA SDK can be integrated into a Java-based application. It implements only the "hellozeta" call of the
@@ -432,34 +576,109 @@ the build directory, like `../config.file`
 
 ## The C++ client
 
-The C++ client shows how the ZETA SDK can be integrated into a C++-based application. It implements only the "hellozeta" call of the
-Test Fachdienst.
+The C++ client shows how the ZETA SDK can be integrated into a C++ application.
+It implements HTTP CRUD operations and WebSocket STOMP communication with a resource server.
 
-The C++ file "hello.cpp" in zeta-client-cpp/src/main/cpp shows how to integrate the SDK.
+The client is located in `zeta-nativeclient-cpp/` and consists of:
+- `hello-http.cpp` — HTTP client sample (GET, POST, PUT, DELETE, HEAD, OPTIONS)
+- `hello-ws.cpp` — WebSocket client sample (STOMP connect, subscribe, create, read)
+- `Makefile` — cross-platform build and run
 
-### Building the C++ client
+The Makefile assumes the following folder structure:
+```
+zeta-sdk/
+├── zeta-sdk/              <- SDK module
+│   └── build/bin/
+│       ├── macosArm64/debugShared/
+│       ├── linuxX64/debugShared/
+│       └── mingwX64/debugShared/
+└── zeta-nativeclient-cpp/ <- C++ client
+    ├── hello-http.cpp
+    ├── hello-ws.cpp
+    ├── Makefile
+    └── .env
+```
 
-#### Prerequisites
+The Makefile automatically detects the OS and points to the correct SDK build output:
+- **macOS (Apple Silicon)** → `macosArm64/debugShared`
+- **Linux** → `linuxX64/debugShared`
+- **Windows** → `mingwX64/debugShared`
 
-To compile the C++ client, a C++ development environment needs to be installed, like for example
+If your folder structure is different, update the `LIB_DIR` variable in the Makefile accordingly.
 
-- MinGW (Windows)
-- gcc/g++ or clang/clang++ (Linux)
+### Prerequisites
 
+- **macOS / Linux**: `clang++` or `g++`, `make`
+- **Windows**: MinGW (`g++`), `mingw32-make`
 
-#### Building and running the client
+### Configuration
 
-The C++ client can be built with
+Create a `.env` file in the `zeta-nativeclient-cpp/` folder (add to `.gitignore`):
+```
+FACHDIENST_URL=https://...
+SMB_KEYSTORE_FILE=/path/to/keystore.p12
+SMB_KEYSTORE_ALIAS=alias
+SMB_KEYSTORE_PASSWORD=password
+POPP_TOKEN=
+ASL_PROD=false
+WS_BASE_URL=wss://...
+WS_SERVER_CONTEXT_PATH=/context
+```
+
+### Building and running
+
+First build the SDK shared library:
+```
+./gradlew :zeta-sdk:linkDebugSharedMacosArm64   # macOS
+./gradlew :zeta-sdk:linkDebugSharedLinuxX64     # Linux
+./gradlew :zeta-sdk:linkDebugSharedMingwX64     # Windows
+```
+
+Then build and run the C++ client:
+```bash
+# HTTP sample
+make run-http
+
+# WebSocket sample
+make run-ws
+
+# Windows
+mingw32-make run-http
+mingw32-make run-ws
+```
+
+#### 2. Building the client within a docker container
+
+Here are the steps to build the C++ client
+
+1. building docker image (needs to be done only once)
 
 ````
-./gradlew zeta-client-cpp:build
+   docker build --platform linux/amd64 \
+       -t zeta-cpp-dev \
+       -f Dockerfile.cpp-dev .
 ````
 
-and it can be run with
+2. Container starten (vom zeta-sdk Ordner):
 
 ````
-./gradlew zeta-client-cpp:allTests
+   docker run -it \
+       --platform linux/amd64 \
+       --ulimit nofile=65536:65536 \
+       -v $(pwd):/workspace \
+       zeta-cpp-dev
 ````
+
+3. Im Container den C++ Client bauen:
+````
+   ./gradlew :zeta-client-cpp:linkDebugSharedLinuxX64  // <— compile
+   ./gradlew :zeta-client-cpp:runDebug  // <— run
+````
+
+Notes:
+- `--platform linux/amd64` is only used when using a Mac with Apple Silicon
+- `--ulimit` is required to avoid the error "Too many open files"
+- During the first start gradle downloads the Kotlin Native Toolchain (~ 300MB)
 
 ## The attestation service
 

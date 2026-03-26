@@ -14,6 +14,7 @@ plugins {
 dependencies {
     // aggregate code coverage from subprojects
     kover(project(":attestation"))
+    kover(project(":attestation-service"))
     kover(project(":authentication"))
     kover(project(":client-registration"))
     kover(project(":common"))

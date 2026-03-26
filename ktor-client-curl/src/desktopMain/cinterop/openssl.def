@@ -1,0 +1,15 @@
+package = io.ktor.client.engine.curl
+headerFilter = openssl/*
+headers = openssl/ssl.h openssl/x509.h openssl/x509v3.h openssl/safestack.h openssl/bio.h openssl/asn1.h
+
+compilerOpts = -DOPENSSL_NO_DEPRECATED
+
+---
+
+static int ktor_sk_X509_num(const STACK_OF(X509)* sk) {
+    return sk_X509_num(sk);
+}
+
+static X509* ktor_sk_X509_value(const STACK_OF(X509)* sk, int i) {
+    return sk_X509_value(sk, i);
+}

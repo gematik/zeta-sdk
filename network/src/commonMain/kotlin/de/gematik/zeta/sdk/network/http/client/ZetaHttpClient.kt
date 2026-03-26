@@ -27,12 +27,14 @@ package de.gematik.zeta.sdk.network.http.client
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.network.http.client.config.ClientConfig
 import de.gematik.zeta.sdk.network.http.client.config.IDEMPOTENT_METHODS
+import de.gematik.zeta.sdk.network.http.client.config.ProxyType
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.plugins.DefaultRequest
 import io.ktor.client.plugins.HttpRequestRetry
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
@@ -41,16 +43,21 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
+import io.ktor.client.request.head
+import io.ktor.client.request.header
+import io.ktor.client.request.options
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.request
 import io.ktor.client.request.url
 import io.ktor.client.statement.HttpResponse
+import io.ktor.http.HttpHeaders
 import io.ktor.http.Parameters
 import io.ktor.http.Url
 import io.ktor.http.takeFrom
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.util.encodeBase64
 import io.ktor.utils.io.core.Closeable
 import kotlinx.serialization.json.Json
 
@@ -68,7 +75,7 @@ import kotlinx.serialization.json.Json
  *  - JSON (kotlinx.serialization) via [ContentNegotiation].
  *
  * If an engine factory is injected in [ClientConfig.engineFactory], it is used; otherwise, a
- * platform-appropriate engine is created by [de.gematik.zeta.sdk.network.http.client.buildPlatformClient].
+ * platform-appropriate engine is created by [de.gematik.zeta.sdk.network.http.client.buildHttpClient].
  *
  * @param configure Lambda to mutate a fresh [ClientConfig].
  * @param addExtras Lambda to add extra custom configuration.
@@ -78,7 +85,7 @@ internal fun zetaHttpClient(
     configure: ClientConfig.() -> Unit,
     addExtras: (HttpClientConfig<*>.() -> Unit)? = null,
 ): ZetaHttpClient {
-    Log.d { "Configuring the HTTP client" }
+    Log.i { "Configuring the HTTP client" }
     val cfg = ClientConfig().apply(configure)
 
     Log.i { "Disable server validation = " + cfg.security.disableServerValidation }
@@ -91,13 +98,16 @@ internal fun zetaHttpClient(
         }
 
         install(HttpTimeout) {
-            Log.d { "Setting up the connection and request timeouts" }
+            Log.i { "Setting up the connection timeout: ${cfg.network.connectionTimeoutMillis}" }
             connectTimeoutMillis = cfg.network.connectionTimeoutMillis
+            Log.i { "Setting up the request timeout: ${cfg.network.requestTimeoutMillis}" }
             requestTimeoutMillis = cfg.network.requestTimeoutMillis
+            Log.i { "Setting up the sockets timeout: ${cfg.network.requestTimeoutMillis}" }
+            socketTimeoutMillis = cfg.network.socketTimeoutMillis
         }
 
         if (cfg.network.maxRetries > 0) {
-            Log.d { "Setting up the request retry plugin" }
+            Log.i { "Setting up the request retry plugin" }
             install(HttpRequestRetry) {
                 maxRetries = cfg.network.maxRetries
 
@@ -110,7 +120,7 @@ internal fun zetaHttpClient(
                     !cfg.network.retryOnlyIdempotent || request.method in IDEMPOTENT_METHODS
                 }
 
-                Log.d { "Setting up exponential backoff" }
+                Log.i { "Setting up exponential backoff" }
                 exponentialDelay()
             }
         }
@@ -123,7 +133,7 @@ internal fun zetaHttpClient(
         }
 
         install(ContentNegotiation) {
-            Log.d { "Installing ContentNegotiation JSON plugin" }
+            Log.i { "Installing ContentNegotiation JSON plugin" }
             json(Json { ignoreUnknownKeys = true; isLenient = true })
         }
 
@@ -134,7 +144,7 @@ internal fun zetaHttpClient(
     val httpClient = if (injected != null) {
         HttpClient(injected()) { commonSetup(this) }
     } else {
-        buildPlatformClient(cfg, commonSetup)
+        buildHttpClient(cfg, commonSetup)
     }
 
     return ZetaHttpClient(httpClient)
@@ -155,6 +165,23 @@ internal expect fun buildPlatformClient(
     cfg: ClientConfig,
     commonSetup: HttpClientConfig<*>.() -> Unit,
 ): HttpClient
+
+public fun buildHttpClient(cfg: ClientConfig, commonSetup: HttpClientConfig<*>.() -> Unit): HttpClient {
+    val composedSetup: HttpClientConfig<*>.() -> Unit = {
+        cfg.network.proxyConfig?.let { proxyConfig ->
+            if (proxyConfig.type == ProxyType.HTTP && proxyConfig.username != null && proxyConfig.password != null) {
+                defaultRequest {
+                    val credentials = "${proxyConfig.username}:${proxyConfig.password}"
+                    val encoded = credentials.encodeToByteArray().encodeBase64()
+                    header(HttpHeaders.ProxyAuthorization, "Basic $encoded")
+                }
+            }
+        }
+        commonSetup()
+    }
+
+    return buildPlatformClient(cfg, composedSetup)
+}
 
 /** Normalizes a URL/host to a lowercase FQDN key. */
 public fun hostOf(value: String): String {
@@ -249,6 +276,38 @@ public class ZetaHttpClient public constructor(
         noinline block: HttpRequestBuilder.() -> Unit = {},
     ): ZetaHttpResponse {
         val response: HttpResponse = delegate.patch(url, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun options(
+        url: Url,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.options(url, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun options(
+        url: String,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.options(url, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun head(
+        url: Url,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.head(url, block)
+        return response.toZetaResponse()
+    }
+
+    public suspend inline fun head(
+        url: String,
+        noinline block: HttpRequestBuilder.() -> Unit = {},
+    ): ZetaHttpResponse {
+        val response: HttpResponse = delegate.head(url, block)
         return response.toZetaResponse()
     }
 

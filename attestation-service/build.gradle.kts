@@ -16,12 +16,18 @@ setupBuildLogic {
         explicitApi = ExplicitApiMode.Disabled
 
         sourceSets.commonMain.dependencies {
+            implementation(project(":common"))
             implementation(libs.ktor.server.core)
             implementation(libs.ktor.server.cio)
             implementation(libs.serialization.protobuf)
             implementation(libs.ktor.server.content.negotiation)
             implementation(libs.ktor.server.websockets)
             implementation(libs.ktor.kotlinx.serialization.json)
+        }
+
+        sourceSets.commonTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.coroutines.test)
         }
 
         if (project.isNativeEnabled) {

@@ -32,7 +32,6 @@ import de.gematik.zeta.sdk.configuration.models.ApiVersion
 import de.gematik.zeta.sdk.configuration.models.ApiVersionStatus
 import de.gematik.zeta.sdk.configuration.models.AuthorizationServerMetadata
 import de.gematik.zeta.sdk.configuration.models.ProtectedResourceMetadata
-import de.gematik.zeta.sdk.flow.RequestEvaluatorImplTest.FakeForwardingClient
 import de.gematik.zeta.sdk.flow.handler.ClientRegistrationHandler
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
@@ -211,8 +210,6 @@ class FlowOrchestratorTest {
         return ClientRegistrationHandler("TestClientName", api, tpm, maxRetries)
     }
 
-    private fun createContext(): FlowContext = FlowContextImpl("test", FakeForwardingClient(), InMemoryStorage(), configurationStorage = FakeConfigurationStorage())
-
     private class FakeTpmProvider(override val isHardwareBacked: Boolean) : TpmProvider {
         override suspend fun generateClientInstanceKey(): PublicKeyOut {
             return PublicKeyOut(byteArrayOf(1), Jwk("", "", "", "", "", "", ""))
@@ -234,7 +231,15 @@ class FlowOrchestratorTest {
             TODO("Not yet implemented")
         }
 
+        override suspend fun readSmbCertificateFromBytes(data: ByteArray, alias: String, password: String): ByteArray {
+            TODO("Not yet implemented")
+        }
+
         override suspend fun signWithSmbKey(input: ByteArray, p12File: String, alias: String, password: String): ByteArray {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun signWithSmbKeyFromBytes(input: ByteArray, keystoreBytes: ByteArray, alias: String, password: String): ByteArray {
             TODO("Not yet implemented")
         }
 
@@ -247,61 +252,6 @@ class FlowOrchestratorTest {
         }
 
         override fun forget() {
-            TODO("Not yet implemented")
-        }
-    }
-
-    private class FakeConfigurationStorage : ConfigurationStorage {
-        override suspend fun getProtectedResource(resourceUrl: String): ProtectedResourceMetadata? {
-            TODO("Not yet implemented")
-        }
-
-        override suspend fun saveProtectedResource(protectedRes: String): ProtectedResourceMetadata {
-            TODO("Not yet implemented")
-        }
-
-        override suspend fun getAuthServers(): List<AuthorizationServerMetadata> {
-            TODO("Not yet implemented")
-        }
-
-        override suspend fun getAuthServer(resource: String): AuthorizationServerMetadata? {
-            return AuthorizationServerMetadata(
-                issuer = "issuer",
-                authorizationEndpoint = "",
-                tokenEndpoint = "token_endpoint",
-                nonceEndpoint = "",
-                openidProvidersEndpoint = "test open id",
-                jwksUri = "",
-                scopesSupported = listOf(""),
-                responseTypesSupported = listOf("TOKEN"),
-                responseModesSupported = listOf(""),
-                grantTypesSupported = listOf(""),
-                tokenEndpointAuthMethodsSupported = listOf(""),
-                tokenEndpointAuthSigningAlgValuesSupported = listOf(""),
-                serviceDocumentation = "",
-                uiLocalesSupported = listOf(""),
-                codeChallengeMethodsSupported = listOf(""),
-                apiVersionsSupported =
-                listOf(
-                    ApiVersion(
-                        majorVersion = 1,
-                        version = "",
-                        status = ApiVersionStatus.STABLE,
-                        documentationUri = "",
-                    ),
-                ),
-            )
-        }
-
-        override suspend fun linkResourceToAuthorizationServer(resource: String, authServerMetadata: AuthorizationServerMetadata) {
-            TODO("Not yet implemented")
-        }
-
-        override suspend fun aslRequired(resource: String): Boolean {
-            TODO("Not yet implemented")
-        }
-
-        override suspend fun clear() {
             TODO("Not yet implemented")
         }
     }

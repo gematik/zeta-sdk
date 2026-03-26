@@ -1,7 +1,3 @@
-import de.gematik.zeta.sdk.buildlogic.isLinuxEnabled
-import de.gematik.zeta.sdk.buildlogic.isMacOSEnabled
-import de.gematik.zeta.sdk.buildlogic.isNativeEnabled
-import de.gematik.zeta.sdk.buildlogic.isWindowsEnabled
 import org.gradle.internal.extensions.stdlib.capitalized
 
 plugins {
@@ -14,74 +10,50 @@ repositories {
     mavenCentral()
 }
 
-val libraryName = "hello"
+val sdkProject = project(":zeta-sdk")
+val sdkBuildDir = "${sdkProject.projectDir}/build"
 
 kotlin {
-    if (project.isNativeEnabled && project.isMacOSEnabled) {
-        macosArm64 {
-            val main by compilations.getting
-            val interop by main.cinterops.creating {
-                definitionFile.set(project.file("src/nativeInterop/cinterop/interop.def"))
-            }
-            binaries {
-                sharedLib {
-                    baseName = libraryName
-                }
-            }
-        }
-    }
-    if (project.isNativeEnabled && project.isLinuxEnabled) {
-        linuxX64 {
-            val main by compilations.getting
-            val interop by main.cinterops.creating {
-                definitionFile.set(project.file("src/nativeInterop/cinterop/interop.def"))
-            }
-            binaries {
-                sharedLib {
-                    baseName = libraryName
-                }
-            }
-        }
-    }
-    if (project.isNativeEnabled && project.isWindowsEnabled) {
-        mingwX64 {
-            val main by compilations.getting
-            val interop by main.cinterops.creating {
-                definitionFile.set(project.file("src/nativeInterop/cinterop/interop.def"))
-            }
-            binaries {
-                sharedLib {
-                    baseName = libraryName
-                }
-            }
-        }
-    }
     sourceSets.nativeMain.dependencies {
-        implementation(project(":zeta-sdk"))
+        implementation(sdkProject)
     }
 }
-
 
 application {
     binaries.configureEach {
         val platform = targetPlatform()
         val buildType = name.replace("main", "")
+        val sdkLibDir = "$sdkBuildDir/bin/$platform/${buildType.lowercase()}Shared"
+
+        tasks.withType<CppCompile>().configureEach {
+            if (name.contains(buildType, ignoreCase = true)) {
+                dependsOn(":zeta-sdk:link${buildType}Shared${platform.capitalized()}")
+                compilerArgs.addAll(listOf("-I$sdkLibDir"))
+            }
+        }
 
         tasks.withType<LinkExecutable> {
-            linkerArgs.addAll(
-                listOf(
-                    "-L$projectDir/build/bin/$platform/debugShared",
-                    "-l$libraryName",
+            if (name.contains(buildType, ignoreCase = true)) {
+                linkerArgs.addAll(listOf(
+                    "-L$sdkLibDir",
+                    "-lzeta_sdk",
                     "-Wl,-rpath,@executable_path",
-                    "-Wl,-rpath,$projectDir/build/bin/$platform/debugShared"
-                )
-            )
-            dependsOn("linkDebugShared${platform.capitalized()}")
+                    "-Wl,-rpath,$sdkLibDir"
+                ))
+                dependsOn(":zeta-sdk:link${buildType}Shared${platform.capitalized()}")
+            }
         }
 
         tasks.register<Exec>("run$buildType") {
-            environment("PATH", "$projectDir/build/bin/$platform/debugShared" + ";" + System.getenv("PATH"))
-            commandLine("$projectDir/build/exe/main/debug/zeta-client-cpp")
+            group = "run"
+            description = "Run the C++ client ($buildType)"
+            val tm = targetMachine
+            when {
+                tm.operatingSystemFamily.isMacOs -> environment("DYLD_LIBRARY_PATH", sdkLibDir)
+                tm.operatingSystemFamily.isLinux -> environment("LD_LIBRARY_PATH", sdkLibDir)
+                tm.operatingSystemFamily.isWindows -> environment("PATH", "$sdkLibDir;${System.getenv("PATH")}")
+            }
+            commandLine("$projectDir/build/exe/main/${buildType.lowercase()}/zeta-client-cpp")
             dependsOn("assemble$buildType")
         }
     }
@@ -89,21 +61,16 @@ application {
 
 fun CppBinary.targetPlatform(): String {
     val tm = targetMachine
-
     val os = when {
         tm.operatingSystemFamily.isMacOs -> "macos"
         tm.operatingSystemFamily.isWindows -> "mingw"
         tm.operatingSystemFamily.isLinux -> "linux"
         else -> tm.operatingSystemFamily.name
     }
-
     val arch = when (tm.architecture.name) {
         "aarch64" -> "arm64"
         "x86-64" -> "x64"
         else -> tm.architecture.name
     }
-
-    val platform = os + arch.capitalized()
-
-    return platform
+    return os + arch.capitalized()
 }

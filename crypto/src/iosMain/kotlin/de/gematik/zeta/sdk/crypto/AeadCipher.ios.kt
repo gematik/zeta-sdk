@@ -24,12 +24,12 @@
 
 package de.gematik.zeta.sdk.crypto
 
-actual class AesGcmCipher actual constructor() {
-    actual fun encrypt(aesKey: ByteArray, plainText: ByteArray, iv: ByteArray?, aad: ByteArray?): ByteArray {
+actual class AesGcmCipherImpl actual constructor() : AesGcmCipher {
+    actual override fun encrypt(aesKey: ByteArray, plainText: ByteArray, iv: ByteArray?, aad: ByteArray?): ByteArray {
         TODO("Not yet implemented")
     }
 
-    actual fun decrypt(aesKey: ByteArray, cipherText: ByteArray, iv: ByteArray?, aad: ByteArray?): ByteArray {
+    actual override fun decrypt(aesKey: ByteArray, cipherText: ByteArray, iv: ByteArray?, aad: ByteArray?): ByteArray {
         TODO("Not yet implemented")
     }
 }

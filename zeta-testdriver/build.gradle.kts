@@ -1,7 +1,5 @@
 import de.gematik.zeta.sdk.buildlogic.isJvmEnabled
 import de.gematik.zeta.sdk.buildlogic.setupBuildLogic
-import kotlinx.kover.gradle.plugin.dsl.KoverVersions.version
-import org.gradle.api.internal.artifacts.dependencies.DefaultImmutableVersionConstraint.strictly
 
 plugins {
     id("de.gematik.zeta.sdk.build-logic.jvm")
@@ -21,6 +19,8 @@ setupBuildLogic {
                 implementation(libs.ktor.server.logging.jvm)
                 implementation(libs.ktor.server.cors.jvm)
                 implementation(libs.ktor.server.websockets.jvm)
+                implementation(libs.ktor.server.content.negotiation)
+                implementation(libs.ktor.serialization.json)
             }
         }
 

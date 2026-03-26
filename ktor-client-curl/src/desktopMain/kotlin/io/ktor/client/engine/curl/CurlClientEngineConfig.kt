@@ -5,6 +5,7 @@
 package io.ktor.client.engine.curl
 
 import io.ktor.client.engine.*
+import io.ktor.client.engine.curl.tls.TlsValidationConfig
 
 /**
  * A configuration for the [Curl] client engine.
@@ -41,4 +42,10 @@ public class CurlClientEngineConfig : HttpClientEngineConfig() {
      * [Report a problem](https://ktor.io/feedback/?fqname=io.ktor.client.engine.curl.CurlClientEngineConfig.sslVerify)
      */
     public var sslVerify: Boolean = true
+    public var sslCipherList: String? = null
+    public var tls13Ciphers: String? = null
+    public var sslVersion: SslVersion = SslVersion.TLS_1_2
+    public var sslEcCurves: String? = null
+    public var sslSignatureAlgorithms: String? = null
+    public var tlsValidationConfig: TlsValidationConfig? = null
 }

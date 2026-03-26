@@ -26,7 +26,6 @@
 
 package de.gematik.zeta.sdk.attestation.config
 
-import de.gematik.zeta.sdk.attestation.interfaces.getEnv
 import kotlinx.cinterop.ExperimentalForeignApi
 import okio.FileSystem
 import okio.Path.Companion.toPath
@@ -46,6 +45,5 @@ actual object Config {
             .toMap()
     }
 
-    actual fun getConfig(key: String): String? =
-        getEnv(key) ?: values[key]
+    actual fun getConfig(key: String): String? = values[key]
 }

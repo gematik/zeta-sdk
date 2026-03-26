@@ -43,7 +43,7 @@ import io.ktor.http.HttpMethod
 *   be invoked lazily by the client builder; `engine(engine)` pins a concrete instance.
 *
 */
-internal class ClientConfig {
+public class ClientConfig {
     /**
      * Optional hard override for the backend base URL.
      *
@@ -51,25 +51,25 @@ internal class ClientConfig {
      * No normalization is performed here (e.g., trailing slashes), so callers should pass a
      * canonical value if required by upstream layers.
      */
-    lateinit var baseUrlOverride: String
+    public lateinit var baseUrlOverride: String
 
     /**
      * Low-level network settings (timeouts, redirects, proxies, etc.).
      * Initialized to a default instance.
      */
-    var network: NetworkConfig = NetworkConfig()
+    public var network: NetworkConfig = NetworkConfig()
 
     /**
      * Security settings (TLS, cert pinning, auth, key stores, etc.).
      * Initialized to a default instance.
      */
-    var security: SecurityConfig = SecurityConfig()
+    public var security: SecurityConfig = SecurityConfig()
 
     /**
      * Observability settings (logging, metrics, tracing, event hooks, etc.).
      * Initialized to a default instance.
      */
-    var monitoring: MonitoringConfig = MonitoringConfig()
+    public var monitoring: MonitoringConfig = MonitoringConfig()
 
     /**
      * Replaces the current [network] configuration with the result of [block].
@@ -79,21 +79,21 @@ internal class ClientConfig {
      *
      * @param block Transformer that returns the new [NetworkConfig].
      */
-    fun network(block: NetworkConfig.() -> NetworkConfig) { network = network.block() }
+    public fun network(block: NetworkConfig.() -> NetworkConfig) { network = network.block() }
 
     /**
      * Replaces the current [security] configuration with the result of [block].
      *
      * @param block Transformer that returns the new [SecurityConfig].
      */
-    fun security(block: SecurityConfig.() -> SecurityConfig) { security = security.block() }
+    public fun security(block: SecurityConfig.() -> SecurityConfig) { security = security.block() }
 
     /**
      * Replaces the current [monitoring] configuration with the result of [block].
      *
      * @param block Transformer that returns the new [MonitoringConfig].
      */
-    fun monitoring(block: MonitoringConfig.() -> MonitoringConfig) { monitoring = monitoring.block() }
+    public fun monitoring(block: MonitoringConfig.() -> MonitoringConfig) { monitoring = monitoring.block() }
 
     /**
      * Factory used to create the underlying [HttpClientEngine] lazily.
@@ -102,7 +102,7 @@ internal class ClientConfig {
      * **Lifecycle note:** when supplying a concrete engine (see [engine(engine:)]), ownership
      * and closing semantics remain with the caller unless documented otherwise by the builder.
      */
-    var engineFactory: (() -> HttpClientEngine)? = null
+    public var engineFactory: (() -> HttpClientEngine)? = null
 
     /**
      * Registers a factory that creates a fresh [HttpClientEngine] when the client is built.
@@ -111,7 +111,7 @@ internal class ClientConfig {
      *
      * @param factory Provider of the engine to use.
      */
-    fun engine(factory: () -> HttpClientEngine) { engineFactory = factory }
+    public fun engine(factory: () -> HttpClientEngine) { engineFactory = factory }
 
     /**
      * Pins a specific, already-created [HttpClientEngine].
@@ -121,7 +121,7 @@ internal class ClientConfig {
      *
      * @param engine The engine instance to use.
      */
-    fun engine(engine: HttpClientEngine) { engineFactory = { engine } }
+    public fun engine(engine: HttpClientEngine) { engineFactory = { engine } }
 }
 
 /**

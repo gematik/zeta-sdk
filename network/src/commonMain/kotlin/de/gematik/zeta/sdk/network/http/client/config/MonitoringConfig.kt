@@ -32,9 +32,9 @@ import io.ktor.client.plugins.logging.Logger
  * Controls observability for the HTTP client (logs, metrics, tracing).
  *
  * @property logLevel Ktor Logging plugin level. Default level is set to [LogLevel.NONE] to disable logging entirely.
- * @property providedLogger Instance of a logger. Default level is set to [DEFAULT].
+ * @property logProvider Instance of a logger. Default level is set to [DEFAULT].
  */
-internal data class MonitoringConfig(
+public data class MonitoringConfig(
     val logLevel: LogLevel = LogLevel.NONE,
     val logProvider: Logger = Logger.DEFAULT,
 )

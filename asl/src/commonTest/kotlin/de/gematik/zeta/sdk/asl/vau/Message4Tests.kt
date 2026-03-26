@@ -27,7 +27,7 @@ package de.gematik.zeta.sdk.asl.vau
 import de.gematik.zeta.sdk.asl.K2Keys
 import de.gematik.zeta.sdk.asl.Message3Result
 import de.gematik.zeta.sdk.asl.Message4
-import de.gematik.zeta.sdk.crypto.AesGcmCipher
+import de.gematik.zeta.sdk.crypto.AesGcmCipherImpl
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 
@@ -37,7 +37,7 @@ class Message4Tests {
         // Arrange
         val s2cConfKey = ByteArray(32) { 0x42.toByte() }
         val transcriptHash = ByteArray(32) { 0x99.toByte() }
-        val cipher = AesGcmCipher()
+        val cipher = AesGcmCipherImpl()
         val encryptedHash = cipher.encrypt(s2cConfKey, transcriptHash)
 
         val k2 = buildK2Keys(s2cConfirmationKey = s2cConfKey)
@@ -53,7 +53,7 @@ class Message4Tests {
         // Arrange
         val s2cConfKey = ByteArray(32) { 0x11.toByte() }
         val transcriptHash = ByteArray(0)
-        val cipher = AesGcmCipher()
+        val cipher = AesGcmCipherImpl()
         val encryptedHash = cipher.encrypt(s2cConfKey, transcriptHash)
 
         val k2 = buildK2Keys(s2cConfirmationKey = s2cConfKey)
@@ -96,7 +96,7 @@ class Message4Tests {
         val s2cConfKey = ByteArray(32) { 0x42.toByte() }
         val correctHash = ByteArray(32) { 0x99.toByte() }
         val wrongHash = ByteArray(32) { 0xAA.toByte() }
-        val cipher = AesGcmCipher()
+        val cipher = AesGcmCipherImpl()
         val encryptedHash = cipher.encrypt(s2cConfKey, correctHash)
 
         val k2 = buildK2Keys(s2cConfirmationKey = s2cConfKey)
@@ -115,7 +115,7 @@ class Message4Tests {
         val s2cConfKey = ByteArray(32) { 0x42.toByte() }
         val serverHash = ByteArray(32) { 0x99.toByte() }
         val clientHash = ByteArray(16) { 0x99.toByte() }
-        val cipher = AesGcmCipher()
+        val cipher = AesGcmCipherImpl()
         val encryptedHash = cipher.encrypt(s2cConfKey, serverHash)
 
         val k2 = buildK2Keys(s2cConfirmationKey = s2cConfKey)

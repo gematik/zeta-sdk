@@ -21,7 +21,7 @@ internal fun onHeadersReceived(
     buffer: CPointer<ByteVar>,
     size: size_t,
     count: size_t,
-    userdata: COpaquePointer
+    userdata: COpaquePointer,
 ): Long {
     val response = userdata.fromCPointer<CurlResponseBuilder>()
     val packet = response.headersBytes
@@ -49,7 +49,7 @@ internal fun onBodyChunkReceived(
     buffer: CPointer<ByteVar>,
     size: size_t,
     count: size_t,
-    userdata: COpaquePointer
+    userdata: COpaquePointer,
 ): Int {
     val wrapper = userdata.fromCPointer<CurlResponseBodyData>()
     return wrapper.onBodyChunkReceived(buffer, size, count)
@@ -60,7 +60,7 @@ internal fun onBodyChunkRequested(
     buffer: CPointer<ByteVar>,
     size: size_t,
     count: size_t,
-    dataRef: COpaquePointer
+    dataRef: COpaquePointer,
 ): Int {
     val wrapper: CurlRequestBodyData = dataRef.fromCPointer()
     val body = wrapper.body
@@ -95,7 +95,7 @@ internal fun onBodyChunkRequested(
 internal class CurlRequestBodyData(
     val body: ByteReadChannel,
     val callContext: CoroutineContext,
-    val onUnpause: () -> Unit
+    val onUnpause: () -> Unit,
 )
 
 internal interface CurlResponseBodyData {

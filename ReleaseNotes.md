@@ -2,12 +2,9 @@
 
 # Release Notes ZETA SDK
 
-## Version: v0.3.1
+## Version: v0.4.2
 
-This version implements the "happy flow" for the ZETA protocol for the ZETA client SDK.
-
-Therefore, the API of the clients and the network protocol is stable (with comments see below).
-Not all validations are implemented yet and will follow in later releases.
+This version implements the ZETA protocol for the ZETA client SDK.
 
 It provides SDK bindings for kotlin (as original implementation), Java, and C++.
 
@@ -35,6 +32,33 @@ It provides SDK bindings for kotlin (as original implementation), Java, and C++.
 ### Known issues:
 
 #### Functional
+
+## Changes from 0.4.1
+
+- Refactored C++ client: Moved C++ API types and bindings from the example client into the SDK itself The SDK now ships a single header file (`libzeta_sdk_api.h` / `zeta_sdk_api.h`) with full HTTP CRUD and WebSocket STOMP support
+- Added standalone C++ native client (`zeta-nativeclient-cpp`) with Makefile for cross-platform builds (macOS, Linux, Windows) without requiring Gradle
+- Added all HTTP methods to JVM `HttpClientExtension`: `putAsync`, `patchAsync`, `deleteAsync`, `headAsync`, `optionsAsync`
+
+## Changes from 0.4.0
+
+- C++ API now has length restrictions in the strings
+- removed dynamic linking in C++ client
+- disable TLS validation configurable in C++ client
+
+## Changes from 0.3.1
+
+- Hinzufügen fehlender dependency Check results zu den reporting Artefakten
+- Triggern der Testsuite bei jedem Commit auf einem Merge-Request
+- Build-Prozess für den C++ Client in einem Docker Container ermöglicht
+- Härtung des TLS durch Einschränkung der cipher suites
+- Erweiterung des Testdriver durch ein "load" Interface, um mehrere Client-Instanzen parallel steuern zu können für den Lasttest
+  - Dazu die Möglichkeit, das SMC-B Zertifikat als base64-encoded String direkt als Konfiguration zu nutzen
+- Fixes bei Headern
+  - Forwarded-Header werden im inneren ASL Request herausgefiltert
+- Anpassungen am Attestation service, Vorbereitungen für Windows
+  - hier werden aktuell noch Spezifikationsänderungen erwartet
+- Erweiterungen einiger Logs um Zeitmessungen
+- Fix websocket communication in Java client
 
 ## Changes from 0.3.0
 

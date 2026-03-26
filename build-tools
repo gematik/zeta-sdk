@@ -1,0 +1,8 @@
+grep -rL "EY Strategy & Transactions GmbH" \
+  --include="*.kt" \
+  --include="*.java" \
+  --include="*.cpp" \
+  --exclude-dir="ktor-client-curl" \
+  --exclude-dir="build" \
+  --exclude-dir=".gradle" \
+  . | grep -v "ktor-client-curl"
