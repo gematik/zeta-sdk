@@ -40,7 +40,7 @@ public actual object Log {
         tag: String?,
         message: () -> String,
     ) {
-        println("[DEBUG] $message")
+        println("[DEBUG] ${message()}")
     }
 
     public actual fun i(
@@ -48,7 +48,7 @@ public actual object Log {
         tag: String?,
         message: () -> String,
     ) {
-        println("[INFO] $message")
+        println("[INFO] ${message()}")
     }
 
     public actual fun w(
@@ -56,7 +56,7 @@ public actual object Log {
         tag: String?,
         message: () -> String,
     ) {
-        println("[WARN] $message")
+        println("[WARN] ${message()}")
     }
 
     public actual fun e(
@@ -64,7 +64,7 @@ public actual object Log {
         tag: String?,
         message: () -> String,
     ) {
-        println("[ERROR] $message")
+        println("[ERROR] ${message()}")
     }
 
     public actual fun setDebugMode(isDebug: Boolean) {

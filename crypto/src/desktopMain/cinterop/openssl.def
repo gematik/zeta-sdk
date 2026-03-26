@@ -11,5 +11,10 @@ headers = openssl/evp.h \
           openssl/asn1.h \
           openssl/bio.h \
           openssl/ml_kem.h \
-          openssl/core_names.h
+          openssl/core_names.h \
+          openssl/ocsp.h \
+          openssl/x509.h \
+          openssl/x509v3.h \
+          openssl/x509_vfy.h
 compilerOpts = -DOPENSSL_NO_DEPRECATED
+

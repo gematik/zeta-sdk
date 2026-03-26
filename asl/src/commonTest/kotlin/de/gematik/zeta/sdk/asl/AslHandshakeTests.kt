@@ -52,7 +52,7 @@ class AslHandshakeStateTest {
         val tokenProvider = FakeAccessTokenProvider()
 
         // Act
-        val result = AslHandshakeState.create(httpClient, request, tokenProvider)
+        val result = AslHandshakeState.create(httpClient, request, tokenProvider, false)
 
         // Assert
         assertEquals(request, result.request)
@@ -69,18 +69,18 @@ class AslHandshakeStateTest {
     }
 
     @Test
-    fun processMessage2AndBuildMessage3_throwsIllegalArgumentException_message1Null() {
+    fun processMessage2AndBuildMessage3_throwsIllegalArgumentException_message1Null() = runTest {
         // Arrange
         val state = buildState(message1 = null, message1Result = null)
 
         // Act & Assert
         assertFailsWith<IllegalArgumentException> {
-            state.processMessage2AndBuildMessage3()
+            state.processMessage2AndBuildMessage3(false)
         }
     }
 
     @Test
-    fun processMessage2AndBuildMessage3_throwsIllegalArgumentException_message1ResultNull() {
+    fun processMessage2AndBuildMessage3_throwsIllegalArgumentException_message1ResultNull() = runTest {
         // Arrange
         val message1 = Message1Bundle(
             encoded = ByteArray(0),
@@ -93,7 +93,7 @@ class AslHandshakeStateTest {
 
         // Act & Assert
         assertFailsWith<IllegalArgumentException> {
-            state.processMessage2AndBuildMessage3()
+            state.processMessage2AndBuildMessage3(false)
         }
     }
 

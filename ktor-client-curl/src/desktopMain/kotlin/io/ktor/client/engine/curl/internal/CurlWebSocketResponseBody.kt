@@ -15,7 +15,7 @@ import platform.posix.size_tVar
 
 @OptIn(ExperimentalForeignApi::class)
 internal class CurlWebSocketResponseBody(
-    private val curl: EasyHandle
+    private val curl: EasyHandle,
 ) : CurlResponseBodyData {
 
     private val closed = atomic(false)

@@ -200,7 +200,21 @@ actual class TpmAccess actual constructor() {
 
     actual fun getEventLog(): ByteArray = readTpmEventLog()
 
-    actual fun getEKCertificateChain(): List<ByteArray> {
-        return listOf()
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun getEKCertificateChain(): List<ByteArray> = memScoped {
+        withTpmContext { ctx ->
+            val certs = mutableListOf<ByteArray>()
+
+            val ekCert = readNvCert(ctx.esys, NV_EK_CERT_ECC)
+            if (ekCert != null) certs.add(ekCert)
+
+            val platformCert = readNvCert(ctx.esys, NV_PLATFORM_CERT)
+            if (platformCert != null) certs.add(platformCert)
+
+            val attestationCert = readNvCert(ctx.esys, NV_ATTESTATION_CERT)
+            if (attestationCert != null) certs.add(attestationCert)
+
+            certs
+        }
     }
 }

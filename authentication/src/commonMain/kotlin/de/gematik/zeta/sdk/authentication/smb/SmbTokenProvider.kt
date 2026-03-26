@@ -31,7 +31,6 @@ import de.gematik.zeta.sdk.authentication.model.AccessTokenHeader
 import de.gematik.zeta.sdk.authentication.model.TokenType
 import de.gematik.zeta.sdk.crypto.hashWithSha256
 import de.gematik.zeta.sdk.tpm.TpmProvider
-import io.ktor.util.encodeBase64
 import io.ktor.utils.io.core.toByteArray
 import kotlin.io.encoding.Base64
 
@@ -46,11 +45,7 @@ class SmbTokenProvider(
         expiration: Long,
         tpmProvider: TpmProvider,
     ): String {
-        val smbCertificate = tpmProvider.readSmbCertificate(
-            smbKeystore.keystoreFile,
-            smbKeystore.alias,
-            smbKeystore.password,
-        )
+        val smbCertificate = readSmbCertificate(tpmProvider)
 
         val kid = getHashFromSmbCertificate(smbCertificate)
         val x5c = listOf(Base64.encode(smbCertificate))
@@ -81,24 +76,50 @@ class SmbTokenProvider(
         return AccessTokenUtility.addSignature(subjectToken, signSmbToken(tpmProvider, subjectToken))
     }
 
+    private suspend fun readSmbCertificate(tpmProvider: TpmProvider): ByteArray {
+        return if (smbKeystore.keystoreB64.isNotEmpty()) {
+            tpmProvider.readSmbCertificateFromBytes(
+                Base64.decode(smbKeystore.keystoreB64),
+                smbKeystore.alias,
+                smbKeystore.password,
+            )
+        } else {
+            tpmProvider.readSmbCertificate(
+                smbKeystore.keystoreFile,
+                smbKeystore.alias,
+                smbKeystore.password,
+            )
+        }
+    }
+
     private fun getHashFromSmbCertificate(certificate: ByteArray): String {
         val digest = hashWithSha256(certificate)
         return Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(digest)
     }
 
     private suspend fun signSmbToken(tpmProvider: TpmProvider, token: String): String {
-        val signature = tpmProvider.signWithSmbKey(
-            token.toByteArray(),
-            smbKeystore.keystoreFile,
-            smbKeystore.alias,
-            smbKeystore.password,
-        )
+        val signature = if (smbKeystore.keystoreB64.isNotEmpty()) {
+            tpmProvider.signWithSmbKeyFromBytes(
+                token.toByteArray(),
+                Base64.decode(smbKeystore.keystoreB64),
+                smbKeystore.alias,
+                smbKeystore.password,
+            )
+        } else {
+            tpmProvider.signWithSmbKey(
+                token.toByteArray(),
+                smbKeystore.keystoreFile,
+                smbKeystore.alias,
+                smbKeystore.password,
+            )
+        }
         return Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(signature)
     }
 
     public data class Credentials(
-        val keystoreFile: String,
+        val keystoreFile: String = "",
         val alias: String,
         val password: String,
+        val keystoreB64: String = "",
     )
 }

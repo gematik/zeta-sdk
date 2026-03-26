@@ -27,23 +27,33 @@ package de.gematik.zeta.sdk.crypto
 import org.bouncycastle.asn1.isismtt.x509.AdmissionSyntax
 import org.bouncycastle.cert.X509CertificateHolder
 import org.bouncycastle.internal.asn1.isismtt.ISISMTTObjectIdentifiers
+import java.io.ByteArrayInputStream
 import java.io.FileInputStream
 import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.cert.X509Certificate
-
 actual class X509PemReader {
 
     actual fun loadCertificate(p12File: String, alias: String, password: String): ByteArray {
+        val keystoreBytes = FileInputStream(p12File).readBytes()
+        return loadCertificateFromBytes(keystoreBytes, alias, password)
+    }
+
+    actual fun loadCertificateFromBytes(data: ByteArray, alias: String, password: String): ByteArray {
         val keyStore = KeyStore.getInstance("PKCS12")
-        keyStore.load(FileInputStream(p12File), password.toCharArray())
+        keyStore.load(ByteArrayInputStream(data), password.toCharArray())
         val certificate = keyStore.getCertificate(alias) as X509Certificate
         return certificate.encoded
     }
 
     actual fun loadPrivateKey(p12File: String, alias: String, password: String): ByteArray {
+        val data = FileInputStream(p12File).readBytes()
+        return loadPrivateKeyFromBytes(data, alias, password)
+    }
+
+    actual fun loadPrivateKeyFromBytes(data: ByteArray, alias: String, password: String): ByteArray {
         val keyStore = KeyStore.getInstance("PKCS12")
-        keyStore.load(FileInputStream(p12File), password.toCharArray())
+        keyStore.load(ByteArrayInputStream(data), password.toCharArray())
         val privateKey = keyStore.getKey(alias, password.toCharArray()) as PrivateKey?
         requireNotNull(privateKey) { "No key with alias '$alias'" }
         return privateKey.encoded

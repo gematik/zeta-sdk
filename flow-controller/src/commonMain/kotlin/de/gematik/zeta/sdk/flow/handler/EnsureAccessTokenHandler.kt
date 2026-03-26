@@ -24,10 +24,10 @@
 
 package de.gematik.zeta.sdk.flow.handler
 
+import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AccessTokenParams
 import de.gematik.zeta.sdk.authentication.AccessTokenProvider
-import de.gematik.zeta.sdk.authentication.AccessTokenProviderImpl.Companion.toHttpForAslInnerRequestDpop
 import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.authentication.AuthenticationException
 import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
@@ -39,6 +39,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.http.encodedPath
+import kotlin.time.TimeSource
+import kotlin.time.measureTimedValue
 
 @Suppress("FunctionOnlyReturningConstant")
 class EnsureAccessTokenHandler(
@@ -55,40 +57,50 @@ class EnsureAccessTokenHandler(
     override fun canHandle(need: FlowNeed): Boolean = need == FlowNeed.Authentication
 
     override suspend fun handle(need: FlowNeed, ctx: FlowContext): CapabilityResult {
+        val start = TimeSource.Monotonic.markNow()
         return try {
-            val authToken = getAuthToken(ctx)
-            val hashedToken = tokenProvider.hash(authToken)
+            val (authToken, authTokenTime) = measureTimedValue { getAuthToken(ctx) }
+            Log.i { "[ENSURE-AUTH-TIMING] getAuthToken=$authTokenTime" }
+
+            val (hashedToken, hashTime) = measureTimedValue { tokenProvider.hash(authToken) }
+            Log.i { "[ENSURE-AUTH-TIMING] hashToken=$hashTime" }
 
             return CapabilityResult.RetryRequest { req ->
                 if (!req.headers.contains(HttpHeaders.Authorization)) {
-                    val dpopUrl = if (ctx.configurationStorage.aslRequired(ctx.resource)) {
-                        req.url.toString().toHttpForAslInnerRequestDpop()
-                    } else {
-                        req.url.toString()
-                    }
-                    val dpop = tokenProvider.createDpopToken(req.method.value, dpopUrl, null, hashedToken)
+                    val dpop = tokenProvider.createDpopToken(req.method.value, req.url.toString(), null, hashedToken)
                     req.headers[HttpHeaders.Authorization] = "${HttpAuthHeaders.Dpop} $authToken"
                     req.headers[HttpAuthHeaders.Dpop] = dpop
                 }
+                Log.i { "[ENSURE-AUTH-TIMING] handle total=${start.elapsedNow()}" }
             }
         } catch (e: AuthenticationException) {
+            Log.e { "[ENSURE-AUTH-TIMING] handle FAILED in ${start.elapsedNow()}: ${e.message}" }
             CapabilityResult.Error(AUTHENTICATION_ERROR_CODE, e.message.toString(), e.response)
         }
     }
 
     suspend fun getAuthToken(ctx: FlowContext): String {
-        val cfg = buildAccessTokenParams(ctx)
+        val start = TimeSource.Monotonic.markNow()
+        val (cfg, buildParamsTime) = measureTimedValue { buildAccessTokenParams(ctx) }
+        Log.i { "[ENSURE-AUTH-TIMING] buildAccessTokenParams=$buildParamsTime" }
 
-        return tokenProvider.getValidToken(
-            cfg.tokenEndpoint,
-            cfg.nonceEndpoint,
-            cfg.params,
-        )
+        val (token, tokenTime) = measureTimedValue {
+            tokenProvider.getValidToken(
+                cfg.tokenEndpoint,
+                cfg.nonceEndpoint,
+                cfg.params,
+            )
+        }
+        Log.i { "[ENSURE-AUTH-TIMING] getValidToken=$tokenTime getAuthToken_total=${start.elapsedNow()}" }
+        return token
     }
 
     private suspend fun buildAccessTokenParams(ctx: FlowContext): AccessTokenParamsWithEndpoints {
-        val authServer = requireNotNull(ctx.configurationStorage.getAuthServer(ctx.resource)) {
-            "Missing auth server configuration for resource: ${ctx.resource}"
+        val start = TimeSource.Monotonic.markNow()
+        val (authServer, authServerTime) = measureTimedValue {
+            requireNotNull(ctx.configurationStorage.getAuthServer(ctx.resource)) {
+                "Missing auth server configuration for resource: ${ctx.resource}"
+            }
         }
         val tokenEndpoint = requireNotNull(authServer.tokenEndpoint) {
             "Missing token endpoint for resource: ${ctx.resource}"
@@ -96,8 +108,10 @@ class EnsureAccessTokenHandler(
         val nonceEndpoint = requireNotNull(authServer.nonceEndpoint) {
             "Missing nonce endpoint for resource: ${ctx.resource}"
         }
-        val clientId = requireNotNull(ctx.clientRegistrationStorage.getClientId(authServer.issuer)) {
-            "Missing client_id for resource ${ctx.resource}"
+        val (clientId, clientIdTime) = measureTimedValue {
+            requireNotNull(ctx.clientRegistrationStorage.getClientId(authServer.issuer)) {
+                "Missing client_id for resource ${ctx.resource}"
+            }
         }
         val issuer = requireNotNull(ctx.configurationStorage.getAuthServer(ctx.resource)?.issuer) {
             "Missing issuer for resource: $ctx.resource"
@@ -107,6 +121,7 @@ class EnsureAccessTokenHandler(
                 "Missing scopes supported for resource: ${ctx.resource}"
             }
         }
+        Log.i { "[ENSURE-AUTH-TIMING] buildParams authServerRead=$authServerTime clientIdRead=$clientIdTime total=${start.elapsedNow()}" }
 
         return AccessTokenParamsWithEndpoints(
             tokenEndpoint = tokenEndpoint,

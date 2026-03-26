@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.attestation.interfaces
 
+import de.gematik.zeta.logging.Log
 import io.github.irgaly.kfswatch.KfsDirectoryWatcher
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.memScoped
@@ -47,7 +48,7 @@ actual class FileScanner {
             return@associateWith try {
                 FileHashCalculator.calculateSHA256(filePath)
             } catch (e: Exception) {
-                println("FileScanner.scanFiles: ${e.message}")
+                Log.e { "FileScanner.scanFiles: ${e.message}" }
                 null
             }
         }
@@ -63,12 +64,12 @@ actual class FileScanner {
             .map { it.toPath().parent.toString() }
             .distinct()
 
-        println("startMonitoring: $folderList, $normalFiles")
+        Log.d { "startMonitoring: $folderList, $normalFiles" }
 
         runBlocking {
             watcher.add(*folderList.toTypedArray())
             watcher.onEventFlow
-                .onEach { println("onEventFlow: ${it.path}, ${it.event}") }
+                .onEach { Log.d { "onEventFlow: ${it.path}, ${it.event}" } }
                 .map {
                     Pair(
                         it.targetDirectory.toPath().resolve(it.path).toString(),

@@ -87,10 +87,12 @@ import okio.use
 
 actual class X509PemReader {
 
-    actual fun loadCertificate(p12File: String, alias: String, password: String): ByteArray = memScoped {
-        val p12Bytes = FileSystem.SYSTEM.source(p12File.toPath()).use { it.buffer().readByteArray() }
-
-        val bio = BIO_new_mem_buf(p12Bytes.refTo(0), p12Bytes.size)
+    actual fun loadCertificateFromBytes(
+        data: ByteArray,
+        alias: String,
+        password: String,
+    ): ByteArray = memScoped {
+        val bio = BIO_new_mem_buf(data.refTo(0), data.size)
         if (bio == null) throw IOException("BIO_new_mem_buf: bio == $bio")
 
         val p12 = d2i_PKCS12_bio(bio, null)
@@ -112,10 +114,13 @@ actual class X509PemReader {
         outPtrVar.value!!.readBytes(len)
     }
 
-    actual fun loadPrivateKey(p12File: String, alias: String, password: String): ByteArray = memScoped {
+    actual fun loadCertificate(p12File: String, alias: String, password: String): ByteArray {
         val p12Bytes = FileSystem.SYSTEM.source(p12File.toPath()).use { it.buffer().readByteArray() }
+        return loadCertificateFromBytes(p12Bytes, alias, password)
+    }
 
-        val bio = BIO_new_mem_buf(p12Bytes.refTo(0), p12Bytes.size)
+    actual fun loadPrivateKeyFromBytes(data: ByteArray, alias: String, password: String): ByteArray = memScoped {
+        val bio = BIO_new_mem_buf(data.refTo(0), data.size)
         if (bio == null) throw IOException("BIO_new_mem_buf: bio == $bio")
 
         val p12 = d2i_PKCS12_bio(bio, null)
@@ -140,6 +145,11 @@ actual class X509PemReader {
         if (len <= 0) throw IOException("i2d_PKCS8_PRIV_KEY_INFO: p8 == $p8 ${getOpenSSLErrors()}")
 
         outPtrVar.value!!.readBytes(len)
+    }
+
+    actual fun loadPrivateKey(p12File: String, alias: String, password: String): ByteArray {
+        val p12Bytes = FileSystem.SYSTEM.source(p12File.toPath()).use { it.buffer().readByteArray() }
+        return loadPrivateKeyFromBytes(p12Bytes, alias, password)
     }
 
     actual fun getRegistrationNumber(certificateBytes: ByteArray): String? = memScoped {

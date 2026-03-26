@@ -1,0 +1,2 @@
+headers = zeta_sdk_types.h
+compilerOpts = -std=c99

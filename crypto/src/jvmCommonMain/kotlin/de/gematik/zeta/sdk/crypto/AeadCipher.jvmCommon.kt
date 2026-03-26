@@ -29,13 +29,13 @@ import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
-actual class AesGcmCipher actual constructor() {
+actual class AesGcmCipherImpl actual constructor() : AesGcmCipher {
     private val TANSFORMATION = "AES/GCM/NoPadding"
     private val TAG_BITS = 128
     private val IV_LEN = 12
     private val AES_KEY_LEN = 32
 
-    actual fun encrypt(aesKey: ByteArray, plainText: ByteArray, iv: ByteArray?, aad: ByteArray?): ByteArray {
+    actual override fun encrypt(aesKey: ByteArray, plainText: ByteArray, iv: ByteArray?, aad: ByteArray?): ByteArray {
         require(aesKey.size == AES_KEY_LEN) { "Key must be 32 bytes" }
         val useIv = iv ?: newIv()
         require(useIv.size == IV_LEN) { "GCM must be ${IV_LEN} bytes" }
@@ -52,7 +52,7 @@ actual class AesGcmCipher actual constructor() {
         return useIv + ct
     }
 
-    actual fun decrypt(aesKey: ByteArray, cipherText: ByteArray, iv: ByteArray?, aad: ByteArray?): ByteArray {
+    actual override fun decrypt(aesKey: ByteArray, cipherText: ByteArray, iv: ByteArray?, aad: ByteArray?): ByteArray {
         require(cipherText.size > IV_LEN) { "Ciphertext too short" }
         val key = SecretKeySpec(aesKey, "AES")
         val nonce = iv ?: cipherText.copyOfRange(0, IV_LEN)

@@ -47,7 +47,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.concurrent.Volatile
 
-interface AttestationService {
+fun interface AttestationService {
     suspend fun generateAttestation(attestationChallenge: String): AttestationResponse
 }
 
@@ -174,7 +174,7 @@ class AttestationServiceApi(
                         }
 
                         else -> {
-                            println("Ignoring other frames")
+                            Log.i { "Ignoring other frames" }
                         }
                     }
                 }

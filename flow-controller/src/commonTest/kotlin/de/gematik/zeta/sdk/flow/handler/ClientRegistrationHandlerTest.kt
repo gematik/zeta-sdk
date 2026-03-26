@@ -281,7 +281,15 @@ class ClientRegistrationHandlerTest {
             TODO("Not yet implemented")
         }
 
+        override suspend fun readSmbCertificateFromBytes(data: ByteArray, alias: String, password: String): ByteArray {
+            TODO("Not yet implemented")
+        }
+
         override suspend fun signWithSmbKey(input: ByteArray, p12File: String, alias: String, password: String): ByteArray {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun signWithSmbKeyFromBytes(input: ByteArray, keystoreBytes: ByteArray, alias: String, password: String): ByteArray {
             TODO("Not yet implemented")
         }
 

@@ -82,11 +82,11 @@ data class ProcessIdentity(
 
 @Serializable
 data class AttestationResponse(
-    @SerialName("tpm_attestation_key") val tpmAttestationKey: String = "",
-    @SerialName("tpm_quote") val tpmQuote: String = "",
-    @SerialName("tpm_quote_signature") val tpmQuoteSignature: String = "",
-    @SerialName("tpm_event_log") val tpmEventLog: String = "",
-    @SerialName("tpm_ek_certificate_chain") val tpmEkCertificateChain: List<String> = emptyList(),
+    @SerialName("tpm_attestation_key") val tpmAttestationKey: String? = null,
+    @SerialName("tpm_quote") val tpmQuote: String? = null,
+    @SerialName("tpm_quote_signature") val tpmQuoteSignature: String? = null,
+    @SerialName("tpm_event_log") val tpmEventLog: String? = null,
+    @SerialName("tpm_ek_certificate_chain") val tpmEkCertificateChain: List<String>? = null,
     val error: ServiceError?,
 )
 

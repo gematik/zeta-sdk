@@ -13,7 +13,7 @@ import platform.posix.*
 
 internal class CurlHttpResponseBody(
     private val callContext: Job,
-    private val onUnpause: () -> Unit
+    private val onUnpause: () -> Unit,
 ) : CurlResponseBodyData {
     private val bytesWritten = atomic(0)
 

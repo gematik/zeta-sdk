@@ -17,7 +17,7 @@ import io.ktor.util.date.*
 import io.ktor.utils.io.*
 
 internal class CurlClientEngine(
-    override val config: CurlClientEngineConfig
+    override val config: CurlClientEngineConfig,
 ) : HttpClientEngineBase("ktor-curl") {
 
     override val supportedCapabilities = setOf(HttpTimeoutCapability, WebSocketCapability, SSECapability)
@@ -63,7 +63,7 @@ internal class CurlClientEngine(
                 headers,
                 version.fromCurl(),
                 responseBody,
-                callContext
+                callContext,
             )
         }
     }

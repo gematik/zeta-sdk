@@ -7,6 +7,7 @@ package io.ktor.client.engine.curl.internal
 import io.ktor.client.call.*
 import io.ktor.client.engine.*
 import io.ktor.client.engine.curl.*
+import io.ktor.client.engine.curl.tls.TlsValidationConfig
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.http.*
@@ -20,6 +21,7 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import libcurl.curl_slist
+import kotlin.String
 import kotlin.coroutines.coroutineContext
 
 @OptIn(ExperimentalForeignApi::class, InternalAPI::class)
@@ -37,7 +39,13 @@ internal suspend fun HttpRequestData.toCurlRequest(config: CurlClientEngineConfi
     forceProxyTunneling = config.forceProxyTunneling,
     sslVerify = config.sslVerify,
     caInfo = config.caInfo,
-    caPath = config.caPath
+    caPath = config.caPath,
+    sslCipherList = config.sslCipherList,
+    tls13Ciphers = config.tls13Ciphers,
+    sslVersion = config.sslVersion,
+    sslEcCurves = config.sslEcCurves,
+    sslSignatureAlgorithms = config.sslSignatureAlgorithms,
+    tlsValidationConfig = config.tlsValidationConfig,
 )
 
 internal class CurlRequestData @OptIn(ExperimentalForeignApi::class) constructor(
@@ -54,7 +62,13 @@ internal class CurlRequestData @OptIn(ExperimentalForeignApi::class) constructor
     val forceProxyTunneling: Boolean,
     val sslVerify: Boolean,
     val caInfo: String?,
-    val caPath: String?
+    val caPath: String?,
+    val sslCipherList: String?,
+    val tls13Ciphers: String?,
+    val sslVersion: SslVersion,
+    val sslEcCurves: String?,
+    val sslSignatureAlgorithms: String?,
+    val tlsValidationConfig: TlsValidationConfig?,
 ) {
     override fun toString(): String =
         "CurlRequestData(url='$url', method='$method', content: $contentLength bytes)"
@@ -63,7 +77,7 @@ internal class CurlRequestData @OptIn(ExperimentalForeignApi::class) constructor
 internal class CurlResponseBuilder(
     val request: CurlRequestData,
     val bodyStartedReceiving: CompletableDeferred<Unit>,
-    val responseBody: CurlResponseBodyData
+    val responseBody: CurlResponseBodyData,
 ) {
     val headersBytes = BytePacketBuilder()
 }
@@ -74,13 +88,13 @@ internal class CurlSuccess(
     val status: Int,
     val version: Long,
     val headersBytes: ByteArray,
-    val responseBody: CurlResponseBodyData
+    val responseBody: CurlResponseBodyData,
 ) : CurlResponseData() {
     override fun toString(): String = "CurlSuccess(${HttpStatusCode.fromValue(status)})"
 }
 
 internal class CurlFail(
-    val cause: Throwable
+    val cause: Throwable,
 ) : CurlResponseData() {
     override fun toString(): String = "CurlFail($cause)"
 }
@@ -97,7 +111,10 @@ internal suspend fun OutgoingContent.toByteChannel(): ByteReadChannel = when (th
     }.channel
 
     is OutgoingContent.ReadChannelContent -> readFrom()
+
     is OutgoingContent.NoContent -> ByteReadChannel.Empty
+
     is OutgoingContent.ContentWrapper -> delegate().toByteChannel()
+
     is OutgoingContent.ProtocolUpgrade -> throw UnsupportedContentTypeException(this@toByteChannel)
 }

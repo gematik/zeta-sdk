@@ -52,3 +52,7 @@ internal const val AK_PERSISTENT_HANDLE: UInt = 0x81000001u
 
 internal fun requirePcrIndex(pcrIndex: Int) =
     require(pcrIndex in PCR_MIN_INDEX..PCR_MAX_INDEX) { "PCR index must be between $PCR_MIN_INDEX and $PCR_MAX_INDEX" }
+
+internal const val NV_EK_CERT_ECC: UInt = 0x01C0000Au
+internal const val NV_PLATFORM_CERT: UInt = 0x01C00001u
+internal const val NV_ATTESTATION_CERT: UInt = 0x01C00004u

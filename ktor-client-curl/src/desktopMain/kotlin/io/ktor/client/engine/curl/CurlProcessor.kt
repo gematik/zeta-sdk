@@ -18,7 +18,7 @@ import kotlin.coroutines.CoroutineContext
 
 internal class RequestContainer(
     val requestData: CurlRequestData,
-    val completionHandler: CompletableDeferred<CurlSuccess>
+    val completionHandler: CompletableDeferred<CurlSuccess>,
 )
 
 internal class CurlProcessor(coroutineContext: CoroutineContext) {

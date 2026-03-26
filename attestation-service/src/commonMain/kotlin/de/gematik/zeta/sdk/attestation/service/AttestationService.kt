@@ -22,9 +22,10 @@
  * #L%
  */
 
-import de.gematik.zeta.sdk.attestation.interfaces.FileIntegrity
-import de.gematik.zeta.sdk.attestation.interfaces.FileScanner
-import de.gematik.zeta.sdk.attestation.interfaces.ProcessMonitor
+import de.gematik.zeta.logging.Log
+import de.gematik.zeta.sdk.attestation.interfaces.FileIntegrityOperations
+import de.gematik.zeta.sdk.attestation.interfaces.FileScannerOperations
+import de.gematik.zeta.sdk.attestation.interfaces.ProcessMonitorOperations
 import de.gematik.zeta.sdk.attestation.model.AttestationRequest
 import de.gematik.zeta.sdk.attestation.model.AttestationResponse
 import de.gematik.zeta.sdk.attestation.model.FileMonitorRequest
@@ -36,45 +37,80 @@ import de.gematik.zeta.sdk.attestation.model.VerifyIntegrityResponse
 import de.gematik.zeta.sdk.attestation.service.ErrorCode
 import de.gematik.zeta.sdk.attestation.service.ServiceError
 import de.gematik.zeta.sdk.attestation.service.TpmException
-import de.gematik.zeta.sdk.attestation.tpm.TpmAccess
+import de.gematik.zeta.sdk.attestation.tpm.TpmAccessOperations
 import io.ktor.http.RequestConnectionPoint
 import kotlin.io.encoding.Base64
 import kotlin.time.Clock
 
 class AttestationService(
-    private val monitor: ProcessMonitor,
-    private val fileScanner: FileScanner,
-    private val fileIntegrity: FileIntegrity,
-    private val tpm: TpmAccess,
+    private val monitor: ProcessMonitorOperations,
+    private val fileScanner: FileScannerOperations,
+    private val fileIntegrity: FileIntegrityOperations,
+    private val tpm: TpmAccessOperations,
     private val config: ServiceConfig,
 ) {
     private val startTime = Clock.System.now()
 
     fun initialize() {
-        val akPubKey = tpm.provisionAttestationKey()
-        fileIntegrity.initialize(config.resetFileIntegrity)
-        println("AK initialized, size: ${akPubKey.size}")
+        if (config.enableQuote) {
+            val akPubKey = tpm.provisionAttestationKey()
+            Log.i { "AK initialized, size: ${akPubKey.size}" }
+        }
+        if (config.enableFileIntegrity) {
+            fileIntegrity.initialize(config.resetFileIntegrity)
+        }
     }
 
     fun buildAttestationResponse(
         request: AttestationRequest,
         origin: RequestConnectionPoint,
     ): AttestationResponse {
-        val quoteResult = getQuote(request.attestationChallenge, request.pcrSelection, origin)
-        if (quoteResult.error != null) {
-            return AttestationResponse(error = quoteResult.error)
+        var akPubKeyPem: String? = null
+        var quoteBase64: String? = null
+        var quoteSignatureBase64: String? = null
+        if (config.enableQuote) {
+            val quoteResult = getQuote(request.attestationChallenge, request.pcrSelection, origin)
+            if (quoteResult.error != null) {
+                return AttestationResponse(error = quoteResult.error)
+            }
+            akPubKeyPem = b64UrlNoPadding().encode(quoteResult.attestationKey)
+            quoteBase64 = b64UrlNoPadding().encode(quoteResult.quote)
+            quoteSignatureBase64 = b64UrlNoPadding().encode(quoteResult.signature)
         }
 
-        val akPubKeyPem = b64UrlNoPadding().encode(quoteResult.attestationKey)
-        val quoteBase64 = b64UrlNoPadding().encode(quoteResult.quote)
+        var eventLogBase64: String? = null
+        if (config.enablePcrLog) {
+            val eventLog = tpm.getEventLog()
+            eventLogBase64 = b64UrlNoPadding().encode(eventLog)
+        }
 
-        val quoteSignatureBase64 = b64UrlNoPadding().encode(quoteResult.signature)
+        var ekCertsPem: List<String>? = null
+        if (config.enableEKCertificate) {
+            try {
+                Log.i { "Reading EK certificate chain" }
+                val ekCerts = tpm.getEKCertificateChain()
 
-        val eventLog = tpm.getEventLog()
-        val eventLogBase64 = b64UrlNoPadding().encode(eventLog)
+                if (ekCerts.isEmpty()) {
+                    Log.w { "WARNING: No EK certificates found in TPM" }
+                } else {
+                    Log.i { "Found ${ekCerts.size} EK certificate(s)" }
+                    ekCerts.forEachIndexed { index, cert ->
+                        Log.i { "Certificate $index: ${cert.size} bytes" }
+                    }
+                }
 
-        val ekCerts = tpm.getEKCertificateChain()
-        val ekCertsPem = ekCerts.map { b64UrlNoPadding().encode(it) }
+                ekCertsPem = ekCerts.map { cert ->
+                    val encoded = b64UrlNoPadding().encode(cert)
+                    Log.i { "Encoded cert (first 50 chars): ${encoded.take(50)}..." }
+                    encoded
+                }
+            } catch (e: Exception) {
+                Log.e { "ERROR reading EK certificates: ${e.message}" }
+                ekCertsPem = null
+            }
+        } else {
+            Log.i { "EK certificate reading DISABLED in config" }
+        }
 
         return AttestationResponse(
             tpmAttestationKey = akPubKeyPem,
@@ -107,12 +143,16 @@ class AttestationService(
             return QuoteResponse(error = ServiceError(ErrorCode.TPM_NOT_AVAILABLE, "TPM not available"))
         }
 
-        if (!fileIntegrity.isIntact()) {
-            return QuoteResponse(error = ServiceError(ErrorCode.INTERNAL_ERROR, "Filesystem integrity violated"))
+        if (config.enableFileIntegrity) {
+            if (!fileIntegrity.isIntact()) {
+                return QuoteResponse(error = ServiceError(ErrorCode.INTERNAL_ERROR, "Filesystem integrity violated"))
+            }
         }
 
-        if (!monitor.isProcessAllowed(origin)) {
-            return QuoteResponse(error = ServiceError(ErrorCode.PROCESS_NOT_ALLOWED, "Client process not allowed"))
+        if (config.enableProcessOrigin) {
+            if (!monitor.isProcessAllowed(origin)) {
+                return QuoteResponse(error = ServiceError(ErrorCode.PROCESS_NOT_ALLOWED, "Client process not allowed"))
+            }
         }
 
         return try {
@@ -130,7 +170,7 @@ class AttestationService(
         } catch (tpmEx: TpmException) {
             QuoteResponse(error = ServiceError(code = ErrorCode.TPM_QUOTE_ERROR, message = tpmEx.message ?: "Unexpected error"))
         } catch (e: Exception) {
-            println("Unexpected error: ${e.message}")
+            Log.e { "Unexpected error: ${e.message}" }
             QuoteResponse(error = ServiceError(code = ErrorCode.INTERNAL_ERROR, message = "Internal error"))
         }
     }
@@ -159,7 +199,7 @@ class AttestationService(
     }
 
     fun processPid(origin: RequestConnectionPoint): ProcessPidResponse {
-        println("processPid: local = ${origin.localHost}:${origin.localPort}, remote = ${origin.remoteHost}:${origin.remotePort}")
+        Log.i { "processPid: local = ${origin.localHost}:${origin.localPort}, remote = ${origin.remoteHost}:${origin.remotePort}" }
         val processPid = monitor.findSocketAndPid(origin)
         val processName = monitor.getProcessName(processPid)
         return ProcessPidResponse(processPid?.toLong(), processName)
@@ -168,7 +208,7 @@ class AttestationService(
     fun fileMonitor(request: FileMonitorRequest, onModified: (String, String) -> Unit) {
         val files = request.filePaths
         fileScanner.startMonitoring(files) { file, event ->
-            println("onModified: $file, $event")
+            Log.i { "onModified: $file, $event" }
             onModified(file, event)
         }
     }
@@ -183,5 +223,10 @@ data class ServiceConfig(
     val port: Int,
     val pcrId: Int,
     val resetFileIntegrity: Boolean,
+    val enableFileIntegrity: Boolean,
+    val enableQuote: Boolean,
+    val enablePcrLog: Boolean,
+    val enableEKCertificate: Boolean,
+    val enableProcessOrigin: Boolean,
     val allowedExecutables: List<String> = emptyList(),
 )

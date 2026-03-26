@@ -29,15 +29,15 @@ import de.gematik.zeta.client.di.DIContainer.ASL_PROD
 import de.gematik.zeta.client.di.DIContainer.DISABLE_SERVER_VALIDATION
 import de.gematik.zeta.client.di.DIContainer.SMB_KEYSTORE_CREDENTIALS
 import de.gematik.zeta.client.di.DIContainer.SMCB_CONNECTOR_CONFIG
-import de.gematik.zeta.client.state.AttestationState
-import de.gematik.zeta.logging.Log
+import de.gematik.zeta.platform.Platform
+import de.gematik.zeta.platform.platform
 import de.gematik.zeta.sdk.BuildConfig
 import de.gematik.zeta.sdk.StorageConfig
 import de.gematik.zeta.sdk.TpmConfig
 import de.gematik.zeta.sdk.ZetaSdk
+import de.gematik.zeta.sdk.ZetaSdk.forget
+import de.gematik.zeta.sdk.ZetaSdkClient
 import de.gematik.zeta.sdk.attestation.model.AttestationConfig
-import de.gematik.zeta.sdk.attestation.model.AttestationStatus
-import de.gematik.zeta.sdk.attestation.model.AttestationStatusCallback
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
@@ -50,11 +50,12 @@ import io.ktor.client.plugins.logging.Logger
 public interface HttpClientProvider {
     public fun provideHttpClient(): ZetaHttpClient
     public fun setupEnvUrl(url: String)
+    public suspend fun forget()
 }
 
 public class HttpClientProviderImpl : HttpClientProvider {
-
     private lateinit var httpClient: ZetaHttpClient
+    private lateinit var sdkClient: ZetaSdkClient
 
     override fun provideHttpClient(): ZetaHttpClient =
         httpClient
@@ -63,12 +64,16 @@ public class HttpClientProviderImpl : HttpClientProvider {
         httpClient = prepareHttpClient(url)
     }
 
+    override suspend fun forget() {
+        sdkClient.forget()
+    }
+
     private fun prepareHttpClient(url: String): ZetaHttpClient {
-        return ZetaSdk.build(
+        sdkClient = ZetaSdk.build(
             resource = url,
             config = BuildConfig(
                 "demo-client",
-                productVersion = "0.2.0",
+                productVersion = "0.4.0",
                 "sdk-client",
                 StorageConfig(),
                 object : TpmConfig {},
@@ -90,7 +95,7 @@ public class HttpClientProviderImpl : HttpClientProvider {
                     },
                     AttestationConfig.software(),
                 ),
-                platformProductId = PlatformProductId.LinuxProductId("linux", "macos", "applicationId", "1.2.3.4"),
+                getPlatformProduct(),
                 ZetaHttpClientBuilder()
                     .disableServerValidation(DISABLE_SERVER_VALIDATION)
                     .logging(
@@ -103,16 +108,26 @@ public class HttpClientProviderImpl : HttpClientProvider {
                     ),
             ),
         )
-            .httpClient {
-                logging(
-                    LogLevel.ALL,
-                    object : Logger {
-                        override fun log(message: String) {
-                            println(message)
-                        }
-                    },
-                )
-                disableServerValidation(DISABLE_SERVER_VALIDATION)
-            }
+
+        return sdkClient.httpClient {
+            logging(
+                LogLevel.ALL,
+                object : Logger {
+                    override fun log(message: String) {
+                        println(message)
+                    }
+                },
+            )
+            disableServerValidation(DISABLE_SERVER_VALIDATION)
+        }
+    }
+
+    private fun getPlatformProduct(): PlatformProductId {
+        return when (val plat = platform()) {
+            is Platform.Jvm.Macos, Platform.Native.Macos -> PlatformProductId.AppleProductId("apple", "macos", listOf())
+            is Platform.Jvm.Linux -> PlatformProductId.LinuxProductId("linux", "", "demo-client", "0.4.0")
+            is Platform.Jvm.Windows -> PlatformProductId.WindowsProductId("windows", "", "demo-client")
+            else -> error("Unknown platform: $plat")
+        }
     }
 }

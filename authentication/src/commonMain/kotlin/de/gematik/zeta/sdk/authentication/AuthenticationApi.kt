@@ -37,6 +37,7 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.io.encoding.Base64
+import kotlin.time.Clock
 
 interface AuthenticationApi {
     suspend fun fetchNonce(nonceEndpoint: String): ByteArray
@@ -77,6 +78,9 @@ class AuthenticationApiImpl(
         accessTokenRequest: AccessTokenRequest,
         dpopToken: String,
     ): AccessTokenResponse {
+        val sendTime = Clock.System.now()
+        Log.i { "[TOKEN-SEND] endpoint=$fromEndpoint time=$sendTime" }
+
         val response: ZetaHttpResponse = zetaHttpClient
             .submitForm(
                 fromEndpoint,
@@ -84,6 +88,9 @@ class AuthenticationApiImpl(
             ) {
                 headers[HttpAuthHeaders.Dpop] = dpopToken
             }
+
+        val recvTime = Clock.System.now()
+        Log.i { "[TOKEN-RECV] endpoint=$fromEndpoint time=$recvTime duration=${recvTime - sendTime} status=${response.status}" }
 
         return handleResponse(response)
     }

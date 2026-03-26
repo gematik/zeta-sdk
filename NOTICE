@@ -1,9 +1,7 @@
 ===============================================================================
 NOTICE - Third Party Dependencies
 ===============================================================================
-
 This project includes modified versions of the following third-party software:
-
 -------------------------------------------------------------------------------
 ktor-client-curl (Modified)
 -------------------------------------------------------------------------------
@@ -14,12 +12,40 @@ License: Apache License 2.0
 Copyright: 2014-2019 JetBrains s.r.o and contributors.
 
 MODIFICATIONS:
-- Modified to use native builds (https://github.com/ensody/native-builds) instead of prebuilt binaries
-- Updated to specify higher OpenSSL version for ML-KEM support
-- Reason: Required for ZETA SDK to support post-quantum cryptography (ML-KEM)
-- Modified files: libcurl.def
-- Modification date: January 2026
-- Modified by: EY Strategy & Transactions GmbH, 2025, licensed for gematik GmbH
+
+1. Native builds integration
+   - Modified to use native builds (https://github.com/ensody/native-builds)
+     instead of prebuilt binaries
+   - Updated to specify higher OpenSSL version for ML-KEM support
+   - Reason: Required for ZETA SDK to support post-quantum cryptography (ML-KEM)
+   - Modified files: libcurl.def
+   - Modification date: January 2026
+   - Modified by: EY Strategy & Transactions GmbH, licensed for gematik GmbH
+
+2. gematik TLS compliance
+   - Extended CurlClientEngineConfig to expose the following libcurl TLS options
+     that were not previously available through the public API:
+       · CURLOPT_SSL_CIPHER_LIST: TLS 1.2 cipher suite restriction
+       · CURLOPT_TLS13_CIPHERS: TLS 1.3 cipher suite restriction
+       · CURLOPT_SSL_EC_CURVES: EC curve restriction (P-256, P-384,
+                                   brainpoolP256r1, brainpoolP384r1)
+       · CURLOPT_SSLVERSION: minimum TLS protocol version (TLS 1.2)
+       . CURLOPT_SSL_SIGNATURE_ALGORITHMS: certificate signature algorithms restriction
+   - Added SslVersion enum mapping Kotlin values to libcurl CURL_SSLVERSION_*
+     constants
+   - Added CurlDebugCallback (top-level) via CURLOPT_DEBUGFUNCTION to log and
+     validate the negotiated cipher suite, protocol version, and EC curve
+     after the TLS handshake
+   - Extended CurlRequestData with the new TLS fields to carry configuration
+     from CurlClientEngineConfig through to CurlMultiApiHandler
+   - Reason: Required to comply with gematik TLS specification.
+   - Modified files: CurlClientEngineConfig.kt, CurlRequestData.kt,
+     CurlMultiApiHandler.kt, CurlRaw.kt
+   - New files: SslVersion.kt, tls/TlsSessionValidator.kt, tls/ValidationConfig.kt
+   - Linting applied
+   - Modification date: February 2026
+   - Modified by: EY Strategy & Transactions GmbH, licensed for gematik GmbH
+
 
 Original License:
 https://github.com/ktorio/ktor/blob/main/LICENSE

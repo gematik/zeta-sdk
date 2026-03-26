@@ -24,13 +24,14 @@
 
 package de.gematik.zeta.sdk
 
+import de.gematik.zeta.sdk.ZetaSdk.forget
 import kotlinx.coroutines.runBlocking
 
 public object ZetaSdkClientExtension {
     @JvmStatic
-    fun forget(): Boolean {
+    fun forget(client: ZetaSdkClient): Boolean {
         return runBlocking {
-            ZetaSdk.forget().isSuccess
+            client.forget().isSuccess
         }
     }
 

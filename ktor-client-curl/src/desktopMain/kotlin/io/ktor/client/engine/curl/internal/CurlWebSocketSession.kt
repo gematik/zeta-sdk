@@ -18,7 +18,7 @@ import kotlin.coroutines.*
 @OptIn(ExperimentalForeignApi::class)
 internal class CurlWebSocketSession(
     private val websocket: CurlWebSocketResponseBody,
-    callContext: CoroutineContext
+    callContext: CoroutineContext,
 ) : WebSocketSession, Closeable {
 
     private val closed = atomic(false)
@@ -92,7 +92,7 @@ internal class CurlWebSocketSession(
     @Deprecated(
         "Use cancel() instead.",
         ReplaceWith("cancel()", "kotlinx.coroutines.cancel"),
-        level = DeprecationLevel.ERROR
+        level = DeprecationLevel.ERROR,
     )
     override fun terminate() {
         socketJob.cancel()

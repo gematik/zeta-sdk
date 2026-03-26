@@ -5,6 +5,7 @@
 package io.ktor.client.engine.curl.internal
 
 import io.ktor.client.engine.*
+import io.ktor.client.engine.curl.tls.validateTlsSession
 import io.ktor.client.plugins.*
 import io.ktor.utils.io.*
 import io.ktor.utils.io.core.*
@@ -25,6 +26,38 @@ private class RequestHolder(
         requestWrapper.dispose()
         responseWrapper.dispose()
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun curlDebugCallback(
+    handle: COpaquePointer?,
+    type: curl_infotype,
+    data: CPointer<ByteVar>?,
+    size: platform.posix.size_t,
+    userptr: COpaquePointer?,
+): Int {
+    if (data == null) return 0
+
+    val message = data.readBytes(size.toInt()).decodeToString()
+
+    when (type) {
+        CURLINFO_TEXT -> {
+            if (message.contains("SSL connection using", ignoreCase = true) ||
+                message.contains("SSL handshake", ignoreCase = true) ||
+                message.contains("cipher", ignoreCase = true) ||
+                message.contains("curve", ignoreCase = true)
+            ) {
+                println("ZetaTls [SSL]: $message")
+            }
+        }
+
+        CURLINFO_HEADER_IN -> println("Tls [HEADER IN]:  $message")
+
+        CURLINFO_HEADER_OUT -> println("Tls [HEADER OUT]: $message")
+
+        else -> { }
+    }
+    return 0
 }
 
 @OptIn(InternalAPI::class, ExperimentalForeignApi::class)
@@ -75,7 +108,7 @@ internal class CurlMultiApiHandler : Closeable {
         val requestHolder = RequestHolder(
             deferred,
             requestWrapper.asStableRef(),
-            responseWrapper.asStableRef()
+            responseWrapper.asStableRef(),
         )
 
         activeHandles[easyHandle] = requestHolder
@@ -89,6 +122,13 @@ internal class CurlMultiApiHandler : Closeable {
             option(CURLOPT_WRITEDATA, responseWrapper)
             option(CURLOPT_PRIVATE, responseDataRef)
             option(CURLOPT_ACCEPT_ENCODING, "")
+
+            val verboseTls = false
+            if (verboseTls) {
+                option(CURLOPT_VERBOSE, 1L)
+                option(CURLOPT_DEBUGFUNCTION, staticCFunction(::curlDebugCallback))
+                option(CURLOPT_DEBUGDATA, responseDataRef)
+            }
             request.connectTimeout?.let {
                 if (it != HttpTimeoutConfig.INFINITE_TIMEOUT_MS) {
                     option(CURLOPT_CONNECTTIMEOUT_MS, request.connectTimeout)
@@ -111,6 +151,12 @@ internal class CurlMultiApiHandler : Closeable {
             }
             request.caPath?.let { option(CURLOPT_CAPATH, it) }
             request.caInfo?.let { option(CURLOPT_CAINFO, it) }
+
+            request.sslCipherList?.let { list -> option(CURLOPT_SSL_CIPHER_LIST, list) }
+            request.tls13Ciphers?.let { option(CURLOPT_TLS13_CIPHERS, it) }
+            request.sslEcCurves?.let { option(CURLOPT_SSL_EC_CURVES, it) }
+            request.sslSignatureAlgorithms?.let { option(CURLOPT_SSL_SIGNATURE_ALGORITHMS, it) }
+            option(CURLOPT_SSLVERSION, request.sslVersion.curlValue)
         }
 
         curl_multi_add_handle(multiHandle, easyHandle).verify()
@@ -150,7 +196,7 @@ internal class CurlMultiApiHandler : Closeable {
     private fun setupMethod(
         easyHandle: EasyHandle,
         method: String,
-        size: Long
+        size: Long,
     ) {
         easyHandle.apply {
             when (method) {
@@ -185,7 +231,7 @@ internal class CurlMultiApiHandler : Closeable {
             callContext = request.executionContext,
             onUnpause = {
                 unpauseEasyHandle(easyHandle)
-            }
+            },
         ).asStablePointer()
 
         easyHandle.apply {
@@ -250,7 +296,7 @@ internal class CurlMultiApiHandler : Closeable {
     private fun processCompletedEasyHandle(
         message: CURLMSG?,
         easyHandle: EasyHandle,
-        result: CURLcode
+        result: CURLcode,
     ): CurlResponseData = memScoped {
         try {
             val responseDataRef = alloc<COpaquePointerVar>()
@@ -278,13 +324,13 @@ internal class CurlMultiApiHandler : Closeable {
         message: CURLMSG?,
         request: CurlRequestData,
         result: CURLcode,
-        httpStatusCode: Long
+        httpStatusCode: Long,
     ): CurlFail? {
         curl_slist_free_all(request.headers)
 
         if (message != CURLMSG.CURLMSG_DONE) {
             return CurlFail(
-                IllegalStateException("Request $request failed: $message")
+                IllegalStateException("Request $request failed: $message"),
             )
         }
 
@@ -301,13 +347,13 @@ internal class CurlMultiApiHandler : Closeable {
         if (result == CURLE_PEER_FAILED_VERIFICATION) {
             return CurlFail(
                 IllegalStateException(
-                    "TLS verification failed for request: $request. Reason: $errorMessage"
-                )
+                    "TLS verification failed for request: $request. Reason: $errorMessage",
+                ),
             )
         }
 
         return CurlFail(
-            IllegalStateException("Connection failed for request: $request. Reason: $errorMessage")
+            IllegalStateException("Connection failed for request: $request. Reason: $errorMessage"),
         )
     }
 
@@ -328,6 +374,10 @@ internal class CurlMultiApiHandler : Closeable {
         }
 
         val responseBuilder = responseDataRef.value!!.fromCPointer<CurlResponseBuilder>()
+        if (responseBuilder.request.sslVerify) {
+            validateTlsSession(easyHandle, responseBuilder.request.tlsValidationConfig)
+        }
+
         with(responseBuilder) {
             val headers = headersBytes.build().readByteArray()
 
@@ -335,7 +385,7 @@ internal class CurlMultiApiHandler : Closeable {
                 httpStatusCode.value.toInt(),
                 httpProtocolVersion.value,
                 headers,
-                responseBody
+                responseBody,
             )
         }
     }

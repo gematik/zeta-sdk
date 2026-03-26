@@ -26,7 +26,7 @@ internal val DISALLOWED_WEBSOCKET_HEADERS = setOf(
     HttpHeaders.Upgrade,
     HttpHeaders.Connection,
     HttpHeaders.SecWebSocketVersion,
-    HttpHeaders.SecWebSocketKey
+    HttpHeaders.SecWebSocketKey,
 )
 
 @OptIn(ExperimentalForeignApi::class)
@@ -133,8 +133,11 @@ internal fun HttpRequestData.headersToCurl(): CPointer<curl_slist> {
 @OptIn(ExperimentalForeignApi::class, UnsafeNumber::class)
 internal fun Long.fromCurl(): HttpProtocolVersion = when (this) {
     CURL_HTTP_VERSION_1_0.toLong() -> HttpProtocolVersion.HTTP_1_0
+
     CURL_HTTP_VERSION_1_1.toLong() -> HttpProtocolVersion.HTTP_1_1
+
     CURL_HTTP_VERSION_2_0.toLong() -> HttpProtocolVersion.HTTP_2_0
+
     // old curl fallback
     else -> HttpProtocolVersion.HTTP_1_1
 }

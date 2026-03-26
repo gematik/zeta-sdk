@@ -131,7 +131,7 @@ class AttestationApiImpl(
                 Log.i { "Getting software client statement" }
                 getSoftwareStatement(
                     attChallenge,
-                    clientInstanceKeys.jwk,
+                    clientInstanceKeys.encoded,
                     productId,
                     productVersion,
                     clientId,
@@ -171,16 +171,15 @@ class AttestationApiImpl(
      */
     private suspend fun getSoftwareStatement(
         attestationChallenge: ByteArray,
-        jwk: Jwk,
+        encoded: ByteArray,
         productId: String,
         productVersion: String,
         sub: String,
         platformProductId: PlatformProductId,
     ): ClientStatement {
-        val publicCanonicalJsonB64 = b64url(jwk.toCanonicalJson().toByteArray(Charsets.UTF_8))
-
+        val publicKey = Base64.encode(encoded)
         val attestationTimestamp: Long = clockEpochSeconds()
-        val posture: JsonElement = buildPosture(platformProductId, productId, productVersion, b64url(attestationChallenge), publicCanonicalJsonB64)
+        val posture: JsonElement = buildPosture(platformProductId, productId, productVersion, b64url(attestationChallenge), publicKey)
         val postureType = getPostureType()
         return ClientStatement(sub, getPlatform(), postureType, posture, attestationTimestamp)
     }

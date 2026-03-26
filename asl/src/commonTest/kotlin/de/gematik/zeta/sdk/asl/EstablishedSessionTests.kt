@@ -24,7 +24,7 @@
 
 package de.gematik.zeta.sdk.asl
 
-import de.gematik.zeta.sdk.crypto.AesGcmCipher
+import de.gematik.zeta.sdk.crypto.AesGcmCipherImpl
 import de.gematik.zeta.sdk.crypto.unpackAead
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -35,7 +35,7 @@ class EstablishedSessionTests {
     private val keyId = ByteArray(32) { 0x01 }
     private val c2sKey = ByteArray(32) { 0x02 }
     private val s2cKey = ByteArray(32) { 0x03 }
-    private val cipher = AesGcmCipher()
+    private val cipher = AesGcmCipherImpl()
     private val testPlaintext = "hello asl".encodeToByteArray()
 
     @Test

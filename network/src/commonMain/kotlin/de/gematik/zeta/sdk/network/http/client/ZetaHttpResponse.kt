@@ -43,7 +43,7 @@ public val InnerStatusKey: AttributeKey<Int> =
 public val InnerHeadersKey: AttributeKey<Map<String, String>> =
     AttributeKey("asl-inner-headers")
 
-public class ZetaHttpResponse internal constructor(
+public class ZetaHttpResponse(
     public val raw: HttpResponse,
     public val headers: Map<String, String>,
     public val status: HttpStatusCode,

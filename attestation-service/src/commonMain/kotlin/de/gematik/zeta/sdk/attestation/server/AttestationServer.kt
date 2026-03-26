@@ -27,6 +27,7 @@ package de.gematik.zeta.sdk.attestation.server
 
 import AttestationService
 import ServiceConfig
+import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.attestation.model.AttestationRequest
 import de.gematik.zeta.sdk.attestation.model.AttestationResponse
 import de.gematik.zeta.sdk.attestation.model.FileMonitorRequest
@@ -53,22 +54,22 @@ import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 
 class AttestationServer(
     private val config: ServiceConfig,
     private val service: AttestationService,
 ) {
+    val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        explicitNulls = true
+    }
+
     fun start() {
         embeddedServer(CIO, port = config.port) {
             install(ContentNegotiation) {
-                json(
-                    Json {
-                        ignoreUnknownKeys = true
-                        isLenient = true
-                    },
-                )
+                json(json)
             }
             install(WebSockets)
             configureRouting()
@@ -83,14 +84,14 @@ class AttestationServer(
                     val response = service.buildAttestationResponse(request, call.request.origin)
 
                     call.respondText(
-                        text = Json.encodeToString(AttestationResponse.serializer(), response),
+                        text = json.encodeToString(AttestationResponse.serializer(), response),
                         contentType = ContentType.Application.Json,
                         status = HttpStatusCode.OK,
                     )
                 } catch (e: IllegalArgumentException) {
                     call.respond(HttpStatusCode.BadRequest, e.message ?: "Invalid request")
                 } catch (e: Exception) {
-                    print(e.message)
+                    Log.e { e.stackTraceToString() }
                     call.respond(HttpStatusCode.InternalServerError, e.message ?: "Internal error")
                 }
             }
@@ -101,7 +102,7 @@ class AttestationServer(
                     val verifyIntegrity = service.verifyIntegrity(request)
                     call.respond(HttpStatusCode.OK, verifyIntegrity)
                 } catch (ex: Exception) {
-                    ex.printStackTrace()
+                    Log.e { ex.stackTraceToString() }
                     call.respond(HttpStatusCode.InternalServerError, ex.message ?: "Error")
                 }
             }
@@ -111,7 +112,7 @@ class AttestationServer(
                     val health = service.health()
                     call.respond(HttpStatusCode.OK, health)
                 } catch (ex: Exception) {
-                    ex.printStackTrace()
+                    Log.e { ex.stackTraceToString() }
                     call.respond(HttpStatusCode.InternalServerError, ex.message ?: "Error")
                 }
             }
@@ -121,7 +122,7 @@ class AttestationServer(
                     val pid = service.processPid(call.request.origin)
                     call.respond(HttpStatusCode.OK, pid)
                 } catch (ex: Exception) {
-                    ex.printStackTrace()
+                    Log.e { ex.stackTraceToString() }
                     call.respond(HttpStatusCode.InternalServerError, ex.message ?: "Error")
                 }
             }
@@ -129,10 +130,10 @@ class AttestationServer(
             webSocket("/file-monitor") {
                 try {
                     for (frame in incoming) {
-                        println("frame: $frame")
+                        Log.i { "Incoming Frame: $frame" }
                         if (frame is Frame.Text) {
                             val text = frame.readText()
-                            println("Frame.Text: $text")
+                            Log.i { "Frame.Text: $text" }
                             val request = Json.decodeFromString<FileMonitorRequest>(text)
                             service.fileMonitor(request) { file, event ->
                                 val response = Json.encodeToString(FileMonitorResponse(file, event))
@@ -144,7 +145,7 @@ class AttestationServer(
                     }
                     service.stopFileMonitor()
                 } catch (ex: Exception) {
-                    ex.printStackTrace()
+                    Log.e { ex.stackTraceToString() }
                     call.respond(HttpStatusCode.InternalServerError, ex.message ?: "Error")
                 }
             }
@@ -170,7 +171,7 @@ class AttestationServer(
 
                     unsubscribe()
                 } catch (ex: Exception) {
-                    ex.printStackTrace()
+                    Log.e { ex.stackTraceToString() }
                     call.respond(HttpStatusCode.InternalServerError, ex.message ?: "Error")
                 }
             }

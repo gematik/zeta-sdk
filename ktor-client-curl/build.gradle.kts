@@ -16,6 +16,7 @@ setupBuildLogic {
 
         if (project.isNativeEnabled) {
             sourceSets["desktopMain"].dependencies {
+                api(libs.cryptography.provider.openssl3.api)
                 api(libs.ktor.client.core)
                 api(libs.ktor.client.cio)
                 api(libs.nativebuilds.curl.libcurl)
@@ -31,6 +32,10 @@ setupBuildLogic {
 
         cinterops(libs.nativebuilds.curl.headers) {
             definitionFile.set(file("src/desktopMain/cinterop/libcurl.def"))
+        }
+
+        cinterops(libs.nativebuilds.openssl.headers) {
+            definitionFile.set(file("src/desktopMain/cinterop/openssl.def"))
         }
     }
 

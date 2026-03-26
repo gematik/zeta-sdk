@@ -26,20 +26,32 @@ package de.gematik.zeta.sdk.network.http.client
 
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.network.http.client.config.ClientConfig
+import de.gematik.zeta.sdk.network.http.client.config.ProxyConfig
+import de.gematik.zeta.sdk.network.http.client.config.ProxyType
+import de.gematik.zeta.sdk.network.http.client.config.SecurityConfig
+import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaCipherSuites
+import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaTrustManager
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.pingInterval
+import okhttp3.CipherSuite
+import okhttp3.ConnectionSpec
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
-import okhttp3.tls.HandshakeCertificates
+import okhttp3.TlsVersion
 import java.io.ByteArrayInputStream
+import java.io.File
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.security.KeyStore
 import java.security.SecureRandom
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocketFactory
-import javax.net.ssl.TrustManager
+import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 import kotlin.time.Duration.Companion.seconds
 
@@ -76,66 +88,132 @@ internal actual fun buildPlatformClient(
     cfg: ClientConfig,
     commonSetup: HttpClientConfig<*>.() -> Unit,
 ): HttpClient {
-    val socketFactory: SSLSocketFactory
-    val trustManager: X509TrustManager
+    val serverValidationDisabled = cfg.security.disableServerValidation
+    Log.i { "JVM: Disable server validation = $serverValidationDisabled" }
 
-    val disableTLSVerification = cfg.security.disableServerValidation
+    val (socketFactory, trustManager) = buildTlsComponents(cfg.security)
 
-    Log.i { "JVM: Disable server validation = $disableTLSVerification" }
-
-    if (disableTLSVerification) {
-        val allTrustedCerts = arrayOf<TrustManager>(object : X509TrustManager {
-            @Suppress("TrustAllX509TrustManager")
-            override fun checkClientTrusted(chain: Array<out X509Certificate?>?, authType: String?) { // NOSONAR
-                // do nothing - override check for test environments
-            }
-
-            @Suppress("TrustAllX509TrustManager")
-            override fun checkServerTrusted(chain: Array<out X509Certificate?>?, authType: String?) { // NOSONAR
-                // do nothing - override check for test environments
-            }
-            override fun getAcceptedIssuers(): Array<out X509Certificate?> = emptyArray()
-        })
-        val sslContext = SSLContext.getInstance("TLSv1.2")
-        sslContext.init(null, allTrustedCerts, SecureRandom())
-
-        socketFactory = sslContext.socketFactory
-        trustManager = allTrustedCerts[0] as X509TrustManager
-    } else {
-        // Parse additional CA PEMs to X.509 certificates.
-        val certFactory = CertificateFactory.getInstance("X.509")
-
-        // Each string is expected to be a full PEM including BEGIN/END delimiters.
-        val extraCerts: List<X509Certificate> = cfg.security.additionalCaPem.map { pem ->
-            certFactory.generateCertificate(ByteArrayInputStream(pem.toByteArray())) as X509Certificate
-        }
-
-        // Build a trust manager that combines platform CAs with the extra CAs.
-        val handshakeCerts = HandshakeCertificates.Builder()
-            .addPlatformTrustedCertificates()
-            .apply { extraCerts.forEach { addTrustedCertificate(it) } }
-            .build()
-
-        socketFactory = handshakeCerts.sslSocketFactory()
-        trustManager = handshakeCerts.trustManager
-    }
-
-    // Preconfigure OkHttp with the custom trust manager + SSLSocketFactory.
     val okClient = OkHttpClient.Builder()
-        .hostnameVerifier { _, _ -> true } // NOSONAR
+        .applyHostnameVerifier(serverValidationDisabled)
         .sslSocketFactory(socketFactory, trustManager)
+        .dispatcher(
+            Dispatcher().apply {
+                maxRequests = cfg.network.maxRequest
+                maxRequestsPerHost = cfg.network.maxRequest
+            },
+        )
+        .connectionSpecs(buildConnectionSpecs(serverValidationDisabled))
+        .apply {
+            if (!serverValidationDisabled) {
+                addNetworkInterceptor(ZetaTlsValidatorInterceptor())
+            }
+        }
+        .applyProxy(cfg.network.proxyConfig)
         .build()
 
-    // Create the Ktor client with OkHttp engine, applying shared setup and the preconfigured client.
     return HttpClient(OkHttp) {
-        this.apply {
-            commonSetup(this)
-            engine {
-                preconfigured = okClient
-            }
-            install(WebSockets) {
-                pingInterval = 30.seconds
+        engine { preconfigured = okClient }
+        install(WebSockets) { pingInterval = 30.seconds }
+        commonSetup(this)
+    }
+}
+
+private fun buildTlsComponents(security: SecurityConfig): Pair<SSLSocketFactory, X509TrustManager> =
+    if (security.disableServerValidation) {
+        buildInsecureTls()
+    } else {
+        buildSecureTls(security)
+    }
+
+private fun buildInsecureTls(): Pair<SSLSocketFactory, X509TrustManager> {
+    Log.w { "JVM: TLS validation DISABLED — not compliant with gematik TLS requirements" }
+    val trustAll = TrustAllX509TrustManager()
+    val sslContext = SSLContext.getInstance("TLS").apply {
+        init(null, arrayOf(trustAll), SecureRandom())
+    }
+    return sslContext.socketFactory to trustAll
+}
+
+private fun buildSecureTls(securityConfig: SecurityConfig): Pair<SSLSocketFactory, X509TrustManager> {
+    val certFactory = CertificateFactory.getInstance("X.509")
+    val extraCerts = buildList {
+        securityConfig.additionalCaPem.forEach { pem ->
+            certFactory.generateCertificates(ByteArrayInputStream(pem.toByteArray()))
+                .forEach { add(it as X509Certificate) }
+        }
+        securityConfig.additionalCaFile?.let { path ->
+            File(path).inputStream().use { input ->
+                certFactory.generateCertificates(input)
+                    .forEach { add(it as X509Certificate) }
             }
         }
     }
+
+    val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null) }
+    val defaultTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+    defaultTmf.init(null as KeyStore?)
+    (defaultTmf.trustManagers.first() as X509TrustManager)
+        .acceptedIssuers.forEachIndexed { i, cert -> keyStore.setCertificateEntry("platform-$i", cert) }
+
+    extraCerts.forEachIndexed { i, cert -> keyStore.setCertificateEntry("extra-$i", cert) }
+
+    val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+    tmf.init(keyStore)
+    val trustManager = tmf.trustManagers.filterIsInstance<X509TrustManager>().first()
+
+    val sslContext = SSLContext.getInstance("TLS").apply {
+        init(null, arrayOf(trustManager), SecureRandom())
+    }
+
+    return ZetaSslSocketFactory(sslContext.socketFactory) to ZetaTrustManager(trustManager)
+}
+
+@Suppress("SpreadOperator")
+private fun buildConnectionSpecs(disableTLSVerification: Boolean): List<ConnectionSpec> =
+    if (disableTLSVerification) {
+        listOf(ConnectionSpec.CLEARTEXT, ConnectionSpec.MODERN_TLS)
+    } else {
+        val cipherSuites = ZetaCipherSuites.FULL_PREFERRED_ORDER_IANA
+            .mapNotNull { runCatching { CipherSuite.forJavaName(it) }.getOrNull() }
+            .toTypedArray()
+        listOf(
+            ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
+                .tlsVersions(TlsVersion.TLS_1_2, TlsVersion.TLS_1_3)
+                .cipherSuites(*cipherSuites) // NOSONAR required by OkHttp API
+                .build(),
+        )
+    }
+
+private fun OkHttpClient.Builder.applyProxy(proxyConfig: ProxyConfig?): OkHttpClient.Builder {
+    proxyConfig ?: return this
+    val proxyType = when (proxyConfig.type) {
+        ProxyType.HTTP -> Proxy.Type.HTTP
+        ProxyType.SOCKS -> Proxy.Type.SOCKS
+    }
+    proxy(Proxy(proxyType, InetSocketAddress(proxyConfig.host, proxyConfig.port)))
+    if (proxyConfig.type == ProxyType.SOCKS &&
+        proxyConfig.username != null &&
+        proxyConfig.password != null
+    ) {
+        System.setProperty("java.net.socks.username", proxyConfig.username)
+        System.setProperty("java.net.socks.password", proxyConfig.password.concatToString())
+    }
+    return this
+}
+
+private fun OkHttpClient.Builder.applyHostnameVerifier(
+    disableTLSVerification: Boolean,
+): OkHttpClient.Builder {
+    if (disableTLSVerification) {
+        Log.w { "JVM: Hostname verification DISABLED — not compliant with gematik requirements" }
+        hostnameVerifier { _, _ -> true } // NOSONAR
+    }
+    return this
+}
+
+@Suppress("TrustAllX509TrustManager", "CustomX509TrustManager")
+private class TrustAllX509TrustManager : X509TrustManager {
+    override fun checkClientTrusted(chain: Array<out X509Certificate?>?, authType: String?) {} // NOSONAR
+    override fun checkServerTrusted(chain: Array<out X509Certificate?>?, authType: String?) {} // NOSONAR
+    override fun getAcceptedIssuers(): Array<out X509Certificate?> = emptyArray()
 }

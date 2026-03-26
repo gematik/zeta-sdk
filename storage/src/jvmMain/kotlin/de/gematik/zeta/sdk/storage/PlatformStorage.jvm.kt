@@ -28,7 +28,7 @@ import com.github.javakeyring.Keyring
 import com.github.javakeyring.PasswordAccessException
 import com.russhwolf.settings.PreferencesSettings
 import de.gematik.zeta.logging.Log
-import de.gematik.zeta.sdk.crypto.AesGcmCipher
+import de.gematik.zeta.sdk.crypto.AesGcmCipherImpl
 import java.util.prefs.Preferences
 
 actual fun provideSdkStorage(aesB64Key: String): SdkStorage {
@@ -37,7 +37,7 @@ actual fun provideSdkStorage(aesB64Key: String): SdkStorage {
 
     val secureSettings = EncryptedSettings(
         delegate = base,
-        cipher = AesGcmCipher(),
+        cipher = AesGcmCipherImpl(),
         cipherB64Key = aesB64Key,
     )
 

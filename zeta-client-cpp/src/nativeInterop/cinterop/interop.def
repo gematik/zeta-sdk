@@ -1,5 +1,0 @@
-headers = hello.h ws_client.h
-compilerOpts = -std=c99 -Isrc/main/cpp
-
----
-

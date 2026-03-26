@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.attestation.interfaces
 
+import de.gematik.zeta.logging.Log
 import okio.Buffer
 import okio.ByteString.Companion.decodeHex
 import okio.FileSystem
@@ -39,8 +40,7 @@ actual object FileHashCalculator {
         val fileSystem = FileSystem.SYSTEM
 
         val hashingSink = HashingSink.sha256(blackholeSink())
-
-        println("calculateSHA256: $path")
+        Log.i { "calculateSHA256: $path" }
 
         fileSystem.source(path).buffer().use { source ->
             hashingSink.use { sink ->
@@ -64,7 +64,7 @@ actual object FileHashCalculator {
 
                 val hashBytes = hashHex.orEmpty().decodeHex()
 
-                println("hashBytes: $hashBytes")
+                Log.i { "hashBytes: $hashBytes" }
 
                 buffer.write(hashBytes)
                 hashingSink.write(buffer, buffer.size)

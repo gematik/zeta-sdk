@@ -61,6 +61,50 @@ public object HttpClientExtension {
         }
 
     @JvmStatic
+    public fun ZetaHttpClient.putAsync(url: String, headerMap: Map<String, String>, body: String): CompletableFuture<ZetaHttpResponse> =
+        scope.future {
+            put(url) {
+                contentType(ContentType.Application.Json)
+                setBody(body)
+                headers.appendAll(headerMap)
+            }
+        }
+
+    @JvmStatic
+    public fun ZetaHttpClient.patchAsync(url: String, headerMap: Map<String, String>, body: String): CompletableFuture<ZetaHttpResponse> =
+        scope.future {
+            patch(url) {
+                contentType(ContentType.Application.Json)
+                setBody(body)
+                headers.appendAll(headerMap)
+            }
+        }
+
+    @JvmStatic
+    public fun ZetaHttpClient.deleteAsync(url: String, headerMap: Map<String, String>): CompletableFuture<ZetaHttpResponse> =
+        scope.future {
+            delete(url) {
+                headers.appendAll(headerMap)
+            }
+        }
+
+    @JvmStatic
+    public fun ZetaHttpClient.headAsync(url: String, headerMap: Map<String, String>): CompletableFuture<ZetaHttpResponse> =
+        scope.future {
+            head(url) {
+                headers.appendAll(headerMap)
+            }
+        }
+
+    @JvmStatic
+    public fun ZetaHttpClient.optionsAsync(url: String, headerMap: Map<String, String>): CompletableFuture<ZetaHttpResponse> =
+        scope.future {
+            options(url) {
+                headers.appendAll(headerMap)
+            }
+        }
+
+    @JvmStatic
     public fun bodyAsText(response: ZetaHttpResponse): CompletableFuture<String> =
         scope.future {
             response.bodyAsText()

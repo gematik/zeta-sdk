@@ -28,4 +28,6 @@ actual class X509PemReader {
     actual fun loadCertificate(p12File: String, alias: String, password: String): ByteArray = byteArrayOf()
     actual fun loadPrivateKey(p12File: String, alias: String, password: String): ByteArray = byteArrayOf()
     actual fun getRegistrationNumber(certificateBytes: ByteArray): String? = ""
+    actual fun loadCertificateFromBytes(data: ByteArray, alias: String, password: String): ByteArray = byteArrayOf()
+    actual fun loadPrivateKeyFromBytes(data: ByteArray, alias: String, password: String): ByteArray = byteArrayOf()
 }

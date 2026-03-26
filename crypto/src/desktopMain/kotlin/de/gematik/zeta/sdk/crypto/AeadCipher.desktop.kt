@@ -32,7 +32,7 @@ import dev.whyoleg.cryptography.DelicateCryptographyApi
 import dev.whyoleg.cryptography.algorithms.AES
 import secureRandom
 
-actual class AesGcmCipher actual constructor() {
+actual class AesGcmCipherImpl actual constructor() : AesGcmCipher {
 
     private val TAG_BITS = 128
     private val IV_LEN = 12
@@ -41,7 +41,7 @@ actual class AesGcmCipher actual constructor() {
     private val provider = CryptographyProvider.Default
     private val aesGcm = provider.get(AES.GCM)
 
-    actual fun encrypt(
+    actual override fun encrypt(
         aesKey: ByteArray,
         plainText: ByteArray,
         iv: ByteArray?,
@@ -64,7 +64,7 @@ actual class AesGcmCipher actual constructor() {
         return useIv + cipherTextWithTag
     }
 
-    actual fun decrypt(
+    actual override fun decrypt(
         aesKey: ByteArray,
         cipherText: ByteArray,
         iv: ByteArray?,

@@ -56,13 +56,14 @@ public data class AslHandshakeState(
     val transcriptHash: ByteArray? = null,
     val message4: Message4? = null,
     val accessTokenProvider: AccessTokenProvider,
-
+    val tlsValidation: Boolean = true,
 ) {
     public companion object {
         public fun create(
             httpClient: ZetaHttpClient,
             request: HttpRequestBuilder,
             accessTokenProvider: AccessTokenProvider,
+            tlsValidation: Boolean,
         ): AslHandshakeState {
             return AslHandshakeState(
                 request = request,
@@ -70,6 +71,7 @@ public data class AslHandshakeState(
                 mlKem = ML768Kem(),
                 ecdhKem = EcdhP256Kem(),
                 accessTokenProvider = accessTokenProvider,
+                tlsValidation = tlsValidation,
             )
         }
     }
@@ -94,11 +96,11 @@ public suspend fun AslHandshakeState.performMessage1AndReceiveMessage2(): AslHan
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-public fun AslHandshakeState.processMessage2AndBuildMessage3(): AslHandshakeState {
+public suspend fun AslHandshakeState.processMessage2AndBuildMessage3(aslProdEnvironment: Boolean): AslHandshakeState {
     requireNotNull(message1) { "Message 1 must be present before processing Message 2" }
     requireNotNull(message1Result) { "Message 1 result must be present before processing Message 2" }
 
-    val m3Result = processMessage2AndDeriveMessage3(message1, message1Result, mlKem, ecdhKem)
+    val m3Result = processMessage2AndDeriveMessage3(message1, message1Result, mlKem, ecdhKem, httpClient, request, aslProdEnvironment, tlsValidation)
 
     val keyConfCipherText = encryptKeyConfirmation(
         m3Result.k2.clientToServerConfirmationKey,

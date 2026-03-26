@@ -32,6 +32,8 @@ import de.gematik.zeta.sdk.crypto.KeyPair
 import de.gematik.zeta.sdk.crypto.X509PemReader
 import derEcdsaToJose
 import java.util.Base64
+import kotlin.time.TimeSource
+import kotlin.time.measureTimedValue
 import kotlin.uuid.Uuid
 
 private class SoftwareCryptoProvider(
@@ -47,17 +49,26 @@ private class SoftwareCryptoProvider(
 
     @Suppress("UnsafeCallOnNullableType")
     override suspend fun generateClientInstanceKey(): PublicKeyOut {
+        val start = TimeSource.Monotonic.markNow()
         if (clientKey == null) {
-            clientKey = loadClientKeysFromStorage()
+            val (loaded, loadTime) = measureTimedValue { loadClientKeysFromStorage() }
+            clientKey = loaded
+            Log.d { "[CRYPTO-TIMING] loadClientKeysFromStorage=$loadTime found=${loaded != null}" }
             if (clientKey == null) {
-                clientKey = keyPairGenerator.generateKeys()
-                storage.saveClientKeys(
-                    toPem("PUBLIC KEY", clientKey!!.skpi),
-                    toPem("PRIVATE KEY", clientKey!!.privateKey),
-                )
+                val (generated, genTime) = measureTimedValue { keyPairGenerator.generateKeys() }
+                clientKey = generated
+                Log.d { "[CRYPTO-TIMING] generateClientKeys=$genTime" }
+                val (_, saveTime) = measureTimedValue {
+                    storage.saveClientKeys(
+                        toPem("PUBLIC KEY", clientKey!!.skpi),
+                        toPem("PRIVATE KEY", clientKey!!.privateKey),
+                    )
+                }
+                Log.d { "[CRYPTO-TIMING] saveClientKeys=$saveTime" }
             }
         }
         val jwk = keyPairGenerator.toJwk(clientKey!!.skpi)
+        Log.d { "[CRYPTO-TIMING] generateClientInstanceKey total=${start.elapsedNow()}" }
         return PublicKeyOut(clientKey!!.skpi, jwk)
     }
 
@@ -111,33 +122,48 @@ private class SoftwareCryptoProvider(
 
     @Suppress("UnsafeCallOnNullableType")
     override suspend fun generateDpopKey(): PublicKeyOut {
+        val start = TimeSource.Monotonic.markNow()
         if (dpopKey == null) {
-            dpopKey = keyPairGenerator.generateKeys()
-            storage.saveDpopKeys(
-                toPem("PUBLIC KEY", dpopKey!!.skpi),
-                toPem("PRIVATE KEY", dpopKey!!.privateKey),
-            )
+            val (generated, genTime) = measureTimedValue { keyPairGenerator.generateKeys() }
+            dpopKey = generated
+            Log.d { "[CRYPTO-TIMING] generateDpopKeys=$genTime" }
+            val (_, saveTime) = measureTimedValue {
+                storage.saveDpopKeys(
+                    toPem("PUBLIC KEY", dpopKey!!.skpi),
+                    toPem("PRIVATE KEY", dpopKey!!.privateKey),
+                )
+            }
+            Log.d { "[CRYPTO-TIMING] saveDpopKeys=$saveTime" }
         }
         val jwk = keyPairGenerator.toJwk(dpopKey!!.skpi)
-
+        Log.d { "[CRYPTO-TIMING] generateDpopKey total=${start.elapsedNow()}" }
         return PublicKeyOut(dpopKey!!.skpi, jwk)
     }
 
     @Suppress("UnsafeCallOnNullableType")
     override suspend fun signWithClientKey(input: ByteArray): ByteArray {
         checkNotNull(clientKey) { "Client key not initialized" }
-        return signForJws(clientKey!!.privateKey, input)
+        val (result, signTime) = measureTimedValue { signForJws(clientKey!!.privateKey, input) }
+        Log.d { "[CRYPTO-TIMING] signWithClientKey=$signTime inputSize=${input.size}" }
+        return result
     }
 
     @Suppress("UnsafeCallOnNullableType")
     override suspend fun signWithDpopKey(input: ByteArray): ByteArray {
         checkNotNull(dpopKey) { "DPoP key not initialized" }
-        return signForJws(dpopKey!!.privateKey, input)
+        val (result, signTime) = measureTimedValue { signForJws(dpopKey!!.privateKey, input) }
+        Log.d { "[CRYPTO-TIMING] signWithDpopKey=$signTime inputSize=${input.size}" }
+        return result
     }
 
     override suspend fun readSmbCertificate(p12File: String, alias: String, password: String): ByteArray {
         check(p12File.isNotEmpty()) { "SM-B certificate .PEM file is empty" }
         return x509PemReader.loadCertificate(p12File, alias, password)
+    }
+
+    override suspend fun readSmbCertificateFromBytes(data: ByteArray, alias: String, password: String): ByteArray {
+        check(data.isNotEmpty()) { "SM-B certificate bytes are empty " }
+        return x509PemReader.loadCertificateFromBytes(data, alias, password)
     }
 
     override suspend fun getRegistrationNumber(certificate: ByteArray): String {
@@ -146,6 +172,11 @@ private class SoftwareCryptoProvider(
 
     override suspend fun signWithSmbKey(input: ByteArray, p12File: String, alias: String, password: String): ByteArray {
         val smbKey = x509PemReader.loadPrivateKey(p12File, alias, password)
+        return signForJws(smbKey, input)
+    }
+
+    override suspend fun signWithSmbKeyFromBytes(input: ByteArray, keystoreBytes: ByteArray, alias: String, password: String): ByteArray {
+        val smbKey = x509PemReader.loadPrivateKeyFromBytes(keystoreBytes, alias, password)
         return signForJws(smbKey, input)
     }
 
@@ -164,7 +195,7 @@ private class SoftwareCryptoProvider(
 
 @Suppress("FunctionOnlyReturningConstant")
 internal fun hardwareBackedAvailable(): Boolean = false
-internal actual fun platformDefaultProvider(storage: TpmStorage): TpmProvider {
+public actual fun platformDefaultProvider(storage: TpmStorage): TpmProvider {
     if (hardwareBackedAvailable()) {
         Log.d { "Using hardware crypto provider (JVM)" }
         TODO("hardware backed provider")

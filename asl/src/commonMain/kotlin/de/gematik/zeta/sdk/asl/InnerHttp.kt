@@ -60,7 +60,7 @@ public class InnerHttpCodecImpl : InnerHttpCodec {
         val headerMap: Map<String, List<String>> =
             buildHeaderMap(builder)
                 .withHostHeaderIfMissing(builder)
-                .withForwardedHeaders()
+                .withoutForwardedHeaders()
                 .withBodyHeaders(bodyBytes, bodyContentType)
 
         val headBytes = buildHeadBytes(method, requestTarget, headerMap)
@@ -168,18 +168,11 @@ public class InnerHttpCodecImpl : InnerHttpCodec {
         return this
     }
 
-    private fun MutableMap<String, MutableList<String>>.withForwardedHeaders(): MutableMap<String, MutableList<String>> {
-        val protoKey = keys.firstOrNull { it.equals(HttpHeaders.XForwardedProto, ignoreCase = true) }
-        if (protoKey != null) {
-            this[protoKey] = mutableListOf("http")
-        }
-
-        val portKey = keys.firstOrNull { it.equals(HttpHeaders.XForwardedPort, ignoreCase = true) }
-        if (portKey != null) {
-            this[portKey] = mutableListOf("80")
-        }
-
-        return this
+    private fun MutableMap<String, MutableList<String>>.withoutForwardedHeaders(): MutableMap<String, MutableList<String>> {
+        return this.filterKeys { key ->
+            !key.equals(HttpHeaders.Forwarded, ignoreCase = true) &&
+                !key.startsWith("X-Forwarded-", ignoreCase = true)
+        }.toMutableMap()
     }
 
     private fun MutableMap<String, MutableList<String>>.withBodyHeaders(

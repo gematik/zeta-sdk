@@ -520,6 +520,136 @@ class InnerHttpCodecTest {
         assertTrue(result.contains("Authorization: Bearer token123$CRLF"))
     }
 
+    @Test
+    fun encodeRequest_removesForwardedHeaders_xForwardedProto() {
+        // Arrange
+        val request = buildRequest {
+            headers.append("X-Forwarded-Proto", "https")
+        }
+
+        // Act
+        val result = codec.encodeRequest(request).decodeToString()
+
+        // Assert
+        assertFalse(result.contains("X-Forwarded-Proto"))
+    }
+
+    @Test
+    fun encodeRequest_removesForwardedHeaders_xForwardedHost() {
+        // Arrange
+        val request = buildRequest {
+            headers.append("X-Forwarded-Host", "original.example.com")
+        }
+
+        // Act
+        val result = codec.encodeRequest(request).decodeToString()
+
+        // Assert
+        assertFalse(result.contains("X-Forwarded-Host"))
+    }
+
+    @Test
+    fun encodeRequest_removesForwardedHeaders_xForwardedFor() {
+        // Arrange
+        val request = buildRequest {
+            headers.append("X-Forwarded-For", "192.168.1.1")
+        }
+
+        // Act
+        val result = codec.encodeRequest(request).decodeToString()
+
+        // Assert
+        assertFalse(result.contains("X-Forwarded-For"))
+    }
+
+    @Test
+    fun encodeRequest_removesForwardedHeaders_xForwardedPort() {
+        // Arrange
+        val request = buildRequest {
+            headers.append("X-Forwarded-Port", "8080")
+        }
+
+        // Act
+        val result = codec.encodeRequest(request).decodeToString()
+
+        // Assert
+        assertFalse(result.contains("X-Forwarded-Port"))
+    }
+
+    @Test
+    fun encodeRequest_removesForwardedHeaders_forwardedHeader() {
+        // Arrange
+        val request = buildRequest {
+            headers.append("Forwarded", "for=192.168.1.1;host=example.com;proto=https")
+        }
+
+        // Act
+        val result = codec.encodeRequest(request).decodeToString()
+
+        // Assert
+        assertFalse(result.contains("Forwarded:"))
+    }
+
+    @Test
+    fun encodeRequest_removesAllForwardedHeaders_multiplePresent() {
+        // Arrange
+        val request = buildRequest {
+            headers.append("X-Forwarded-Proto", "https")
+            headers.append("X-Forwarded-Host", "original.example.com")
+            headers.append("X-Forwarded-For", "192.168.1.1")
+            headers.append("X-Forwarded-Port", "8080")
+            headers.append("Forwarded", "for=192.168.1.1")
+            headers.append("X-Custom-Header", "should-remain")
+        }
+
+        // Act
+        val result = codec.encodeRequest(request).decodeToString()
+
+        // Assert
+        assertFalse(result.contains("X-Forwarded-Proto"))
+        assertFalse(result.contains("X-Forwarded-Host"))
+        assertFalse(result.contains("X-Forwarded-For"))
+        assertFalse(result.contains("X-Forwarded-Port"))
+        assertFalse(result.contains("Forwarded:"))
+        assertTrue(result.contains("X-Custom-Header: should-remain$CRLF"))
+    }
+
+    @Test
+    fun encodeRequest_preservesOtherHeaders_afterRemovingForwarded() {
+        // Arrange
+        val request = buildRequest {
+            headers.append("X-Forwarded-Proto", "https")
+            headers.append("Authorization", "Bearer token123")
+            headers.append("Content-Type", "application/json")
+        }
+
+        // Act
+        val result = codec.encodeRequest(request).decodeToString()
+
+        // Assert
+        assertFalse(result.contains("X-Forwarded-Proto"))
+        assertTrue(result.contains("Authorization: Bearer token123$CRLF"))
+        assertTrue(result.contains("Content-Type: application/json$CRLF"))
+    }
+
+    @Test
+    fun encodeRequest_handlesForwardedHeadersCaseInsensitive() {
+        // Arrange
+        val request = buildRequest {
+            headers.append("x-forwarded-proto", "https")
+            headers.append("X-FORWARDED-HOST", "example.com")
+            headers.append("forwarded", "for=192.168.1.1")
+        }
+
+        // Act
+        val result = codec.encodeRequest(request).decodeToString()
+
+        // Assert
+        assertFalse(result.lowercase().contains("x-forwarded-proto"))
+        assertFalse(result.lowercase().contains("x-forwarded-host"))
+        assertFalse(result.lowercase().contains("forwarded:"))
+    }
+
     private fun buildRequest(
         url: String = "https://api.example.com/resource",
         method: HttpMethod = HttpMethod.Get,
