@@ -33,10 +33,10 @@ import io.ktor.websocket.readBytes
 import io.ktor.websocket.readText
 import kotlinx.coroutines.runBlocking
 
-public object WsClientExtension {
+object WsClientExtension {
 
     @JvmStatic
-    public fun ws(
+    fun ws(
         sdk: ZetaSdkClient,
         targetUrl: String,
         builder: ZetaHttpClientBuilder.() -> Unit = {},
@@ -51,28 +51,28 @@ public object WsClientExtension {
         }
     }
 
-    public sealed class WsMessage {
-        public data class Text(val text: String) : WsMessage()
-        public data class Binary(val bytes: ByteArray) : WsMessage()
-        public object Close : WsMessage()
+    sealed class WsMessage {
+        data class Text(val text: String) : WsMessage()
+        data class Binary(val bytes: ByteArray) : WsMessage()
+        object Close : WsMessage()
     }
 
-    public class WsSession(
+    class WsSession(
         private val session: DefaultClientWebSocketSession,
     ) {
-        public fun sendText(text: String) {
+        fun sendText(text: String) {
             runBlocking {
                 session.send(Frame.Text(text))
             }
         }
 
-        public fun sendBinary(data: ByteArray) {
+        fun sendBinary(data: ByteArray) {
             runBlocking {
                 session.send(Frame.Binary(true, data))
             }
         }
 
-        public fun receiveNext(): WsMessage? = runBlocking {
+        fun receiveNext(): WsMessage? = runBlocking {
             for (frame in session.incoming) {
                 when (frame) {
                     is Frame.Text -> {
@@ -97,21 +97,21 @@ public object WsClientExtension {
             null
         }
 
-        public fun close() {
+        fun close() {
             runBlocking {
                 session.close()
             }
         }
 
-        public fun interface WsHandler {
-            public fun handle(session: WsSession)
+        fun interface WsHandler {
+            fun handle(session: WsSession)
         }
     }
 }
 
 private const val NULL_CHAR = '\u0000'
 
-public fun stompConnectFrame(host: String): String =
+fun stompConnectFrame(host: String): String =
     buildString {
         append("CONNECT\n")
         append("accept-version:1.2\n")
@@ -120,7 +120,7 @@ public fun stompConnectFrame(host: String): String =
         append(NULL_CHAR)
     }
 
-public fun stompSubscribeFrame(id: String, destination: String): String =
+fun stompSubscribeFrame(id: String, destination: String): String =
     buildString {
         append("SUBSCRIBE\n")
         append("id:").append(id).append('\n')
@@ -129,7 +129,7 @@ public fun stompSubscribeFrame(id: String, destination: String): String =
         append(NULL_CHAR)
     }
 
-public fun stompSendFrame(destination: String, bodyJson: String): String =
+fun stompSendFrame(destination: String, bodyJson: String): String =
     buildString {
         append("SEND\n")
         append("destination:").append(destination).append('\n')

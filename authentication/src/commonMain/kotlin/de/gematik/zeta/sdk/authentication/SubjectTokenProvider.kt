@@ -27,5 +27,13 @@ package de.gematik.zeta.sdk.authentication
 import de.gematik.zeta.sdk.tpm.TpmProvider
 
 interface SubjectTokenProvider {
-    suspend fun createSubjectToken(clientId: String, nonceBytes: ByteArray, audience: String, now: Long, expiration: Long, tpmProvider: TpmProvider): String
+    suspend fun createSubjectToken(
+        clientId: String,
+        dpopKey: String,
+        nonceBytes: ByteArray,
+        audience: String,
+        now: Long,
+        expiration: Long,
+        tpmProvider: TpmProvider,
+    ): String
 }

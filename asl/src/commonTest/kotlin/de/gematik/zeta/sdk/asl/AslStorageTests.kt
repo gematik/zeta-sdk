@@ -142,7 +142,7 @@ class AslStorageImplTest {
     @Test
     fun clear_removesSession_validFqdn() = runTest {
         // Arrange
-        val (sut, storage) = buildSut()
+        val (sut, _) = buildSut()
         val fqdn = "https://api.example.com/resource"
         val session = buildSession()
         sut.saveSession(fqdn, session)

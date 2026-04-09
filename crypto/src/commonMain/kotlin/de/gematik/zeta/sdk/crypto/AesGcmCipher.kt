@@ -22,8 +22,9 @@
  * #L%
  */
 
-package de.gematik.zeta.sdk.tpm
+package de.gematik.zeta.sdk.crypto
 
-actual fun platformDefaultProvider(storage: TpmStorage): TpmProvider {
-    TODO("hardware backed provider")
+interface AesGcmCipher {
+    fun encrypt(aesKey: ByteArray, plainText: ByteArray, iv: ByteArray? = null, aad: ByteArray? = null): ByteArray
+    fun decrypt(aesKey: ByteArray, cipherText: ByteArray, iv: ByteArray? = null, aad: ByteArray? = null): ByteArray
 }

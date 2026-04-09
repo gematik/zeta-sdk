@@ -54,7 +54,7 @@ private class SoftwareCryptoProvider(
     private val ec = provider.get(ECDSA)
 
     @Suppress("UnsafeCallOnNullableType")
-    override suspend fun generateClientInstanceKey(): PublicKeyOut {
+    override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut {
         if (clientKey == null) {
             clientKey = loadClientKeysFromStorage()
             if (clientKey == null) {
@@ -245,4 +245,4 @@ private class SoftwareCryptoProvider(
     }
 }
 
-public actual fun platformDefaultProvider(storage: TpmStorage): TpmProvider = SoftwareCryptoProvider(storage, X509PemReader())
+actual fun platformDefaultProvider(storage: TpmStorage): TpmProvider = SoftwareCryptoProvider(storage, X509PemReader())

@@ -24,6 +24,8 @@
 
 package de.gematik.zeta.sdk.authentication.smcb
 
+import Jwk
+import PublicKeyOut
 import de.gematik.zeta.sdk.authentication.smcb.model.ExternalAuthenticateResponse
 import de.gematik.zeta.sdk.authentication.smcb.model.ReadCardCertificateResponse
 import de.gematik.zeta.sdk.authentication.smcb.model.SignatureObject
@@ -71,8 +73,8 @@ class SmcbTokenProviderTest {
             val now = MOCK_TIMESTAMP
             val expiration = 30L
 
-            val tokenPayload = "eyJ0eXAiOiJKV1QiLCJraWQiOiJBOVp0MElnMXdjb19Fb3pPck5IekdzbEJZd2xySVBSRnJvUW9XOENETFhJIiwieDVjIjpbIlkyVnlkR2xtYVdOaGRHVT0iXSwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJjbGllbnRJZCIsImV4cCI6MTc2Mjc3OTYzMSwiYXVkIjpbImF1ZGllbmNlIl0sInN1YiI6InJlZ051bWJlciIsImlhdCI6MTc2Mjc3OTYwMSwibm9uY2UiOiJibTl1WTJVIiwianRpIjoiNDVlZmI3ZjgtZWYwMC00ZWM3LTlkZjgtNTQ1ZGVjNjAyZGM4IiwidHlwIjoiQmVhcmVyIn0"
-            val challenge = "sbQizgML6hOZ5+3Y6uv6UaNx3pFoAkTJ8k17BrRBDPk"
+            val tokenPayload = "eyJ0eXAiOiJKV1QiLCJraWQiOiJBOVp0MElnMXdjb19Fb3pPck5IekdzbEJZd2xySVBSRnJvUW9XOENETFhJIiwieDVjIjpbIlkyVnlkR2xtYVdOaGRHVT0iXSwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJjbGllbnRJZCIsImV4cCI6MTc2Mjc3OTYzMSwiYXVkIjpbImF1ZGllbmNlIl0sInN1YiI6InJlZ051bWJlciIsImlhdCI6MTc2Mjc3OTYwMSwibm9uY2UiOiJibTl1WTJVIiwianRpIjoiNDVlZmI3ZjgtZWYwMC00ZWM3LTlkZjgtNTQ1ZGVjNjAyZGM4IiwidHlwIjoiQmVhcmVyIiwiY2xpZW50X2tleSI6eyJqa3QiOiJzb21lS2lkIn0sImRwb3Bfa2V5Ijp7ImprdCI6IiJ9fQ"
+            val challenge = "dBVkMwlvdFOW2e0b4JEu2ASIl3akBrO0xMh5gMSg9ws"
             val signature = joseToDerEcdsa("signature exactly 32 byte length".toByteArray())
             val certificate = "certificate".toByteArray()
 
@@ -98,9 +100,16 @@ class SmcbTokenProviderTest {
                 )
             } returns createExternalAuthenticateResponse(signature)
 
+            val mockClientKey = mockk<PublicKeyOut>()
+            val mockJwk = mockk<Jwk>()
+            coEvery { mockJwk.kid } returns "someKid"
+            coEvery { mockClientKey.jwk } returns mockJwk
+            coEvery { tpmProvider.getOrGenerateClientInstancePublicKey() } returns mockClientKey
+
             // when
             val token = subjectTokenProvider.createSubjectToken(
                 clientId,
+                "",
                 nonce,
                 audience,
                 now,

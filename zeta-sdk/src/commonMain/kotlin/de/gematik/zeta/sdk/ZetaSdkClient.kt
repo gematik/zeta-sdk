@@ -31,7 +31,7 @@ import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.storage.SdkStorage
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 
-public interface ZetaSdkClient {
+interface ZetaSdkClient {
     suspend fun discover(): Result<Unit>
     suspend fun register(): Result<Unit>
     suspend fun authenticate(): Result<Unit>
@@ -51,9 +51,9 @@ data class StorageConfig(
     val aesB64Key: String = "7aae7xXr8rnzVqjpYbosS0CFMrlprkD7jbVotm0fd+w=",
 )
 
-public interface TpmConfig
+interface TpmConfig
 
-public data class BuildConfig(
+data class BuildConfig(
     val productId: String,
     val productVersion: String,
     val clientName: String,
@@ -66,7 +66,7 @@ public data class BuildConfig(
     val authenticationCallback: AuthenticationCallback? = null,
 )
 
-public data class RegInfo(val clientName: String)
-public data class AuthInfo(val otp: String? = null)
-public fun interface RegistrationCallback { suspend fun registrationCb(): RegInfo }
-public fun interface AuthenticationCallback { suspend fun authenticationCb(): AuthInfo }
+data class RegInfo(val clientName: String)
+data class AuthInfo(val otp: String? = null)
+fun interface RegistrationCallback { suspend fun registrationCb(): RegInfo }
+fun interface AuthenticationCallback { suspend fun authenticationCb(): AuthInfo }

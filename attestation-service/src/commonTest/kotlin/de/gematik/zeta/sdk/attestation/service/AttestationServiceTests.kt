@@ -86,8 +86,8 @@ class AttestationServiceTest {
 
         // Assert
         assertNotNull(response.error)
-        assertEquals(ErrorCode.INVALID_ARGUMENT, response.error?.code)
-        assertTrue(response.error?.message?.contains("empty") == true)
+        assertEquals(ErrorCode.INVALID_ARGUMENT, response.error.code)
+        assertEquals(response.error.message.contains("empty"), true)
     }
 
     @Test
@@ -102,7 +102,7 @@ class AttestationServiceTest {
 
         // Assert
         assertNotNull(response.error)
-        assertEquals(ErrorCode.INVALID_ARGUMENT, response.error?.code)
+        assertEquals(ErrorCode.INVALID_ARGUMENT, response.error.code)
     }
 
     @Test
@@ -116,8 +116,8 @@ class AttestationServiceTest {
 
         // Assert
         assertNotNull(response.error)
-        assertEquals(ErrorCode.INVALID_ARGUMENT, response.error?.code)
-        assertTrue(response.error?.message?.contains("base64") == true)
+        assertEquals(ErrorCode.INVALID_ARGUMENT, response.error.code)
+        assertEquals(response.error.message.contains("base64"), true)
     }
 
     @Test
@@ -133,7 +133,7 @@ class AttestationServiceTest {
 
         // Assert
         assertNotNull(response.error)
-        assertEquals(ErrorCode.TPM_NOT_AVAILABLE, response.error?.code)
+        assertEquals(ErrorCode.TPM_NOT_AVAILABLE, response.error.code)
     }
 
     @Test
@@ -149,7 +149,7 @@ class AttestationServiceTest {
 
         // Assert
         assertNotNull(response.error)
-        assertEquals(ErrorCode.INTERNAL_ERROR, response.error?.code)
+        assertEquals(ErrorCode.INTERNAL_ERROR, response.error.code)
     }
 
     @Test
@@ -165,7 +165,7 @@ class AttestationServiceTest {
 
         // Assert
         assertNotNull(response.error)
-        assertEquals(ErrorCode.PROCESS_NOT_ALLOWED, response.error?.code)
+        assertEquals(ErrorCode.PROCESS_NOT_ALLOWED, response.error.code)
     }
 
     @Test
@@ -181,7 +181,7 @@ class AttestationServiceTest {
 
         // Assert
         assertNotNull(response.error)
-        assertEquals(ErrorCode.TPM_QUOTE_ERROR, response.error?.code)
+        assertEquals(ErrorCode.TPM_QUOTE_ERROR, response.error.code)
     }
 
     @Test
@@ -197,7 +197,7 @@ class AttestationServiceTest {
 
         // Assert
         assertNotNull(response.error)
-        assertEquals(ErrorCode.INTERNAL_ERROR, response.error?.code)
+        assertEquals(ErrorCode.INTERNAL_ERROR, response.error.code)
     }
 
     @Test

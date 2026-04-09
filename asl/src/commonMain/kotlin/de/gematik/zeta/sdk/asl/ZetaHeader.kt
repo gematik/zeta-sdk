@@ -34,6 +34,7 @@ internal const val KIND_OFFSET = 2 // 1=request, 2=response
 internal const val CTR_OFFSET = 3 // 8 bytes, big-endian
 internal const val KEYID_OFFSET = 11 // 32 bytes
 internal const val HEADER_LEN = 43 // 1 + 1 + 1 + 8 + 32
+internal const val TRACING_HEADER = "zeta-asl-nonpu-tracing"
 
 public enum class Environment {
     Testing,

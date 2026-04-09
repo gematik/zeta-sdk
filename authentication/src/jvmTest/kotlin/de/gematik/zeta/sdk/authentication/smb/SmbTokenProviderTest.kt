@@ -24,6 +24,8 @@
 
 package de.gematik.zeta.sdk.authentication.smb
 
+import Jwk
+import PublicKeyOut
 import de.gematik.zeta.sdk.authentication.toBase64
 import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.mockk.coEvery
@@ -55,9 +57,15 @@ class SmbTokenProviderTest {
             val now = MOCK_TIMESTAMP
             val expiration = 30L
 
-            val tokenPayload = "eyJ0eXAiOiJKV1QiLCJraWQiOiJBOVp0MElnMXdjb19Fb3pPck5IekdzbEJZd2xySVBSRnJvUW9XOENETFhJIiwieDVjIjpbIlkyVnlkR2xtYVdOaGRHVT0iXSwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJjbGllbnRJZCIsImV4cCI6MTc2Mjc3OTYzMSwiYXVkIjpbImF1ZGllbmNlIl0sInN1YiI6InJlZ051bWJlciIsImlhdCI6MTc2Mjc3OTYwMSwibm9uY2UiOiJibTl1WTJVIiwianRpIjoiNDVlZmI3ZjgtZWYwMC00ZWM3LTlkZjgtNTQ1ZGVjNjAyZGM4IiwidHlwIjoiQmVhcmVyIn0"
+            val tokenPayload = "eyJ0eXAiOiJKV1QiLCJraWQiOiJBOVp0MElnMXdjb19Fb3pPck5IekdzbEJZd2xySVBSRnJvUW9XOENETFhJIiwieDVjIjpbIlkyVnlkR2xtYVdOaGRHVT0iXSwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJjbGllbnRJZCIsImV4cCI6MTc2Mjc3OTYzMSwiYXVkIjpbImF1ZGllbmNlIl0sInN1YiI6InJlZ051bWJlciIsImlhdCI6MTc2Mjc3OTYwMSwibm9uY2UiOiJibTl1WTJVIiwianRpIjoiNDVlZmI3ZjgtZWYwMC00ZWM3LTlkZjgtNTQ1ZGVjNjAyZGM4IiwidHlwIjoiQmVhcmVyIiwiY2xpZW50X2tleSI6eyJqa3QiOiJzb21lS2lkIn0sImRwb3Bfa2V5Ijp7ImprdCI6IiJ9fQ"
             val signature = "signature".toByteArray()
             val certificate = "certificate".toByteArray()
+
+            val mockClientKey = mockk<PublicKeyOut>()
+            val mockJwk = mockk<Jwk>()
+            coEvery { mockJwk.kid } returns "someKid"
+            coEvery { mockClientKey.jwk } returns mockJwk
+            coEvery { tpmProvider.getOrGenerateClientInstancePublicKey() } returns mockClientKey
 
             coEvery { tpmProvider.randomUuid() } returns Uuid.parseHexDash("45efb7f8-ef00-4ec7-9df8-545dec602dc8")
             coEvery { tpmProvider.getRegistrationNumber(any()) } returns "regNumber"
@@ -80,6 +88,7 @@ class SmbTokenProviderTest {
             // when
             val token = subjectTokenProvider.createSubjectToken(
                 clientId,
+                "",
                 nonce,
                 audience,
                 now,

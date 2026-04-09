@@ -36,7 +36,7 @@ interface TpmProvider {
     val isHardwareBacked: Boolean
 
     /** Returns the client instance public key. */
-    suspend fun generateClientInstanceKey(): PublicKeyOut
+    suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut
 
     /** Create a new DPoP key pair and return the public key. */
     suspend fun generateDpopKey(): PublicKeyOut
@@ -69,7 +69,7 @@ interface TpmProvider {
 }
 
 /** Platform chooses the best default provider (HW if available, otherwise software). */
-public expect fun platformDefaultProvider(storage: TpmStorage): TpmProvider
+expect fun platformDefaultProvider(storage: TpmStorage): TpmProvider
 
 /** Singleton facade */
 object Tpm {
@@ -80,6 +80,6 @@ object Tpm {
         provider = p
     }
 
-    public fun provider(storage: TpmStorage): TpmProvider =
+    fun provider(storage: TpmStorage): TpmProvider =
         provider ?: platformDefaultProvider(storage).also { provider = it }
 }

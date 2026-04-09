@@ -46,8 +46,7 @@ actual class ProcessMonitor actual constructor(private val allowedExecutables: L
     }
 
     actual fun isProcessAllowed(origin: RequestConnectionPoint): Boolean {
-        if (allowedExecutables.isEmpty()) return true
-        return false
+        return allowedExecutables.isEmpty()
     }
 }
 

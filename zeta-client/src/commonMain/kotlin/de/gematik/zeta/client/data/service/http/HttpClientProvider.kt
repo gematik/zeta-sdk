@@ -73,7 +73,7 @@ public class HttpClientProviderImpl : HttpClientProvider {
             resource = url,
             config = BuildConfig(
                 "demo-client",
-                productVersion = "0.4.0",
+                productVersion = "0.5.0",
                 "sdk-client",
                 StorageConfig(),
                 object : TpmConfig {},
@@ -125,7 +125,7 @@ public class HttpClientProviderImpl : HttpClientProvider {
     private fun getPlatformProduct(): PlatformProductId {
         return when (val plat = platform()) {
             is Platform.Jvm.Macos, Platform.Native.Macos -> PlatformProductId.AppleProductId("apple", "macos", listOf())
-            is Platform.Jvm.Linux -> PlatformProductId.LinuxProductId("linux", "", "demo-client", "0.4.0")
+            is Platform.Jvm.Linux -> PlatformProductId.LinuxProductId("linux", "", "demo-client", "0.5.0")
             is Platform.Jvm.Windows -> PlatformProductId.WindowsProductId("windows", "", "demo-client")
             else -> error("Unknown platform: $plat")
         }

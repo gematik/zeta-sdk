@@ -216,7 +216,6 @@ class ZetaHttpClientTests {
     fun testRetrySkipsPostWhenIdempotentOnlyFalse() = runTest {
         // Arrange
         var retryHits = 0
-        val maxRetries = 2
 
         val engine = MockEngine {
             retryHits++
@@ -772,7 +771,7 @@ class ZetaHttpClientTests {
         }
 
         // Act
-        val response = client.submitForm("/test", params, encodeInQuery = true)
+        client.submitForm("/test", params, encodeInQuery = true)
 
         // Assert
         assertTrue(queryFound)

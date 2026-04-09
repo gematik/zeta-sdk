@@ -5,42 +5,43 @@ compileSdk = "36"
 cryptographyCore = "0.5.0"
 javaKeyring = "1.0.4"
 minSdk = "28"
-nettyCodecHttp = "4.1.129.Final"
+nettyCodecHttp = "4.2.11.Final"
+nettyCodecHttp2 = "4.2.11.Final"
 targetSdk = "36"
 versionCode = "1"
 versionName = "1.0.0"
-reactivestate = "6.0.0-preview.28"
-lifecycle = "2.9.4"
+reactivestate = "6.0.0-preview.33"
+lifecycle = "2.10.0"
 
 # Core Libraries
-agp = "8.12.3"
+agp = "8.13.2"
 appcompat = "1.7.1"
-coreKtx = "1.17.0"
-kotlin = "2.2.10"
-serialization = "1.9.0"
-dokka = "2.1.0"
+coreKtx = "1.18.0"
+kotlin = "2.3.10"
+serialization = "1.10.0"
+dokka = "2.2.0"
 detekt = "1.23.8"
-compose = "1.9.3"
+compose = "1.10.3"
 desugarJdkLibs = "2.1.5"
-kover = "0.9.3"
+kover = "0.9.8"
 
 # Compose Libraries
-activityCompose = "1.12.1"
-composeBom = "2025.12.00"
-navigationCompose = "2.9.1"
+activityCompose = "1.13.0"
+composeBom = "2026.03.01"
+navigationCompose = "2.9.2"
 
 # Third Party
-ktor = "3.3.3"
+ktor = "3.4.2"
 darwin= "3.0.0"
 okhttp= "5.3.2"
-okio= "3.9.0"
+okio= "3.17.0"
 schemaValidator= "0.5.3"
 
 # Testing
 espressoCore = "3.7.0"
 googleTruth = "1.4.5"
 junit = "4.13.2"
-junitJupiter = "6.0.1"
+junitJupiter = "6.0.3"
 junitVersion = "1.3.0"
 coroutines = "1.10.2"
 mockk = "1.14.7"
@@ -100,6 +101,7 @@ androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = 
 androidx-lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 netty-codec-http = { module = "io.netty:netty-codec-http", version.ref = "nettyCodecHttp" }
+netty-codec-http2 = { module = "io.netty:netty-codec-http2", version.ref = "nettyCodecHttp2" }
 serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "serialization" }
 serialization-cbor = { module = "org.jetbrains.kotlinx:kotlinx-serialization-cbor", version.ref = "serialization" }
 serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
@@ -181,7 +183,7 @@ gradle-kover = { module = "org.jetbrains.kotlinx:kover-gradle-plugin", version.r
 desugarJdkLibs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 kotlin-test-main = { module = "org.jetbrains.kotlin:kotlin-test" }
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit" }
-ktlint-cli = { module = "com.pinterest.ktlint:ktlint-cli", version = "1.8.0" }
+ktlint-cli = { module = "com.pinterest.ktlint:ktlint-cli", version = "1.7.1" }
 mockk = { module = "io.mockk:mockk", version = "1.14.7" }
 robolectric = { module = "org.robolectric:robolectric", version = "4.16" }
 

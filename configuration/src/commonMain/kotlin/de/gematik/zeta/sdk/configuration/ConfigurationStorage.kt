@@ -55,7 +55,7 @@ interface ConfigurationStorage {
      */
     suspend fun linkResourceToAuthorizationServer(resource: String, authServerMetadata: AuthorizationServerMetadata)
 
-    suspend fun aslRequired(resource: String): Boolean
+    suspend fun aslUse(resource: String): ZetaAslUse
 
     /** Removes all cached metadata. */
     suspend fun clear()
@@ -160,10 +160,10 @@ class ConfigurationStorageImpl(
         }
     }
 
-    override suspend fun aslRequired(resource: String): Boolean {
+    override suspend fun aslUse(resource: String): ZetaAslUse {
         val protectedResource = getProtectedResource(resource)
             ?: error("OPR not found for $resource")
-        return (protectedResource.zetaAslUse == ZetaAslUse.REQUIRED)
+        return protectedResource.zetaAslUse
     }
 
     /** Removes all maps from persistent storage. */

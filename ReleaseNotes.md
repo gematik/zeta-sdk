@@ -2,7 +2,7 @@
 
 # Release Notes ZETA SDK
 
-## Version: v0.4.2
+## Version: v0.5.1
 
 This version implements the ZETA protocol for the ZETA client SDK.
 
@@ -32,6 +32,17 @@ It provides SDK bindings for kotlin (as original implementation), Java, and C++.
 ### Known issues:
 
 #### Functional
+
+## Changes from 0.5.0
+
+- Update versions of kotlin, gradle, netty-codec, and others
+
+## Changes from 0.4.2
+
+- Fix TLS Cipher suite validation for TLS 1.2. OkHttp returns IANA names but validator was comparing against OpenSSL names,
+- causing all TLS 1.2 connections to fail compliance check.
+- Update aus gemspec_ZETA RC 26_1
+  - key thumbprints in SubjectToken
 
 ## Changes from 0.4.1
 

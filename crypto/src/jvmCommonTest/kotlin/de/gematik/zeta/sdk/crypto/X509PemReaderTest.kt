@@ -42,7 +42,7 @@ class X509PemReaderTest {
 
         // when
         val cert = x509Reader.loadCertificate(p12file, alias, password)
-        val base64cert = Base64.Default.encode(cert)
+        val base64cert = Base64.encode(cert)
 
         // then
         assertEquals(BASE64_CERTIFICATE_DATA, base64cert)
@@ -57,7 +57,7 @@ class X509PemReaderTest {
 
         // when
         val cert = x509Reader.loadPrivateKey(p12file, alias, password)
-        val base64cert = Base64.Default.encode(cert)
+        val base64cert = Base64.encode(cert)
 
         // then
         assertEquals(BASE64_PRIVATE_KEY, base64cert)

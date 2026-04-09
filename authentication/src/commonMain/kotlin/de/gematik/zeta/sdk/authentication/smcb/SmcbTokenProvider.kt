@@ -29,6 +29,7 @@ import de.gematik.zeta.sdk.authentication.AccessTokenUtility
 import de.gematik.zeta.sdk.authentication.SubjectTokenProvider
 import de.gematik.zeta.sdk.authentication.model.AccessTokenClaims
 import de.gematik.zeta.sdk.authentication.model.AccessTokenHeader
+import de.gematik.zeta.sdk.authentication.model.JktClaim
 import de.gematik.zeta.sdk.authentication.model.TokenType
 import de.gematik.zeta.sdk.authentication.smcb.model.ReadCardCertificateResponse
 import de.gematik.zeta.sdk.crypto.hashWithSha256
@@ -42,7 +43,15 @@ class SmcbTokenProvider(
     private val connectorApi: ConnectorApi = ConnectorApiImpl(connectorConfig),
 ) : SubjectTokenProvider {
 
-    override suspend fun createSubjectToken(clientId: String, nonceBytes: ByteArray, audience: String, now: Long, expiration: Long, tpmProvider: TpmProvider): String {
+    override suspend fun createSubjectToken(
+        clientId: String,
+        dpopKey: String,
+        nonceBytes: ByteArray,
+        audience: String,
+        now: Long,
+        expiration: Long,
+        tpmProvider: TpmProvider,
+    ): String {
         val response = connectorApi.readCertificate(
             connectorConfig.cardHandle,
             connectorConfig.mandantId,
@@ -60,6 +69,7 @@ class SmcbTokenProvider(
         val aud = listOf(audience)
         val sub = tpmProvider.getRegistrationNumber(smbcCertificate)
         val jti = tpmProvider.randomUuid().toString()
+        val clientKey = tpmProvider.getOrGenerateClientInstancePublicKey().jwk.kid
 
         val subjectToken = AccessTokenUtility.create(
             AccessTokenHeader(
@@ -77,6 +87,8 @@ class SmcbTokenProvider(
                 nonce = nonce,
                 jti = jti,
                 typ = "Bearer",
+                clientKey = JktClaim(clientKey),
+                dpopKey = JktClaim(dpopKey),
             ),
         )
         return AccessTokenUtility.addSignature(subjectToken, signSmcbToken(subjectToken))

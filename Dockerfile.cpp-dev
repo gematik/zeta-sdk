@@ -16,16 +16,16 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL --insecure -o /tmp/gradle.zip \
-    https://services.gradle.org/distributions/gradle-8.14.2-bin.zip \
+    https://services.gradle.org/distributions/gradle-8.14.4-bin.zip \
     && unzip /tmp/gradle.zip -d /opt \
     && rm /tmp/gradle.zip
 
-ENV GRADLE_HOME=/opt/gradle-8.14.2
+ENV GRADLE_HOME=/opt/gradle-8.14.4
 ENV PATH=$GRADLE_HOME/bin:$PATH
 ENV GRADLE_USER_HOME=/root/.gradle
 
-RUN mkdir -p /root/.gradle/wrapper/dists/gradle-8.14.2/bin && \
-    ln -s /opt/gradle-8.14.2 /root/.gradle/wrapper/dists/gradle-8.14.2
+RUN mkdir -p /root/.gradle/wrapper/dists/gradle-8.14.4/bin && \
+    ln -s /opt/gradle-8.14.4 /root/.gradle/wrapper/dists/gradle-8.14.4
 
 WORKDIR /workspace
 

@@ -131,6 +131,7 @@ fun Project.setupBuildLogic(block: Project.() -> Unit) {
                         }
                     }
                 }
+
                 if (pluginManager.hasPlugin("de.gematik.zeta.sdk.build-logic.sharedlib") && project.isNativeEnabled) {
                     val configure = Action<KotlinNativeTargetWithHostTests> {
                         binaries {
@@ -166,16 +167,29 @@ fun Project.setupBuildLogic(block: Project.() -> Unit) {
                 "assembleRelease",
             )
             if (isJvmEnabled) {
-                assembleShared.dependsOn(
-                    "compileKotlinIosArm64",
-                    if (onArm64) "compileTestKotlinIosArm64" else "compileTestKotlinIosX64",
-                    "jvmJar"
-                )
-                testAll.dependsOn(
-                    "testDebugUnitTest",
-                    "jvmTest",
-                    if (onArm64) "iosSimulatorArm64Test" else "iosX64Test",
-                )
+                val assembleTasks = mutableListOf("jvmJar")
+                val testTasks = mutableListOf("jvmTest")
+
+                if (tasks.findByName("testDebugUnitTest") != null) {
+                    testTasks.add("testDebugUnitTest")
+                }
+
+                if (tasks.findByName("compileKotlinIosArm64") != null) {
+                    assembleTasks.add("compileKotlinIosArm64")
+                }
+
+                val iosCompileTestTask = if (onArm64) "compileTestKotlinIosArm64" else "compileTestKotlinIosX64"
+                if (tasks.findByName(iosCompileTestTask) != null) {
+                    assembleTasks.add(iosCompileTestTask)
+                }
+
+                val iosTestTask = if (onArm64) "iosSimulatorArm64Test" else "iosX64Test"
+                if (tasks.findByName(iosTestTask) != null) {
+                    testTasks.add(iosTestTask)
+                }
+
+                assembleShared.dependsOn(assembleTasks)
+                testAll.dependsOn(testTasks)
             }
         }
         if (extensions.findByType<KotlinJvmExtension>() != null) {

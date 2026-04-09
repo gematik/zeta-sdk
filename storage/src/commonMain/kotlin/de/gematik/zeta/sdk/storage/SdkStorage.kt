@@ -34,7 +34,7 @@ interface SdkStorage {
     suspend fun clear()
 }
 
-public class ExtendedStorage(private val storage: SdkStorage) {
+class ExtendedStorage(private val storage: SdkStorage) {
     companion object {
         private const val HASH_RADIX = 36 // numbers and letters
         private const val HASH_LENGTH = 8 // 36^8

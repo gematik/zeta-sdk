@@ -76,7 +76,7 @@ fun Project.setupKmp(
             optIn.addAll(commonKotlinOptIns)
             freeCompilerArgs.add("-Xexpect-actual-classes")
         }
-        applyKmpHierarchy()
+        applyKmpHierarchy(project)
         block()
         tasks.withType<KotlinNativeCompile> {
             compilerOptions {
@@ -101,7 +101,10 @@ val commonKotlinOptIns = listOf(
     "kotlin.uuid.ExperimentalUuidApi",
 )
 
-fun KotlinMultiplatformExtension.applyKmpHierarchy(block: KotlinHierarchyBuilder.Root.() -> Unit = {}) {
+fun KotlinMultiplatformExtension.applyKmpHierarchy(project: Project, block: KotlinHierarchyBuilder.Root.() -> Unit = {}) {
+    val androidEnabled = project.isAndroidEnabled
+    val iosEnabled = project.isIOSEnabled
+
     applyDefaultHierarchyTemplate {
         common {
             group("jvmCommon") {
@@ -113,27 +116,38 @@ fun KotlinMultiplatformExtension.applyKmpHierarchy(block: KotlinHierarchyBuilder
                 withMingw()
                 withMacos()
             }
-            group("appleMobile") {
-                group("ios")
-                withIos()
-                withTvos()
-                withWatchos()
+
+            if (androidEnabled && iosEnabled) {
+                group("mobile") {
+                    withAndroidTarget()
+                    group("ios")
+                    withIos()
+                    withTvos()
+                    withWatchos()
+                }
             }
-            group("mobile") {
-                withAndroidTarget()
-                group("ios")
-                withIos()
-                withTvos()
-                withWatchos()
+
+            if (iosEnabled) {
+                group("appleMobile") {
+                    group("ios")
+                    withIos()
+                    withTvos()
+                    withWatchos()
+                }
             }
+
             group("compose") {
                 withJs()
                 withWasmJs()
                 withWasmWasi()
-                group("ios")
-                withIos()
+                if (iosEnabled) {
+                    group("ios")
+                    withIos()
+                }
                 withJvm()
-                withAndroidTarget()
+                if (androidEnabled) {
+                    withAndroidTarget()
+                }
             }
             group("nonJvm") {
                 withNative()
@@ -143,7 +157,9 @@ fun KotlinMultiplatformExtension.applyKmpHierarchy(block: KotlinHierarchyBuilder
             group("nonJs") {
                 withNative()
                 withJvm()
-                withAndroidTarget()
+                if (androidEnabled) {
+                    withAndroidTarget()
+                }
             }
             group("jsCommon") {
                 group("js")

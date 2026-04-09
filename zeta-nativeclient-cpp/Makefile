@@ -23,13 +23,6 @@ else
   RUN_WS   = export $(shell cat .env | xargs) && ./$(BIN_WS)
 endif
 
-ifeq ($(OS),Windows_NT)
-
-else
-
-endif
-
-
 build-http:
 	$(CXX) hello-http.cpp -Wno-write-strings -I $(LIB_DIR) -L $(LIB_DIR) -lzeta_sdk $(RPATH) -o $(BIN_HTTP)
 ifeq ($(OS),Windows_NT)

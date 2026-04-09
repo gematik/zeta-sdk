@@ -21,6 +21,19 @@ setupBuildLogic {
                 implementation(libs.ktor.server.websockets.jvm)
                 implementation(libs.ktor.server.content.negotiation)
                 implementation(libs.ktor.serialization.json)
+
+                implementation(libs.netty.codec.http) {
+                    version {
+                        // fixing CVE-2026-33870 and CVE-2026-3387
+                        strictly("4.2.11.Final")
+                    }
+                }
+                implementation(libs.netty.codec.http2) {
+                    version {
+                        // fixing CVE-2026-33870 and CVE-2026-3387
+                        strictly("4.2.11.Final")
+                    }
+                }
             }
         }
 

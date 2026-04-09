@@ -41,7 +41,7 @@
 
 static const char* POPP_HEADER        = "PoPP";
 static const char* PRODUCT_ID         = "demo-client";
-static const char* PRODUCT_VERSION    = "0.4.0";
+static const char* PRODUCT_VERSION    = "0.5.0";
 static const char* CLIENT_NAME        = "sdk-client";
 static const char* SCOPE_ZERO         = "zero:audience";
 

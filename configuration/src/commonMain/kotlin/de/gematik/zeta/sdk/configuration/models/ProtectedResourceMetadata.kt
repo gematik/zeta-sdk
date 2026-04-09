@@ -85,6 +85,8 @@ enum class ZetaAslUse {
     @SerialName("not_supported") NOT_SUPPORTED,
 
     @SerialName("required") REQUIRED,
+
+    @SerialName("required_passthrough") REQUIRED_PASSTHROUGH,
 }
 
 @Serializable

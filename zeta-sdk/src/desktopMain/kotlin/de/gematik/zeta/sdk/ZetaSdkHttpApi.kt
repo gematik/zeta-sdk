@@ -73,10 +73,10 @@ fun ZetaSdk_buildSdkClient(
     val cSmbConfig = cAuthConfig.smbConfig?.pointed
     val cSmcbConfig = cAuthConfig.smcbConfig?.pointed
 
-    val storageConfig = cStorageConfig.let { storageConfig ->
+    val storageConfig = cStorageConfig.let { _ ->
         StorageConfig(InMemoryStorage())
     }
-    val tpmConfig = cTpmConfig.let { tpmConfig ->
+    val tpmConfig = cTpmConfig.let { _ ->
         object : TpmConfig {}
     }
     val authConfig = cAuthConfig.let { authConfig ->
@@ -119,9 +119,9 @@ fun ZetaSdk_buildSdkClient(
                 buildConfig.productId?.toKString() ?: "",
                 buildConfig.productVersion?.toKString() ?: "",
                 buildConfig.clientName?.toKString() ?: "",
-                storageConfig!!,
-                tpmConfig!!,
-                authConfig!!,
+                storageConfig,
+                tpmConfig,
+                authConfig,
                 platformProductId = getPlatformProduct(),
                 ZetaHttpClientBuilder()
                     .disableServerValidation(disableServerValidation)
@@ -208,7 +208,7 @@ fun CPointer<ZetaSdk_HttpHeader>.toKList(count: Int): List<ZetaSdk_HttpHeader?> 
 private fun getPlatformProduct(): PlatformProductId {
     return when (val plat = platform()) {
         is Platform.Jvm.Macos, Platform.Native.Macos -> PlatformProductId.AppleProductId("apple", "macos", listOf())
-        is Platform.Jvm.Linux, Platform.Native.Linux -> PlatformProductId.LinuxProductId("linux", "", "demo-client", "0.4.0")
+        is Platform.Jvm.Linux, Platform.Native.Linux -> PlatformProductId.LinuxProductId("linux", "", "demo-client", "0.5.0")
         is Platform.Jvm.Windows, Platform.Native.Windows -> PlatformProductId.WindowsProductId("windows", "", "demo-client")
         else -> error("Unknown platform: $plat")
     }

@@ -132,7 +132,7 @@ public class Main {
             getFirstResourceUrl(props),
             new BuildConfig(
                 "demo-client",
-                "0.4.0",
+                "0.5.0",
                 "sdk-client",
                 new StorageConfig(),
                 new TpmConfig() {

@@ -24,6 +24,8 @@
 
 package de.gematik.zeta.sdk.authentication.smb
 
+import Jwk
+import PublicKeyOut
 import de.gematik.zeta.sdk.authentication.toBase64
 import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.mockk.coEvery
@@ -52,37 +54,22 @@ class SmbTokenProviderAdditionalTest {
     @Test
     fun `given subject token when created then token has three parts separated by dots`() =
         runTest {
-            // given
-            val certificate = "certificate".toByteArray()
-            val signature = "signature".toByteArray()
-            setupTpmMocks(certificate, signature)
-
-            // when
+            setupTpmMocks("certificate".toByteArray(), "signature".toByteArray())
             val token = subjectTokenProvider.createSubjectToken(
-                "clientId", "nonce".toByteArray(), "audience",
+                "clientId", "dpopKey", "nonce".toByteArray(), "audience",
                 1000L, 30L, tpmProvider,
             )
-
-            // then
-            val parts = token.split(".")
-            assertEquals(3, parts.size)
+            assertEquals(3, token.split(".").size)
         }
 
     @Test
     fun `given subject token when created then header contains correct typ and alg`() =
         runTest {
-            // given
-            val certificate = "certificate".toByteArray()
-            val signature = "signature".toByteArray()
-            setupTpmMocks(certificate, signature)
-
-            // when
+            setupTpmMocks("certificate".toByteArray(), "signature".toByteArray())
             val token = subjectTokenProvider.createSubjectToken(
-                "clientId", "nonce".toByteArray(), "audience",
+                "clientId", "dpopKey", "nonce".toByteArray(), "audience",
                 1000L, 30L, tpmProvider,
             )
-
-            // then
             val headerJson = decodeJwtPart(token.split(".")[0])
             assertTrue(headerJson.contains("\"typ\":\"JWT\""))
             assertTrue(headerJson.contains("\"alg\":\"ES256\""))
@@ -91,18 +78,11 @@ class SmbTokenProviderAdditionalTest {
     @Test
     fun `given subject token when created then claims contain correct iss and aud`() =
         runTest {
-            // given
-            val certificate = "certificate".toByteArray()
-            val signature = "signature".toByteArray()
-            setupTpmMocks(certificate, signature)
-
-            // when
+            setupTpmMocks("certificate".toByteArray(), "signature".toByteArray())
             val token = subjectTokenProvider.createSubjectToken(
-                "myClientId", "nonce".toByteArray(), "myAudience",
+                "myClientId", "dpopKey", "nonce".toByteArray(), "myAudience",
                 1000L, 30L, tpmProvider,
             )
-
-            // then
             val claimsJson = decodeJwtPart(token.split(".")[1])
             assertTrue(claimsJson.contains("\"iss\":\"myClientId\""))
             assertTrue(claimsJson.contains("\"myAudience\""))
@@ -111,20 +91,13 @@ class SmbTokenProviderAdditionalTest {
     @Test
     fun `given subject token when created then exp equals now plus expiration`() =
         runTest {
-            // given
-            val certificate = "certificate".toByteArray()
-            val signature = "signature".toByteArray()
             val now = 2000L
             val expiration = 60L
-            setupTpmMocks(certificate, signature)
-
-            // when
+            setupTpmMocks("certificate".toByteArray(), "signature".toByteArray())
             val token = subjectTokenProvider.createSubjectToken(
-                "clientId", "nonce".toByteArray(), "audience",
+                "clientId", "dpopKey", "nonce".toByteArray(), "audience",
                 now, expiration, tpmProvider,
             )
-
-            // then
             val claimsJson = decodeJwtPart(token.split(".")[1])
             assertTrue(claimsJson.contains("\"exp\":${now + expiration}"))
             assertTrue(claimsJson.contains("\"iat\":$now"))
@@ -133,15 +106,13 @@ class SmbTokenProviderAdditionalTest {
     @Test
     fun `given tpm readSmbCertificate fails when createSubjectToken then exception propagates`() =
         runTest {
-            // given
             coEvery {
                 tpmProvider.readSmbCertificate("test.p12", "testAlias", "testPass")
             } throws RuntimeException("TPM error")
 
-            // when & then
             assertFailsWith<RuntimeException> {
                 subjectTokenProvider.createSubjectToken(
-                    "clientId", "nonce".toByteArray(), "audience",
+                    "clientId", "dpopKey", "nonce".toByteArray(), "audience",
                     1000L, 30L, tpmProvider,
                 )
             }
@@ -150,21 +121,16 @@ class SmbTokenProviderAdditionalTest {
     @Test
     fun `given tpm signWithSmbKey fails when createSubjectToken then exception propagates`() =
         runTest {
-            // given
             val certificate = "certificate".toByteArray()
-            coEvery {
-                tpmProvider.readSmbCertificate("test.p12", "testAlias", "testPass")
-            } returns certificate
+            coEvery { tpmProvider.readSmbCertificate("test.p12", "testAlias", "testPass") } returns certificate
             coEvery { tpmProvider.getRegistrationNumber(certificate) } returns "regNumber"
             coEvery { tpmProvider.randomUuid() } returns Uuid.parseHexDash("11111111-1111-1111-1111-111111111111")
-            coEvery {
-                tpmProvider.signWithSmbKey(any(), "test.p12", "testAlias", "testPass")
-            } throws RuntimeException("Signing error")
+            coEvery { tpmProvider.signWithSmbKey(any(), "test.p12", "testAlias", "testPass") } throws RuntimeException("Signing error")
+            mockClientInstanceKey()
 
-            // when & then
             assertFailsWith<RuntimeException> {
                 subjectTokenProvider.createSubjectToken(
-                    "clientId", "nonce".toByteArray(), "audience",
+                    "clientId", "dpopKey", "nonce".toByteArray(), "audience",
                     1000L, 30L, tpmProvider,
                 )
             }
@@ -173,18 +139,11 @@ class SmbTokenProviderAdditionalTest {
     @Test
     fun `given subject token when created then tpm is called with correct keystore parameters`() =
         runTest {
-            // given
-            val certificate = "certificate".toByteArray()
-            val signature = "signature".toByteArray()
-            setupTpmMocks(certificate, signature)
-
-            // when
+            setupTpmMocks("certificate".toByteArray(), "signature".toByteArray())
             subjectTokenProvider.createSubjectToken(
-                "clientId", "nonce".toByteArray(), "audience",
+                "clientId", "dpopKey", "nonce".toByteArray(), "audience",
                 1000L, 30L, tpmProvider,
             )
-
-            // then
             coVerify { tpmProvider.readSmbCertificate("test.p12", "testAlias", "testPass") }
             coVerify { tpmProvider.signWithSmbKey(any(), "test.p12", "testAlias", "testPass") }
         }
@@ -192,36 +151,31 @@ class SmbTokenProviderAdditionalTest {
     @Test
     fun `given subject token when created then signature is appended as url-safe base64`() =
         runTest {
-            // given
-            val certificate = "certificate".toByteArray()
             val signature = "mySig123".toByteArray()
-            setupTpmMocks(certificate, signature)
-
-            // when
+            setupTpmMocks("certificate".toByteArray(), signature)
             val token = subjectTokenProvider.createSubjectToken(
-                "clientId", "nonce".toByteArray(), "audience",
+                "clientId", "dpopKey", "nonce".toByteArray(), "audience",
                 1000L, 30L, tpmProvider,
             )
-
-            // then
-            val signaturePart = token.split(".")[2]
-            assertEquals(signature.toBase64(false, false), signaturePart)
+            assertEquals(signature.toBase64(false, false), token.split(".")[2])
         }
 
-    private fun setupTpmMocks(certificate: ByteArray, signature: ByteArray) {
-        coEvery {
-            tpmProvider.readSmbCertificate("test.p12", "testAlias", "testPass")
-        } returns certificate
-        coEvery { tpmProvider.getRegistrationNumber(any()) } returns "regNumber"
-        coEvery { tpmProvider.randomUuid() } returns Uuid.parseHexDash("11111111-1111-1111-1111-111111111111")
-        coEvery {
-            tpmProvider.signWithSmbKey(any(), "test.p12", "testAlias", "testPass")
-        } returns signature
+    private fun mockClientInstanceKey(kid: String = "someKid") {
+        val mockClientKey = mockk<PublicKeyOut>()
+        val mockJwk = mockk<Jwk>()
+        coEvery { mockJwk.kid } returns kid
+        coEvery { mockClientKey.jwk } returns mockJwk
+        coEvery { tpmProvider.getOrGenerateClientInstancePublicKey() } returns mockClientKey
     }
 
-    private fun decodeJwtPart(part: String): String {
-        return Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
-            .decode(part)
-            .decodeToString()
+    private fun setupTpmMocks(certificate: ByteArray, signature: ByteArray) {
+        coEvery { tpmProvider.readSmbCertificate("test.p12", "testAlias", "testPass") } returns certificate
+        coEvery { tpmProvider.getRegistrationNumber(any()) } returns "regNumber"
+        coEvery { tpmProvider.randomUuid() } returns Uuid.parseHexDash("11111111-1111-1111-1111-111111111111")
+        coEvery { tpmProvider.signWithSmbKey(any(), "test.p12", "testAlias", "testPass") } returns signature
+        mockClientInstanceKey()
     }
+
+    private fun decodeJwtPart(part: String): String =
+        Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).decode(part).decodeToString()
 }

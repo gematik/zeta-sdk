@@ -130,7 +130,8 @@ public fun Application.loadTestDriverRouting() {
 
         webSocket("/load/{instanceIndex}/{path...}") {
             val instance = getLoadInstanceOrClose(this, call) ?: return@webSocket
-            val targetUrl = buildWsTargetUrl(call, instance.config)
+            val instanceIndex = call.parameters["instanceIndex"] ?: ""
+            val targetUrl = buildWsTargetUrl(call, instance.config, "/load/$instanceIndex")
 
             forwardWs(this, instance.client, targetUrl, instance.config)
         }

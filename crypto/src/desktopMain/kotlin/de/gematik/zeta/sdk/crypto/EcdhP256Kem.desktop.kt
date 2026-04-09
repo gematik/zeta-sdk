@@ -69,7 +69,7 @@ actual class EcdhP256Kem actual constructor() : Kem {
     }
 
     actual fun toJwk(publicKey: ByteArray): Jwk {
-        val pub: EC.PublicKey = ecdsa.publicKeyDecoder(EC.Curve.P256)
+        val pub: EC.PublicKey = ecdsa.publicKeyDecoder(P256)
             .decodeFromByteArrayBlocking(EC.PublicKey.Format.RAW.Uncompressed, publicKey)
 
         val sec1: ByteArray = pub.encodeToByteArrayBlocking(EC.PublicKey.Format.RAW.Uncompressed)
@@ -83,7 +83,10 @@ actual class EcdhP256Kem actual constructor() : Kem {
         val yB = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(y)
 
         val jwkJson = """{"crv":"P-256","kty":"EC","x":"$xB","y":"$yB"}"""
-        val kid = Base64.UrlSafe.encode(hashWithSha256(jwkJson.encodeToByteArray()))
+        val kid = Base64
+            .UrlSafe
+            .withPadding(Base64.PaddingOption.ABSENT)
+            .encode(hashWithSha256(jwkJson.encodeToByteArray()))
 
         return Jwk(
             kid = kid,

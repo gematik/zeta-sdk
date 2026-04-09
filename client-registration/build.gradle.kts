@@ -23,5 +23,9 @@ setupBuildLogic {
             implementation(libs.coroutines.test)
             implementation(libs.ktor.client.mock)
         }
+
+        tasks.withType<Test> {
+            failOnNoDiscoveredTests = false
+        }
     }
 }

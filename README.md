@@ -634,18 +634,29 @@ First build the SDK shared library:
 ./gradlew :zeta-sdk:linkDebugSharedMingwX64     # Windows
 ```
 
-Then build and run the C++ client:
-```bash
-# HTTP sample
-make run-http
+After building the SDK shared library, the output will be located at:
 
-# WebSocket sample
+| Platform  | Path                                                  | File                |
+|-----------|-------------------------------------------------------|---------------------|
+| macOS     | `zeta-sdk/zeta-sdk/build/bin/macosArm64/debugShared/` | `libzeta_sdk.dylib` |
+| Linux     | `zeta-sdk/zeta-sdk/build/bin/linuxX64/debugShared/`   | `libzeta_sdk.so`    |
+| Windows   | `zeta-sdk/zeta-sdk/build/bin/mingwX64/debugShared/`   | `zeta_sdk.dll`      |
+
+
+Then build and run the C++ client:
+
+```bash
+#macOs Linux
+make run-http
 make run-ws
 
 # Windows
 mingw32-make run-http
 mingw32-make run-ws
 ```
+
+On macOS and Linux, the library path is set automatically via RPATH at compile time.
+On Windows, `make run-http` will also copy `zeta_sdk.dll` next to the `.exe` automatically.
 
 #### 2. Building the client within a docker container
 

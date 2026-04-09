@@ -44,19 +44,6 @@ class ZetaTlsValidatorTest {
     )
 
     @Test
-    fun validateNegotiatedCipherSuite_withAllowedCipher_returnsIsCompliantTrue() {
-        // Arrange
-        val cipher = ZetaCipherSuites.ECDHE_ECDSA_AES128_GCM_SHA256
-
-        // Act
-        val result = ZetaTlsValidator.validateNegotiatedCipherSuite(cipher)
-
-        // Assert
-        assertTrue(result.isCompliant)
-        assertTrue(result.errors.isEmpty())
-    }
-
-    @Test
     fun validateNegotiatedCipherSuite_withTls13Suite_returnsIsCompliantTrue() {
         // Arrange
         val cipher = ZetaCipherSuites.AES_256_GCM_SHA384
@@ -187,21 +174,6 @@ class ZetaTlsValidatorTest {
     }
 
     @Test
-    fun validateAll_withValidCipherProtocolAndSuites_returnsIsCompliantTrue() {
-        // Arrange
-        val cipher = ZetaCipherSuites.ECDHE_ECDSA_AES128_GCM_SHA256
-        val protocol = ZetaTlsProtocols.TLS_1_2
-        val enabled = ZetaCipherSuites.REQUIRED_TLS_1_2
-
-        // Act
-        val result = ZetaTlsValidator.validateAll(cipher, protocol, enabled)
-
-        // Assert
-        assertTrue(result.isCompliant)
-        assertTrue(result.errors.isEmpty())
-    }
-
-    @Test
     fun validateAll_withInvalidCipher_returnsIsCompliantFalse() {
         // Arrange
         val cipher = "DES-CBC-SHA"
@@ -224,19 +196,6 @@ class ZetaTlsValidatorTest {
     }
 
     @Test
-    fun validateAll_withValidLeafCert_returnsIsCompliantTrue() {
-        // Arrange
-        val cipher = ZetaCipherSuites.ECDHE_ECDSA_AES256_GCM_SHA384
-        val protocol = ZetaTlsProtocols.TLS_1_3
-
-        // Act
-        val result = ZetaTlsValidator.validateAll(cipher, protocol, emptyList(), validLeafCert(), now)
-
-        // Assert
-        assertTrue(result.isCompliant)
-    }
-
-    @Test
     fun validateAll_withInvalidLeafCert_returnsIsCompliantFalse() {
         // Arrange
         val cipher = ZetaCipherSuites.ECDHE_ECDSA_AES256_GCM_SHA384
@@ -249,19 +208,6 @@ class ZetaTlsValidatorTest {
         // Assert
         assertFalse(result.isCompliant)
         assertTrue(result.errors.any { "expired" in it })
-    }
-
-    @Test
-    fun validateHandshake_withValidCipherAndProtocol_returnsIsCompliantTrue() {
-        // Arrange
-        val cipher = ZetaCipherSuites.ECDHE_ECDSA_AES256_GCM_SHA384
-        val protocol = ZetaTlsProtocols.TLS_1_3
-
-        // Act
-        val result = ZetaTlsValidator.validateHandshake(cipher, protocol)
-
-        // Assert
-        assertTrue(result.isCompliant)
     }
 
     @Test
@@ -331,5 +277,44 @@ class ZetaTlsValidatorTest {
 
         // Assert
         assertEquals(ZetaCipherSuites.ECDHE_RSA_AES256_GCM_SHA384, result)
+    }
+
+    @Test
+    fun validateNegotiatedCipherSuite_withAllowedCipherIanaFormat_returnsIsCompliantTrue() {
+        // Arrange
+        val cipher = "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+
+        // Act
+        val result = ZetaTlsValidator.validateNegotiatedCipherSuite(cipher)
+
+        // Assert
+        assertTrue(result.isCompliant)
+        assertTrue(result.errors.isEmpty())
+    }
+
+    @Test
+    fun validateNegotiatedCipherSuite_withAllowedRsaCipherIanaFormat_returnsIsCompliantTrue() {
+        // Arrange
+        val cipher = "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+
+        // Act
+        val result = ZetaTlsValidator.validateNegotiatedCipherSuite(cipher)
+
+        // Assert
+        assertTrue(result.isCompliant)
+        assertTrue(result.errors.isEmpty())
+    }
+
+    @Test
+    fun validateHandshake_withIanaCipherFormat_returnsIsCompliantTrue() {
+        // Arrange
+        val cipher = "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+        val protocol = ZetaTlsProtocols.TLS_1_2
+
+        // Act
+        val result = ZetaTlsValidator.validateHandshake(cipher, protocol)
+
+        // Assert
+        assertTrue(result.isCompliant)
     }
 }

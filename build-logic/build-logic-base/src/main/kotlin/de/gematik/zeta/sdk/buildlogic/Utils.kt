@@ -37,7 +37,14 @@ val Project.isJvmEnabled get() = findProperty("de.gematik.zeta.sdk.build-logic.e
 
 val Project.isAndroidEnabled get() = findProperty("de.gematik.zeta.sdk.build-logic.enableAndroid") == "true"
 
-val Project.isIOSEnabled get() = findProperty("de.gematik.zeta.sdk.build-logic.enableIOS") == "true"
+val Project.isIOSEnabled: Boolean
+    get() {
+        val osName = System.getProperty("os.name").lowercase()
+        if (osName.contains("linux")) {
+            return false
+        }
+        return findProperty("de.gematik.zeta.sdk.build-logic.enableIOS") == "true"
+    }
 
 val Project.isNativeEnabled get() = isWindowsEnabled || isLinuxEnabled || isMacOSEnabled
 

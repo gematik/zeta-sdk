@@ -37,9 +37,9 @@ class TpmProviderTest {
         val storage = InMemoryStorage()
         val provider = Tpm.provider(TpmStorageImpl(storage))
 
-        val key1 = provider.generateClientInstanceKey()
+        val key1 = provider.getOrGenerateClientInstancePublicKey()
         delay(1000)
-        val key2 = provider.generateClientInstanceKey()
+        val key2 = provider.getOrGenerateClientInstancePublicKey()
 
         assertEquals(key1.encoded, key2.encoded)
         assertEquals(key1.jwk, key2.jwk)

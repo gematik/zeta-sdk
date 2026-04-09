@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.flow.handler
 
+import PublicKeyOut
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AccessTokenParams
@@ -35,6 +36,7 @@ import de.gematik.zeta.sdk.flow.CapabilityHandler
 import de.gematik.zeta.sdk.flow.CapabilityResult
 import de.gematik.zeta.sdk.flow.FlowContext
 import de.gematik.zeta.sdk.flow.FlowNeed
+import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.http.HttpHeaders
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
@@ -45,6 +47,7 @@ import kotlin.time.measureTimedValue
 @Suppress("FunctionOnlyReturningConstant")
 class EnsureAccessTokenHandler(
     val tokenProvider: AccessTokenProvider,
+    val tpmProvider: TpmProvider,
     val authConfig: AuthConfig,
     val productId: String,
     val productVersion: String,
@@ -59,15 +62,18 @@ class EnsureAccessTokenHandler(
     override suspend fun handle(need: FlowNeed, ctx: FlowContext): CapabilityResult {
         val start = TimeSource.Monotonic.markNow()
         return try {
-            val (authToken, authTokenTime) = measureTimedValue { getAuthToken(ctx) }
-            Log.i { "[ENSURE-AUTH-TIMING] getAuthToken=$authTokenTime" }
-
-            val (hashedToken, hashTime) = measureTimedValue { tokenProvider.hash(authToken) }
-            Log.i { "[ENSURE-AUTH-TIMING] hashToken=$hashTime" }
-
             return CapabilityResult.RetryRequest { req ->
                 if (!req.headers.contains(HttpHeaders.Authorization)) {
-                    val dpop = tokenProvider.createDpopToken(req.method.value, req.url.toString(), null, hashedToken)
+                    val dpopKey = tpmProvider.generateDpopKey()
+
+                    val (authToken, authTokenTime) = measureTimedValue { getAuthToken(ctx, dpopKey.jwk.kid) }
+                    Log.i { "[ENSURE-AUTH-TIMING] getAuthToken=$authTokenTime" }
+
+                    val (hashedToken, hashTime) = measureTimedValue { tokenProvider.hash(authToken) }
+                    Log.i { "[ENSURE-AUTH-TIMING] hashToken=$hashTime" }
+
+                    val dpop = tokenProvider.createDpopToken(dpopKey.jwk, req.method.value, req.url.toString(), null, hashedToken)
+
                     req.headers[HttpHeaders.Authorization] = "${HttpAuthHeaders.Dpop} $authToken"
                     req.headers[HttpAuthHeaders.Dpop] = dpop
                 }
@@ -79,7 +85,7 @@ class EnsureAccessTokenHandler(
         }
     }
 
-    suspend fun getAuthToken(ctx: FlowContext): String {
+    suspend fun getAuthToken(ctx: FlowContext, dpopKey: String): String {
         val start = TimeSource.Monotonic.markNow()
         val (cfg, buildParamsTime) = measureTimedValue { buildAccessTokenParams(ctx) }
         Log.i { "[ENSURE-AUTH-TIMING] buildAccessTokenParams=$buildParamsTime" }
@@ -89,6 +95,7 @@ class EnsureAccessTokenHandler(
                 cfg.tokenEndpoint,
                 cfg.nonceEndpoint,
                 cfg.params,
+                dpopKey,
             )
         }
         Log.i { "[ENSURE-AUTH-TIMING] getValidToken=$tokenTime getAuthToken_total=${start.elapsedNow()}" }
@@ -144,8 +151,14 @@ class EnsureAccessTokenHandler(
         val params: AccessTokenParams,
     )
 
+    data class AccessTokenWithDpopKey(val token: String, val dpopKey: PublicKeyOut)
+
     /** Helper you can call from ws() to get a valid access token */
-    suspend fun getValidAccessToken(ctx: FlowContext): String = getAuthToken(ctx)
+    suspend fun getValidAccessToken(ctx: FlowContext): AccessTokenWithDpopKey {
+        val dpopKey = tpmProvider.generateDpopKey()
+        val token = getAuthToken(ctx, dpopKey.jwk.kid)
+        return AccessTokenWithDpopKey(token, dpopKey)
+    }
 }
 
 fun audienceFromIssuer(issuer: String): String {

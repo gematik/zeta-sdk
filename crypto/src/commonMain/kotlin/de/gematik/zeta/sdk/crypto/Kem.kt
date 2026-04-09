@@ -63,7 +63,7 @@ data class KemEncapResult(
 )
 
 @Serializable
-public data class EcPointP256(
+data class EcPointP256(
     val crv: String,
     val x: ByteArray,
     val y: ByteArray,

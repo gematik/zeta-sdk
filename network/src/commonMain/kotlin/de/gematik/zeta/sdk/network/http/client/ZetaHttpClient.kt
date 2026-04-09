@@ -57,9 +57,9 @@ import io.ktor.http.Parameters
 import io.ktor.http.Url
 import io.ktor.http.takeFrom
 import io.ktor.serialization.kotlinx.json.json
-import io.ktor.util.encodeBase64
 import io.ktor.utils.io.core.Closeable
 import kotlinx.serialization.json.Json
+import kotlin.io.encoding.Base64
 
 /**
  * Builds a preconfigured [HttpClient] using the provided [ClientConfig] DSL.
@@ -172,7 +172,7 @@ public fun buildHttpClient(cfg: ClientConfig, commonSetup: HttpClientConfig<*>.(
             if (proxyConfig.type == ProxyType.HTTP && proxyConfig.username != null && proxyConfig.password != null) {
                 defaultRequest {
                     val credentials = "${proxyConfig.username}:${proxyConfig.password}"
-                    val encoded = credentials.encodeToByteArray().encodeBase64()
+                    val encoded = Base64.encode(credentials.encodeToByteArray())
                     header(HttpHeaders.ProxyAuthorization, "Basic $encoded")
                 }
             }

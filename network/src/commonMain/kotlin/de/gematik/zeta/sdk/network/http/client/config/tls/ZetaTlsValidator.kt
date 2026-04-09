@@ -35,7 +35,7 @@ public object ZetaTlsValidator {
     public fun validateNegotiatedCipherSuite(negotiated: String): TlsValidationResult {
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()
-        if (negotiated !in ZetaCipherSuites.FULL_PREFERRED_ORDER) {
+        if (negotiated !in ZetaCipherSuites.FULL_PREFERRED_ORDER_IANA) {
             errors += "Cipher suite '$negotiated' is not in the allowed list"
         }
         return TlsValidationResult(errors.isEmpty(), errors, warnings)

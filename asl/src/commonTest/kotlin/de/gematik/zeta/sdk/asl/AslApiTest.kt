@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.asl
 
+import Jwk
 import de.gematik.zeta.sdk.authentication.AccessTokenParams
 import de.gematik.zeta.sdk.authentication.AccessTokenProvider
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
@@ -57,6 +58,7 @@ class AslApiImplTest {
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
             accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val encrypted = byteArrayOf(0x01, 0x02)
 
@@ -77,6 +79,7 @@ class AslApiImplTest {
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
             accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val tooShortPayload = byteArrayOf(0x00)
 
@@ -97,6 +100,7 @@ class AslApiImplTest {
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
             accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -123,6 +127,7 @@ class AslApiImplTest {
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
             accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -142,13 +147,14 @@ class AslApiImplTest {
         // Arrange
         val session = buildSession(cid = fakeSession)
         val storage = FakeAslStorage(session = session)
-        val tokenProvider = FakeAccessTokenProvider()
+        FakeAccessTokenProvider()
         val sut = AslApiImpl(
             resource = fakeResource,
             aslProdEnvironment = true,
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
-            accessTokenProvider = tokenProvider,
+            accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -157,7 +163,7 @@ class AslApiImplTest {
         }
 
         // Act
-        val result = sut.encrypt(request)
+        val result = sut.encrypt(request, true)
 
         // Assert
         assertEquals("fake-dpop-token", result.headers["DPoP"])
@@ -174,6 +180,7 @@ class AslApiImplTest {
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
             accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -199,6 +206,7 @@ class AslApiImplTest {
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
             accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -225,6 +233,7 @@ class AslApiImplTest {
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
             accessTokenProvider = tokenProvider,
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -233,7 +242,7 @@ class AslApiImplTest {
         }
 
         // Act
-        sut.encrypt(request)
+        sut.encrypt(request, true)
 
         // Assert
         assertEquals("token", tokenProvider.lastHashInput)
@@ -250,7 +259,8 @@ class AslApiImplTest {
             aslProdEnvironment = true,
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
-            accessTokenProvider = tokenProvider,
+            accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -276,6 +286,7 @@ class AslApiImplTest {
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
             accessTokenProvider = tokenProvider,
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -284,7 +295,7 @@ class AslApiImplTest {
         }
 
         // Act
-        sut.encrypt(request)
+        sut.encrypt(request, true)
 
         // Assert
         assertEquals("POST", tokenProvider.lastDpopMethod)
@@ -301,6 +312,7 @@ class AslApiImplTest {
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
             accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -327,6 +339,7 @@ class AslApiImplTest {
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
             accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -338,7 +351,7 @@ class AslApiImplTest {
         val result = sut.encrypt(request)
 
         // Assert
-        assertNull(result.headers["ZETA-ASL-nonPU-Tracing"])
+        assertNull(result.headers[TRACING_HEADER])
     }
 
     @Test
@@ -352,6 +365,7 @@ class AslApiImplTest {
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
             accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -377,6 +391,7 @@ class AslApiImplTest {
             aslStorage = storage,
             zetaHttpClient = ZetaHttpClient(HttpClient {}),
             accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -443,9 +458,11 @@ class AslApiImplTest {
             tokenEndpoint: String,
             nonceEndpoint: String,
             params: AccessTokenParams,
+            dpopKey: String,
         ): String = "fake-access-token"
 
         override suspend fun createDpopToken(
+            dpopKey: Jwk,
             method: String,
             url: String,
             nonceBytes: ByteArray?,

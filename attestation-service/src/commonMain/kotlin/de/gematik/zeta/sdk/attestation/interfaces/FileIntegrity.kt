@@ -29,11 +29,11 @@ import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.attestation.model.FileIntegrityResult
 import de.gematik.zeta.sdk.attestation.model.VerifyIntegrityResponse
 import de.gematik.zeta.sdk.attestation.tpm.TpmAccessOperations
-import io.ktor.util.encodeBase64
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlin.io.encoding.Base64
 
 class FileIntegrity(
     private val tpm: TpmAccessOperations,
@@ -77,7 +77,7 @@ class FileIntegrity(
         val expectedPcrValue = hashCalculator.computeExpectedPcr(scannedHash)
         val storedPcrValue = obtainMasterHash()
 
-        Log.i { "FileIntegrity.isIntact: expected: ${expectedPcrValue.encodeBase64()}, stored: ${storedPcrValue.encodeBase64()}" }
+        Log.i { "FileIntegrity.isIntact: expected: ${Base64.encode(expectedPcrValue)}, stored: ${Base64.encode(storedPcrValue)}" }
 
         return expectedPcrValue.contentEquals(storedPcrValue)
     }

@@ -27,7 +27,6 @@ variables:
   DOCKER_CERT_PATH: $DOCKER_TLS_CERTDIR/client
   DOCKER_TLS_VERIFY: "1"
 
-
 include:
   # adds job dependency-check-gradle
   - component: $CI_SERVER_FQDN/zeta/zeta-ci-cd-components/dependency-check-gradle@v0.4.0
@@ -35,13 +34,7 @@ include:
       cli-bin: ./gradlew
       job-stage: testAndAnalysis
       image: "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/eclipse-temurin:21-jdk"
-    rules:
-      # manual trigger
-      - if: '"$[[ inputs.do_dependency_scan ]]" == "true"'
-      # or scheduled
-      - if: $CI_PIPELINE_SOURCE == "schedule"
-      # always run dependency check on tags
-      - if: $CI_COMMIT_TAG != null
+      cache-key: zeta-sdk-dependency-check
 
 workflow:
   rules:
@@ -70,6 +63,7 @@ default:
     key: $CI_PIPELINE_ID
     paths:
       - "**/build"
+      - "**/build/**"
       - "build-cache"
   services:
     - name: docker:24.0.5-dind
@@ -184,6 +178,7 @@ lint:
   <<: *gradle_template
   stage: testAndAnalysis
   script:
+    # lintDebug is required to create the output for sonar
     - ./gradlew ktLint lintDebug
   allow_failure: true
   artifacts:
@@ -204,6 +199,7 @@ detekt:
     paths:
       - "**/detekt.html"
       - "**/detekt.xml"
+
 sonar:
   <<: *sonar_template
   stage: testAndAnalysis
@@ -230,6 +226,10 @@ sonar:
       -Dsonar.links.ci=${CI_PROJECT_URL}/-/pipelines
       -Dsonar.links.issue=${CI_PROJECT_URL}/-/issues
       -Dsonar.exclusions=ktor-client-curl/**
+  artifacts:
+    when: always
+    paths:
+      - "**/problems-report.html"
 
 build:
   <<: *gradle_template
@@ -302,6 +302,7 @@ publish_artifacts:
   script:
     - git clone https://zeta-sdk:${REPORTING_TOKEN}@${CI_SERVER_FQDN}/zeta/reporting.git
     - mkdir -p ./reporting/zeta-sdk/
+    - rm -rf ./reporting/zeta-sdk/*
     # unit test coverage
     - find . -path ./reporting -prune -o -name 'report.xml' -exec cp --parents '{}' ./reporting/zeta-sdk/ \;
     - find . -path ./reporting -prune -o -name 'coverage.txt' -exec cp --parents '{}' ./reporting/zeta-sdk/ \;
@@ -468,3 +469,20 @@ container_scan:
         RELEASE_VERSION: "staging"
         SEVERITIES: "UNKNOWN,HIGH,CRITICAL"
     - !reference [ .image_template, rules]
+
+publish_to_dependencytrack:
+  stage: publish
+  <<: *gradle_template
+  needs:
+    - job: sbom
+      artifacts: true
+  script:
+    - find . -path ./reporting -prune -o -name 'bom.json';
+    - >-
+      curl -v -X POST ${DEPENDENCYTRACK_URL}
+      -H "Content-Type: multipart/form-data"
+      -H "X-API-Key: ${DEPENDENCYTRACK_TOKEN}"
+      -F "projectName=zeta-sdk"
+      -F "projectVersion=${RELEASE_VERSION}"
+      -F "autoCreate=true"
+      -F "bom=@build/reports/cyclonedx/bom.json"

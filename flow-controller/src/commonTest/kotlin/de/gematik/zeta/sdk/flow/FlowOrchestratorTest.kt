@@ -211,7 +211,7 @@ class FlowOrchestratorTest {
     }
 
     private class FakeTpmProvider(override val isHardwareBacked: Boolean) : TpmProvider {
-        override suspend fun generateClientInstanceKey(): PublicKeyOut {
+        override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut {
             return PublicKeyOut(byteArrayOf(1), Jwk("", "", "", "", "", "", ""))
         }
 

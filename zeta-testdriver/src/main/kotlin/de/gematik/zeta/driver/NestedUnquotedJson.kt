@@ -33,7 +33,7 @@ import kotlinx.serialization.json.JsonTransformingSerializer
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 
-public object NestedUnquotedJson : JsonTransformingSerializer<JsonElement>(JsonElement.Companion.serializer()) {
+public object NestedUnquotedJson : JsonTransformingSerializer<JsonElement>(JsonElement.serializer()) {
     override fun transformSerialize(element: JsonElement): JsonElement = normalize(element)
     override fun transformDeserialize(element: JsonElement): JsonElement = normalize(element)
 

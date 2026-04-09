@@ -27,11 +27,6 @@ package de.gematik.zeta.sdk.crypto
 private const val DEFAULT_NONCE_LEN = 12
 private const val DEFAULT_TAG_LEN = 16
 
-interface AesGcmCipher {
-    fun encrypt(aesKey: ByteArray, plainText: ByteArray, iv: ByteArray? = null, aad: ByteArray? = null): ByteArray
-    fun decrypt(aesKey: ByteArray, cipherText: ByteArray, iv: ByteArray? = null, aad: ByteArray? = null): ByteArray
-}
-
 expect class AesGcmCipherImpl() : AesGcmCipher {
     override fun encrypt(aesKey: ByteArray, plainText: ByteArray, iv: ByteArray?, aad: ByteArray?): ByteArray
     override fun decrypt(aesKey: ByteArray, cipherText: ByteArray, iv: ByteArray?, aad: ByteArray?): ByteArray

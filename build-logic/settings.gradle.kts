@@ -21,7 +21,7 @@ fun autoDetectModules(dir: File) {
         if (file.name in setOf("src", "build", "gradle", "docs") || file.name.startsWith(".")) {
             continue
         }
-        if (file.isDirectory()) {
+        if (file.isDirectory) {
             val children = file.list()
             if ("settings.gradle.kts" in children) {
                 continue

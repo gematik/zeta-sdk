@@ -24,8 +24,8 @@
 
 package de.gematik.zeta.sdk.storage
 
-public class InMemoryStorage : SdkStorage {
-    public val map = mutableMapOf<String, String>()
+class InMemoryStorage : SdkStorage {
+    val map = mutableMapOf<String, String>()
     override suspend fun put(key: String, value: String) {
         map[key] = value
     }

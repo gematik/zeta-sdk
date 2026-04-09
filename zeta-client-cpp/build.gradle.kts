@@ -5,6 +5,10 @@ plugins {
     id("cpp-application")
 }
 
+kotlin {
+    mingwX64()
+}
+
 repositories {
     mavenLocal()
     mavenCentral()
@@ -12,12 +16,6 @@ repositories {
 
 val sdkProject = project(":zeta-sdk")
 val sdkBuildDir = "${sdkProject.projectDir}/build"
-
-kotlin {
-    sourceSets.nativeMain.dependencies {
-        implementation(sdkProject)
-    }
-}
 
 application {
     binaries.configureEach {

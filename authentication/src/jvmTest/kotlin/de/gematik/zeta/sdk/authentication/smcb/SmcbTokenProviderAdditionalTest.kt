@@ -24,6 +24,8 @@
 
 package de.gematik.zeta.sdk.authentication.smcb
 
+import Jwk
+import PublicKeyOut
 import de.gematik.zeta.sdk.authentication.smcb.model.ExternalAuthenticateResponse
 import de.gematik.zeta.sdk.authentication.smcb.model.ReadCardCertificateResponse
 import de.gematik.zeta.sdk.authentication.smcb.model.SignatureObject
@@ -73,7 +75,7 @@ class SmcbTokenProviderAdditionalTest {
 
             // when
             val token = subjectTokenProvider.createSubjectToken(
-                "clientId", "nonce".toByteArray(), "audience",
+                "clientId", "", "nonce".toByteArray(), "audience",
                 1000L, 30L, tpmProvider,
             )
 
@@ -90,7 +92,7 @@ class SmcbTokenProviderAdditionalTest {
 
             // when
             val token = subjectTokenProvider.createSubjectToken(
-                "clientId", "nonce".toByteArray(), "audience",
+                "clientId", "", "nonce".toByteArray(), "audience",
                 1000L, 30L, tpmProvider,
             )
 
@@ -108,7 +110,7 @@ class SmcbTokenProviderAdditionalTest {
 
             // when
             val token = subjectTokenProvider.createSubjectToken(
-                "myClient", "nonce".toByteArray(), "myAudience",
+                "myClient", "", "nonce".toByteArray(), "myAudience",
                 1000L, 30L, tpmProvider,
             )
 
@@ -129,7 +131,7 @@ class SmcbTokenProviderAdditionalTest {
 
             // when
             val token = subjectTokenProvider.createSubjectToken(
-                "clientId", "nonce".toByteArray(), "audience",
+                "clientId", "", "nonce".toByteArray(), "audience",
                 now, expiration, tpmProvider,
             )
 
@@ -150,7 +152,7 @@ class SmcbTokenProviderAdditionalTest {
             // when & then
             assertFailsWith<ConnectorError> {
                 subjectTokenProvider.createSubjectToken(
-                    "clientId", "nonce".toByteArray(), "audience",
+                    "clientId", "", "nonce".toByteArray(), "audience",
                     1000L, 30L, tpmProvider,
                 )
             }
@@ -166,6 +168,7 @@ class SmcbTokenProviderAdditionalTest {
             } returns createReadCertificateResponse(certificate)
             coEvery { tpmProvider.getRegistrationNumber(certificate) } returns "regNumber"
             coEvery { tpmProvider.randomUuid() } returns Uuid.parseHexDash("22222222-2222-2222-2222-222222222222")
+            coEvery { tpmProvider.getOrGenerateClientInstancePublicKey() } returns PublicKeyOut(byteArrayOf(0), Jwk("", "", "", "", "", "", ""))
             coEvery {
                 connectorApi.externalAuthenticate(any(), any(), any(), any(), any(), any())
             } throws ConnectorError("SOAP-ENV:Server", "auth failed", "auth failed")
@@ -173,7 +176,7 @@ class SmcbTokenProviderAdditionalTest {
             // when & then
             assertFailsWith<ConnectorError> {
                 subjectTokenProvider.createSubjectToken(
-                    "clientId", "nonce".toByteArray(), "audience",
+                    "clientId", "", "nonce".toByteArray(), "audience",
                     1000L, 30L, tpmProvider,
                 )
             }
@@ -187,7 +190,7 @@ class SmcbTokenProviderAdditionalTest {
 
             // when
             subjectTokenProvider.createSubjectToken(
-                "clientId", "nonce".toByteArray(), "audience",
+                "clientId", "", "nonce".toByteArray(), "audience",
                 1000L, 30L, tpmProvider,
             )
 
@@ -207,7 +210,7 @@ class SmcbTokenProviderAdditionalTest {
 
             // when
             subjectTokenProvider.createSubjectToken(
-                "clientId", "nonce".toByteArray(), "audience",
+                "clientId", "", "nonce".toByteArray(), "audience",
                 1000L, 30L, tpmProvider,
             )
 
@@ -228,7 +231,7 @@ class SmcbTokenProviderAdditionalTest {
 
             // when
             val token = subjectTokenProvider.createSubjectToken(
-                "clientId", nonceBytes, "audience",
+                "clientId", "", nonceBytes, "audience",
                 1000L, 30L, tpmProvider,
             )
 
@@ -249,6 +252,12 @@ class SmcbTokenProviderAdditionalTest {
         coEvery {
             connectorApi.externalAuthenticate(any(), any(), any(), any(), any(), any())
         } returns createExternalAuthenticateResponse(signature)
+
+        val mockClientKey = mockk<PublicKeyOut>()
+        val mockJwk = mockk<Jwk>()
+        coEvery { mockJwk.kid } returns "someKid"
+        coEvery { mockClientKey.jwk } returns mockJwk
+        coEvery { tpmProvider.getOrGenerateClientInstancePublicKey() } returns mockClientKey
     }
 
     private fun createReadCertificateResponse(certificate: ByteArray) = ReadCardCertificateResponse(

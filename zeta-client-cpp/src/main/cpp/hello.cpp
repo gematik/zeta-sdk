@@ -274,7 +274,7 @@ int main() {
     }
 
     char* productId = "demo-client";
-    char* productVersion = "0.4.0";
+    char* productVersion = "0.5.0";
     char* clientName = "sdk-client";
     char* scopes[] = {"zero:audience"};
 

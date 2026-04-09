@@ -195,6 +195,7 @@ actual class EcdhSigner {
         }
     }
 
+    @Suppress("REDUNDANT_CALL_OF_CONVERSION_METHOD")
     private fun logOpenSslError() {
         val err = ERR_get_error()
         if (err.toULong() != 0uL) {

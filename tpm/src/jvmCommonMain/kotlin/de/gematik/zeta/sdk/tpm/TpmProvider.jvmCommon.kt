@@ -48,7 +48,7 @@ private class SoftwareCryptoProvider(
     private var dpopKey: KeyPair? = null
 
     @Suppress("UnsafeCallOnNullableType")
-    override suspend fun generateClientInstanceKey(): PublicKeyOut {
+    override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut {
         val start = TimeSource.Monotonic.markNow()
         if (clientKey == null) {
             val (loaded, loadTime) = measureTimedValue { loadClientKeysFromStorage() }
@@ -195,7 +195,7 @@ private class SoftwareCryptoProvider(
 
 @Suppress("FunctionOnlyReturningConstant")
 internal fun hardwareBackedAvailable(): Boolean = false
-public actual fun platformDefaultProvider(storage: TpmStorage): TpmProvider {
+actual fun platformDefaultProvider(storage: TpmStorage): TpmProvider {
     if (hardwareBackedAvailable()) {
         Log.d { "Using hardware crypto provider (JVM)" }
         TODO("hardware backed provider")

@@ -27,6 +27,7 @@ package de.gematik.zeta.sdk.flow.handler
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.asl.AslApi
 import de.gematik.zeta.sdk.asl.AslException
+import de.gematik.zeta.sdk.configuration.models.ZetaAslUse
 import de.gematik.zeta.sdk.flow.CapabilityHandler
 import de.gematik.zeta.sdk.flow.CapabilityResult
 import de.gematik.zeta.sdk.flow.FlowContext
@@ -63,14 +64,25 @@ class AslHandler(
      */
     override suspend fun handle(need: FlowNeed, ctx: FlowContext): CapabilityResult {
         return try {
-            if (ctx.configurationStorage.aslRequired(ctx.resource)) {
-                Log.d { "Starting ASL encryption for resource $ctx.resource" }
-                CapabilityResult.RetryRequest { req ->
-                    asl.encrypt(req)
+            when (ctx.configurationStorage.aslUse(ctx.resource)) {
+                ZetaAslUse.REQUIRED -> {
+                    Log.d { "Starting ASL encryption for resource $ctx.resource" }
+                    CapabilityResult.RetryRequest { req ->
+                        asl.encrypt(req)
+                    }
                 }
-            } else {
-                Log.d { "Resource $ctx.resource does not require ASL" }
-                CapabilityResult.Done
+
+                ZetaAslUse.REQUIRED_PASSTHROUGH -> {
+                    Log.d { "Starting ASL encryption for resource $ctx.resource" }
+                    return CapabilityResult.RetryRequest { req ->
+                        asl.encrypt(req, true)
+                    }
+                }
+
+                ZetaAslUse.NOT_SUPPORTED -> {
+                    Log.d { "Resource $ctx.resource does not require ASL" }
+                    return CapabilityResult.Done
+                }
             }
         } catch (e: AslException) {
             CapabilityResult.Error("ASL_ERROR", e.message.toString(), e.response.raw)

@@ -90,7 +90,7 @@ class ClientRegistrationHandler(
                     grantTypes = listOf("urn:ietf:params:oauth:grant-type:token-exchange", "refresh_token"),
                     responseTypes = listOf("token"),
                     clientName = clientName,
-                    jwks = Jwks(listOf(tpmProvider.generateClientInstanceKey().jwk)),
+                    jwks = Jwks(listOf(tpmProvider.getOrGenerateClientInstancePublicKey().jwk)),
                 )
 
                 val response = regApi.register(endpoint, request)

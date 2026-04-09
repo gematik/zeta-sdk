@@ -79,8 +79,8 @@ import kotlin.time.measureTimedValue
  * ```
  */
 
-public object ZetaSdk {
-    public fun build(
+object ZetaSdk {
+    fun build(
         resource: String,
         config: BuildConfig,
     ): ZetaSdkClient {
@@ -149,6 +149,7 @@ private class ZetaSdkClientImpl(
         )
         EnsureAccessTokenHandler(
             accessTokenProvider,
+            tpmProvider,
             authConfig = cfg.authConfig,
             cfg.productId,
             cfg.productVersion,
@@ -163,6 +164,7 @@ private class ZetaSdkClientImpl(
             flowContext.aslStorage,
             httpClientBuilder.build(),
             accessTokenProvider,
+            tpmProvider,
             !httpClientBuilder.isServerValidationDisabled,
         )
 
@@ -231,11 +233,11 @@ private class ZetaSdkClientImpl(
         discover().getOrThrow()
         register().getOrThrow()
 
-        val token = authHandler.getValidAccessToken(flowContext)
+        val (token, dpopKey) = authHandler.getValidAccessToken(flowContext)
         require(token.isNotBlank())
 
         val hashedToken = accessTokenProvider.hash(token)
-        val dpop = accessTokenProvider.createDpopToken("GET", targetUrl, null, hashedToken)
+        val dpop = accessTokenProvider.createDpopToken(dpopKey.jwk, "GET", targetUrl, null, hashedToken)
 
         val wsClient = ZetaHttpClientBuilder(resource)
             .apply(builder)

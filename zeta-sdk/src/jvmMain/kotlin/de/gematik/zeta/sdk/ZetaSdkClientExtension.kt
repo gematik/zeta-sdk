@@ -27,7 +27,7 @@ package de.gematik.zeta.sdk
 import de.gematik.zeta.sdk.ZetaSdk.forget
 import kotlinx.coroutines.runBlocking
 
-public object ZetaSdkClientExtension {
+object ZetaSdkClientExtension {
     @JvmStatic
     fun forget(client: ZetaSdkClient): Boolean {
         return runBlocking {

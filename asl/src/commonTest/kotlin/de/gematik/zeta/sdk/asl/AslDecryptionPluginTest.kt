@@ -30,6 +30,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsBytes
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
@@ -101,9 +102,11 @@ class AslDecryptionPluginTest {
     fun decryptResponse_throwsException_whenDecryptionFailsWithExplicitType() = runTest {
         // Arrange
         val fakeAslApi = object : AslApi {
-            override suspend fun encrypt(request: HttpRequestBuilder): HttpRequestBuilder {
+
+            override suspend fun encrypt(request: HttpRequestBuilder, passThrough: Boolean?): HttpRequestBuilder {
                 return HttpRequestBuilder()
             }
+
             override suspend fun decrypt(extended: ByteArray): ByteArray {
                 throw IllegalArgumentException("Decryption failed")
             }
@@ -126,7 +129,7 @@ class AslDecryptionPluginTest {
 
         // Act & Assert
         assertFailsWith<IllegalArgumentException> {
-            val response: ByteArray = client.get("/ASL/endpoint").body()
+            client.get("/ASL/endpoint").bodyAsBytes()
         }
     }
 
@@ -161,7 +164,7 @@ class AslDecryptionPluginTest {
 
 class FakeAslApi : AslApi {
     var decryptCalled = false
-    override suspend fun encrypt(request: HttpRequestBuilder): HttpRequestBuilder {
+    override suspend fun encrypt(request: HttpRequestBuilder, passThrough: Boolean?): HttpRequestBuilder {
         return HttpRequestBuilder()
     }
 

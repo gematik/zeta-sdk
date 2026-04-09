@@ -38,6 +38,7 @@ import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.crypto.EcdhP256Kem
 import de.gematik.zeta.sdk.crypto.ML768Kem
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.http.HttpHeaders
 import io.ktor.http.URLBuilder
@@ -56,6 +57,7 @@ public data class AslHandshakeState(
     val transcriptHash: ByteArray? = null,
     val message4: Message4? = null,
     val accessTokenProvider: AccessTokenProvider,
+    val tpmProvider: TpmProvider,
     val tlsValidation: Boolean = true,
 ) {
     public companion object {
@@ -63,6 +65,7 @@ public data class AslHandshakeState(
             httpClient: ZetaHttpClient,
             request: HttpRequestBuilder,
             accessTokenProvider: AccessTokenProvider,
+            tpmProvider: TpmProvider,
             tlsValidation: Boolean,
         ): AslHandshakeState {
             return AslHandshakeState(
@@ -71,6 +74,7 @@ public data class AslHandshakeState(
                 mlKem = ML768Kem(),
                 ecdhKem = EcdhP256Kem(),
                 accessTokenProvider = accessTokenProvider,
+                tpmProvider = tpmProvider,
                 tlsValidation = tlsValidation,
             )
         }
@@ -164,7 +168,8 @@ public suspend fun AslHandshakeState.applyDpopFor(method: String, targetUrl: Str
     val token = auth.removePrefix(HttpAuthHeaders.Dpop).trim()
 
     val hashed = accessTokenProvider.hash(token)
-    return accessTokenProvider.createDpopToken(method, targetUrl, null, hashed)
+    val dpopKey = tpmProvider.generateDpopKey()
+    return accessTokenProvider.createDpopToken(dpopKey.jwk, method, targetUrl, null, hashed)
 }
 
 public fun aslUrl(url: URLBuilder, cid: String? = null): String {

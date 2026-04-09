@@ -28,7 +28,7 @@ import com.russhwolf.settings.Settings
 import de.gematik.zeta.sdk.crypto.AesGcmCipher
 import kotlin.io.encoding.Base64
 
-public class EncryptedSettings(
+class EncryptedSettings(
     private val delegate: Settings,
     private val cipher: AesGcmCipher,
     cipherB64Key: String,

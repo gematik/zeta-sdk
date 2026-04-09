@@ -100,9 +100,7 @@ public class InnerHttpCodecImpl : InnerHttpCodec {
     )
 
     private fun extractBody(builder: HttpRequestBuilder): BodyInfo {
-        val body = builder.body
-
-        return when (body) {
+        return when (val body = builder.body) {
             is ByteArrayContent -> BodyInfo(body.bytes(), body.contentType)
 
             is TextContent -> BodyInfo(body.text.toByteArray(body.contentType.charset() ?: Charsets.UTF_8), body.contentType)

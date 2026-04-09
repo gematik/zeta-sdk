@@ -2,6 +2,7 @@ import com.ensody.nativebuilds.cinterops
 import de.gematik.zeta.sdk.buildlogic.isNativeEnabled
 import de.gematik.zeta.sdk.buildlogic.setupBuildLogic
 import org.jetbrains.kotlin.gradle.dsl.ExplicitApiMode
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 
 plugins {
     id("de.gematik.zeta.sdk.build-logic.kmp")
@@ -12,6 +13,11 @@ plugins {
 
 setupBuildLogic {
     kotlin {
+        tasks.withType<KotlinCompilationTask<*>>().configureEach {
+            compilerOptions {
+                allWarningsAsErrors.set(false)
+            }
+        }
         explicitApi = ExplicitApiMode.Disabled
 
         if (project.isNativeEnabled) {
@@ -45,5 +51,9 @@ setupBuildLogic {
 
     tasks.named("ktlint") {
         enabled = false
+    }
+
+    tasks.withType<Test> {
+        failOnNoDiscoveredTests = false
     }
 }

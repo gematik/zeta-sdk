@@ -26,6 +26,7 @@ package de.gematik.zeta.sdk.asl
 import de.gematik.zeta.sdk.authentication.AccessTokenProvider
 import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
 import io.ktor.client.request.headers
@@ -36,12 +37,12 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.encodedPath
 import io.ktor.http.takeFrom
-import io.ktor.util.encodeBase64
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.cbor.Cbor
+import kotlin.io.encoding.Base64
 
 public interface AslApi {
-    public suspend fun encrypt(request: HttpRequestBuilder): HttpRequestBuilder
+    public suspend fun encrypt(request: HttpRequestBuilder, passThrough: Boolean? = false): HttpRequestBuilder
     public suspend fun decrypt(extended: ByteArray): ByteArray
 }
 
@@ -51,10 +52,11 @@ public class AslApiImpl(
     private val aslStorage: AslStorage,
     private val zetaHttpClient: ZetaHttpClient,
     private val accessTokenProvider: AccessTokenProvider,
+    private val tpmProvider: TpmProvider,
     private val tlsValidationEnabled: Boolean = true,
 ) : AslApi {
     @OptIn(ExperimentalSerializationApi::class)
-    override suspend fun encrypt(request: HttpRequestBuilder): HttpRequestBuilder {
+    override suspend fun encrypt(request: HttpRequestBuilder, passThrough: Boolean?): HttpRequestBuilder {
         val session = ensureHandshake(request)
 
         val innerHttp = InnerHttpCodecImpl().encodeRequest(request)
@@ -64,13 +66,15 @@ public class AslApiImpl(
         aslStorage.saveSession(resource, session)
 
         requireNotNull(session.cid) { "ASL Session has not been correctly established. CID is missing" }
+
         val accessToken = bearerHeader
             ?.removePrefix(HttpAuthHeaders.Dpop)
             ?.trim()
         val hash = accessToken?.let { token ->
             accessTokenProvider.hash(token)
         }
-        val dpop = accessTokenProvider.createDpopToken(HttpMethod.Post.value, aslUrl(request.url, session.cid), null, hash)
+        val dpopKey = tpmProvider.generateDpopKey()
+        val dpop = accessTokenProvider.createDpopToken(dpopKey.jwk, HttpMethod.Post.value, aslUrl(request.url, session.cid), null, hash)
 
         request.method = HttpMethod.Post
         request.url {
@@ -99,7 +103,7 @@ public class AslApiImpl(
     private suspend fun ensureHandshake(request: HttpRequestBuilder): EstablishedSession {
         aslStorage.getCurrentSession(resource)?.let { return it }
 
-        var state = AslHandshakeState.create(zetaHttpClient, request, accessTokenProvider, tlsValidationEnabled)
+        var state = AslHandshakeState.create(zetaHttpClient, request, accessTokenProvider, tpmProvider, tlsValidationEnabled)
         state = state
             .performMessage1AndReceiveMessage2()
             .processMessage2AndBuildMessage3(aslProdEnvironment)
@@ -118,9 +122,9 @@ public fun HttpRequestBuilder.copyAuthHeadersFrom(request: HttpRequestBuilder) {
 }
 
 private fun HeadersBuilder.setTracingHeaders(session: EstablishedSession) {
-    val client2Server = session.c2sAppDataKey.encodeBase64()
-    val server2Client = session.s2cAppDataKey.encodeBase64()
-    append("ZETA-ASL-nonPU-Tracing", "$client2Server $server2Client")
+    val client2Server = Base64.encode(session.c2sAppDataKey)
+    val server2Client = Base64.encode(session.s2cAppDataKey)
+    append(TRACING_HEADER, "$client2Server $server2Client")
 }
 
 @OptIn(ExperimentalSerializationApi::class)

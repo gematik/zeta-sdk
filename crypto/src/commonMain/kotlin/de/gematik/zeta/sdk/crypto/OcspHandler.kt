@@ -32,7 +32,7 @@ expect class OcspHandler() {
     fun validateCrl(crlDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray)
 }
 
-public data class OcspRequestData(
+data class OcspRequestData(
     val url: String,
     val requestDer: ByteArray,
 )

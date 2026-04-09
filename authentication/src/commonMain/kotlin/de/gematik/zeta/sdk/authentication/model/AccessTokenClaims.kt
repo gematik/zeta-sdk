@@ -45,4 +45,13 @@ data class AccessTokenClaims(
     @SerialName("jti") val jti: String,
     /** Access token type */
     @SerialName("typ") val typ: String,
+    /**  JWK Thumbprint of the public client instance key */
+    @SerialName("client_key") val clientKey: JktClaim,
+    /**JWK Thumbprint of the public DPoP key*/
+    @SerialName("dpop_key") val dpopKey: JktClaim,
+)
+
+@Serializable
+data class JktClaim(
+    @SerialName("jkt") val jkt: String,
 )

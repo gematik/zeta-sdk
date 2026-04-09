@@ -26,6 +26,8 @@ package de.gematik.zeta.driver
 
 import de.gematik.zeta.driver.model.SdkInstanceConfig
 import de.gematik.zeta.logging.Log
+import de.gematik.zeta.platform.Platform
+import de.gematik.zeta.platform.platform
 import de.gematik.zeta.sdk.BuildConfig
 import de.gematik.zeta.sdk.StorageConfig
 import de.gematik.zeta.sdk.TpmConfig
@@ -216,13 +218,17 @@ private fun wsCustomHeaders(poppToken: String?): Map<String, String> {
     return headers
 }
 
-public fun buildWsTargetUrl(call: ApplicationCall, config: SdkInstanceConfig): String {
+public fun buildWsTargetUrl(
+    call: ApplicationCall,
+    config: SdkInstanceConfig,
+    prefixToRemove: String = "/proxy",
+): String {
     val fachdienstUrl = requireNotNull(config.fachdienstUrl) { "fachdienstUrl is required" }
     val base = Url(fachdienstUrl)
     val afterProxy = call
         .request
         .path()
-        .removePrefix("/proxy")
+        .removePrefix(prefixToRemove)
         .trimStart('/')
 
     val wsProtocol = when (base.protocol) {
@@ -277,7 +283,7 @@ public fun newSdk(storage: SdkStorage, config: SdkInstanceConfig): ZetaSdkClient
         resource = fachdienstUrl,
         BuildConfig(
             "test-proxy",
-            "0.4.0",
+            "0.5.0",
             "sdk-client",
             StorageConfig(storage),
             object : TpmConfig {},
@@ -320,7 +326,7 @@ public fun newSdk(storage: SdkStorage, config: SdkInstanceConfig): ZetaSdkClient
                         error("No SM-B or SMC-B configuration was provided")
                 },
             ),
-            platformProductId = PlatformProductId.LinuxProductId("linux", "packagingType", "test-driver", "0.4.0"),
+            platformProductId = getPlatformProduct(),
             ZetaHttpClientBuilder()
                 .timeouts(20000, 20000)
                 .disableServerValidation("true".contentEquals((System.getenv(DISABLE_SERVER_VALIDATION) ?: "").lowercase()))
@@ -332,6 +338,15 @@ public fun newSdk(storage: SdkStorage, config: SdkInstanceConfig): ZetaSdkClient
                 },
         ),
     )
+}
+
+private fun getPlatformProduct(): PlatformProductId {
+    return when (val plat = platform()) {
+        is Platform.Jvm.Macos, Platform.Native.Macos -> PlatformProductId.AppleProductId("apple", "macos", listOf())
+        is Platform.Jvm.Linux -> PlatformProductId.LinuxProductId("linux", "", "demo-client", "0.5.0")
+        is Platform.Jvm.Windows -> PlatformProductId.WindowsProductId("windows", "", "demo-client")
+        else -> error("Unknown platform: $plat")
+    }
 }
 
 public suspend fun reset(

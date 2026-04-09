@@ -29,10 +29,11 @@ import de.gematik.zeta.sdk.storage.InMemoryStorage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.fail
 
 class DriverUtilsTest {
     @Test
-    fun newSdk_usesLinuxProductId() {
+    fun newSdk_usesCorrectPlatformProductId() {
         // Arrange
         val config = SdkInstanceConfig(
             fachdienstUrl = "https://example.com",
@@ -56,9 +57,26 @@ class DriverUtilsTest {
         val platformProductId = buildConfig::class.java
             .getDeclaredField("platformProductId")
             .apply { isAccessible = true }
-            .get(buildConfig)
+            .get(buildConfig) as PlatformProductId
 
-        assertIs<PlatformProductId.LinuxProductId>(platformProductId)
-        assertEquals("linux", platformProductId.platform)
+        val osName = System.getProperty("os.name").lowercase()
+        when {
+            osName.contains("linux") -> {
+                assertIs<PlatformProductId.LinuxProductId>(platformProductId)
+                assertEquals("linux", platformProductId.platform)
+            }
+
+            osName.contains("mac") || osName.contains("darwin") -> {
+                assertIs<PlatformProductId.AppleProductId>(platformProductId)
+                assertEquals("apple", platformProductId.platform)
+            }
+
+            osName.contains("win") -> {
+                assertIs<PlatformProductId.WindowsProductId>(platformProductId)
+                assertEquals("windows", platformProductId.platform)
+            }
+
+            else -> fail("Unsupported platform: $osName")
+        }
     }
 }

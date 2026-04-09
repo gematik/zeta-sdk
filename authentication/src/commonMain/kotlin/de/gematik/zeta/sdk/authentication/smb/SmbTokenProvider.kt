@@ -28,6 +28,7 @@ import de.gematik.zeta.sdk.authentication.AccessTokenUtility
 import de.gematik.zeta.sdk.authentication.SubjectTokenProvider
 import de.gematik.zeta.sdk.authentication.model.AccessTokenClaims
 import de.gematik.zeta.sdk.authentication.model.AccessTokenHeader
+import de.gematik.zeta.sdk.authentication.model.JktClaim
 import de.gematik.zeta.sdk.authentication.model.TokenType
 import de.gematik.zeta.sdk.crypto.hashWithSha256
 import de.gematik.zeta.sdk.tpm.TpmProvider
@@ -39,6 +40,7 @@ class SmbTokenProvider(
 ) : SubjectTokenProvider {
     override suspend fun createSubjectToken(
         clientId: String,
+        dpopKey: String,
         nonceBytes: ByteArray,
         audience: String,
         now: Long,
@@ -54,6 +56,7 @@ class SmbTokenProvider(
         val aud = listOf(audience)
         val sub = tpmProvider.getRegistrationNumber(smbCertificate)
         val jti = tpmProvider.randomUuid().toString()
+        val clientKey = tpmProvider.getOrGenerateClientInstancePublicKey().jwk.kid
 
         val subjectToken = AccessTokenUtility.create(
             AccessTokenHeader(
@@ -71,6 +74,8 @@ class SmbTokenProvider(
                 nonce = nonce,
                 jti = jti,
                 typ = "Bearer",
+                clientKey = JktClaim(clientKey),
+                dpopKey = JktClaim(dpopKey),
             ),
         )
         return AccessTokenUtility.addSignature(subjectToken, signSmbToken(tpmProvider, subjectToken))
@@ -116,7 +121,7 @@ class SmbTokenProvider(
         return Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(signature)
     }
 
-    public data class Credentials(
+    data class Credentials(
         val keystoreFile: String = "",
         val alias: String,
         val password: String,

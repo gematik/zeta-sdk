@@ -24,6 +24,8 @@
 
 package de.gematik.zeta.sdk.asl
 
+import Jwk
+import PublicKeyOut
 import de.gematik.zeta.sdk.authentication.AccessTokenParams
 import de.gematik.zeta.sdk.authentication.AccessTokenProvider
 import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
@@ -31,6 +33,7 @@ import de.gematik.zeta.sdk.crypto.EcdhP256Kem
 import de.gematik.zeta.sdk.crypto.KeyPair
 import de.gematik.zeta.sdk.crypto.ML768Kem
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.http.HttpHeaders
 import io.ktor.http.URLBuilder
@@ -42,6 +45,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.uuid.Uuid
 
 class AslHandshakeStateTest {
     @Test
@@ -50,9 +54,9 @@ class AslHandshakeStateTest {
         val httpClient = ZetaHttpClient(io.ktor.client.HttpClient())
         val request = buildRequest()
         val tokenProvider = FakeAccessTokenProvider()
-
+        val fakeTpm = FakeTpmProvider(false)
         // Act
-        val result = AslHandshakeState.create(httpClient, request, tokenProvider, false)
+        val result = AslHandshakeState.create(httpClient, request, tokenProvider, fakeTpm, false)
 
         // Assert
         assertEquals(request, result.request)
@@ -306,12 +310,57 @@ class AslHandshakeStateTest {
         assertEquals("http://localhost:8080/ASL/test", result)
     }
 
+    class FakeTpmProvider(override val isHardwareBacked: Boolean) : TpmProvider {
+        override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun generateDpopKey(): PublicKeyOut {
+            return PublicKeyOut(byteArrayOf(), Jwk("", "", "", "", "", "", ""))
+        }
+
+        override suspend fun signWithClientKey(input: ByteArray): ByteArray {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun signWithDpopKey(input: ByteArray): ByteArray {
+            return byteArrayOf()
+        }
+
+        override suspend fun readSmbCertificate(p12File: String, alias: String, password: String): ByteArray {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun readSmbCertificateFromBytes(data: ByteArray, alias: String, password: String): ByteArray {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun signWithSmbKey(input: ByteArray, p12File: String, alias: String, password: String): ByteArray {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun signWithSmbKeyFromBytes(input: ByteArray, keystoreBytes: ByteArray, alias: String, password: String): ByteArray {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun randomUuid(): Uuid {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun getRegistrationNumber(certificate: ByteArray): String {
+            TODO("Not yet implemented")
+        }
+
+        override fun forget() {
+            TODO("Not yet implemented")
+        }
+    }
     private class FakeAccessTokenProvider : AccessTokenProvider {
         val hashCalls = mutableListOf<String>()
         val createDpopCalls = mutableListOf<CreateDpopCall>()
-        override suspend fun getValidToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams): String = "valid_token"
+        override suspend fun getValidToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams, dpopKey: String): String = "valid_token"
 
-        override suspend fun createDpopToken(method: String, url: String, nonceBytes: ByteArray?, accessTokenHash: String?): String {
+        override suspend fun createDpopToken(dpopKey: Jwk, method: String, url: String, nonceBytes: ByteArray?, accessTokenHash: String?): String {
             createDpopCalls.add(CreateDpopCall(method, url, null, accessTokenHash))
             return "dpop_token"
         }
@@ -357,6 +406,7 @@ class AslHandshakeStateTest {
             transcriptHash = transcriptHash,
             message4 = message4,
             accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = FakeTpmProvider(false),
         )
     }
 }

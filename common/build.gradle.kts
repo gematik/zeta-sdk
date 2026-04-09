@@ -12,6 +12,9 @@ plugins {
 
 setupBuildLogic {
     kotlin {
+        tasks.withType<Test> {
+            failOnNoDiscoveredTests = false
+        }
         sourceSets.commonMain.dependencies {
             api(libs.coroutines.core)
             api(libs.reactivestate.core)
@@ -31,10 +34,20 @@ setupBuildLogic {
             }
         }
 
-        if (project.isAndroidEnabled || project.isIOSEnabled) {
-            sourceSets.getByName("mobileMain").dependencies {
+        if (project.isAndroidEnabled) {
+            kotlin.sourceSets.getByName("androidMain").dependencies {
                 implementation(libs.logger.napier)
             }
+        }
+
+        if (project.isIOSEnabled) {
+            kotlin.sourceSets.getByName("iosMain").dependencies {
+                implementation(libs.logger.napier)
+            }
+        }
+
+        tasks.withType<Test> {
+            failOnNoDiscoveredTests = false
         }
     }
 }

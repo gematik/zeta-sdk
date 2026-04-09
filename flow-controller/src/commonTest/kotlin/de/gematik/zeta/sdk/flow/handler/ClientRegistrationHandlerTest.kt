@@ -33,6 +33,7 @@ import de.gematik.zeta.sdk.configuration.models.ApiVersion
 import de.gematik.zeta.sdk.configuration.models.ApiVersionStatus
 import de.gematik.zeta.sdk.configuration.models.AuthorizationServerMetadata
 import de.gematik.zeta.sdk.configuration.models.ProtectedResourceMetadata
+import de.gematik.zeta.sdk.configuration.models.ZetaAslUse
 import de.gematik.zeta.sdk.flow.CapabilityResult
 import de.gematik.zeta.sdk.flow.FlowContext
 import de.gematik.zeta.sdk.flow.FlowContextImpl
@@ -261,7 +262,7 @@ class ClientRegistrationHandlerTest {
     private fun createContext(): FlowContext = FlowContextImpl("test", FakeForwardingClient(), InMemoryStorage(), configurationStorage = FakeConfigurationStorage())
 
     private class FakeTpmProvider(override val isHardwareBacked: Boolean) : TpmProvider {
-        override suspend fun generateClientInstanceKey(): PublicKeyOut {
+        override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut {
             return PublicKeyOut(byteArrayOf(1), Jwk("", "", "", "", "", "", ""))
         }
 
@@ -319,7 +320,7 @@ class ClientRegistrationHandlerTest {
             TODO("Not yet implemented")
         }
 
-        override suspend fun getAuthServer(resource: String): AuthorizationServerMetadata? {
+        override suspend fun getAuthServer(resource: String): AuthorizationServerMetadata {
             return AuthorizationServerMetadata(
                 issuer = "issuer",
                 authorizationEndpoint = "",
@@ -352,7 +353,7 @@ class ClientRegistrationHandlerTest {
             TODO("Not yet implemented")
         }
 
-        override suspend fun aslRequired(resource: String): Boolean {
+        override suspend fun aslUse(resource: String): ZetaAslUse {
             TODO("Not yet implemented")
         }
 

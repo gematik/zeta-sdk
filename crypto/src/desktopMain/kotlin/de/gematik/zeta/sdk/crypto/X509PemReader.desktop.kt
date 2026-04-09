@@ -217,7 +217,7 @@ actual class X509PemReader {
                                 val pnode = sk_ASN1_TYPE_value(parent, j) ?: continue
                                 if (pnode.pointed.type == V_ASN1_PRINTABLESTRING) {
                                     val ps = pnode.pointed.value.printablestring ?: continue
-                                    val len = ASN1_STRING_length(ps).toInt()
+                                    val len = ASN1_STRING_length(ps)
                                     val data = ASN1_STRING_get0_data(ps) ?: continue
                                     return data.readBytes(len).toKString()
                                 }

@@ -26,7 +26,7 @@ package de.gematik.zeta.sdk.authentication
 
 import de.gematik.zeta.sdk.attestation.model.AttestationConfig
 
-public data class AuthConfig(
+data class AuthConfig(
     val scopes: List<String>,
     val exp: Long,
     val aslProdEnvironment: Boolean = true,

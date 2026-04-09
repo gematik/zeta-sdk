@@ -57,7 +57,7 @@ class AccessTokenProviderImplTest {
         val (sut, _) = buildSut(clock = { 1000L }, fakeAuthStorage = fakeStorage)
 
         // Act
-        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams)
+        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
 
         // Assert
         assertEquals("cached_token", result)
@@ -70,7 +70,7 @@ class AccessTokenProviderImplTest {
         val (sut, _) = buildSut(clock = { 1000L }, fakeAuthStorage = fakeStorage)
 
         // Act
-        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams)
+        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
 
         // Assert
         assertEquals("valid_token", result)
@@ -84,7 +84,7 @@ class AccessTokenProviderImplTest {
         val (sut, storage) = buildSut(clock = { 1000L }, fakeAuthStorage = fakeStorage, fakeAuthApi = fakeApi)
 
         // Act
-        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams)
+        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
 
         // Assert
         assertEquals("new_token", result)
@@ -99,7 +99,7 @@ class AccessTokenProviderImplTest {
         val (sut, _) = buildSut(fakeAuthStorage = fakeStorage, fakeAuthApi = fakeApi)
 
         // Act
-        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams)
+        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
 
         // Assert
         assertEquals("fresh_token", result)
@@ -113,7 +113,7 @@ class AccessTokenProviderImplTest {
         val (sut, storage) = buildSut(fakeAuthStorage = fakeStorage, fakeAuthApi = fakeApi)
 
         // Act
-        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams)
+        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
 
         // Assert
         assertEquals("fresh_token", result)
@@ -132,7 +132,7 @@ class AccessTokenProviderImplTest {
         val (sut, storage) = buildSut(clock = { 1000L }, fakeAuthStorage = fakeStorage, fakeAuthApi = fakeApi)
 
         // Act
-        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams)
+        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
 
         // Assert
         assertEquals("refreshed_token", result)
@@ -163,7 +163,7 @@ class AccessTokenProviderImplTest {
         val (sut, storage) = buildSut(clock = { 1000L }, fakeAuthStorage = fakeStorage, fakeAuthApi = fakeApi)
 
         // Act
-        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams)
+        val result = sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
 
         // Assert
         assertEquals("fallback_token", result)
@@ -183,7 +183,7 @@ class AccessTokenProviderImplTest {
 
         // Act & Assert
         assertFailsWith<AuthenticationException> {
-            sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams)
+            sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
         }
     }
 
@@ -196,7 +196,7 @@ class AccessTokenProviderImplTest {
 
         // Act & Assert
         assertFailsWith<AuthenticationException> {
-            sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams)
+            sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
         }
     }
 
@@ -208,7 +208,7 @@ class AccessTokenProviderImplTest {
         val (sut, storage) = buildSut(clock = { 1000L }, fakeAuthStorage = fakeStorage, fakeAuthApi = fakeApi)
 
         // Act
-        sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams)
+        sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
 
         // Assert
         assertEquals(1, storage.savedTokens.size)
@@ -257,25 +257,32 @@ class AccessTokenProviderImplTest {
         assertNotEquals(result1, result2)
     }
 
-    private val fakeJwk = Jwk(
-        kid = "fake-kid",
-        kty = "EC",
-        alg = "ES256",
-        use = "sig",
-        crv = "P-256",
-        x = "fake-x",
-        y = "fake-y",
-    )
-
-    private val fakePublicKeyOut = PublicKeyOut(
-        encoded = ByteArray(32) { 0x01 },
-        jwk = fakeJwk,
-    )
-
-    private inner class FakeTpmProvider : TpmProvider {
+    class FakeTpmProvider : TpmProvider {
         override val isHardwareBacked: Boolean = false
-        override suspend fun generateClientInstanceKey(): PublicKeyOut = fakePublicKeyOut
-        override suspend fun generateDpopKey(): PublicKeyOut = fakePublicKeyOut
+        override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut = PublicKeyOut(
+            encoded = ByteArray(32) { 0x01 },
+            jwk = Jwk(
+                kid = "fake-kid",
+                kty = "EC",
+                alg = "ES256",
+                use = "sig",
+                crv = "P-256",
+                x = "fake-x",
+                y = "fake-y",
+            ),
+        )
+        override suspend fun generateDpopKey(): PublicKeyOut = PublicKeyOut(
+            encoded = ByteArray(32) { 0x01 },
+            jwk = Jwk(
+                kid = "fake-kid",
+                kty = "EC",
+                alg = "ES256",
+                use = "sig",
+                crv = "P-256",
+                x = "fake-x",
+                y = "fake-y",
+            ),
+        )
         override suspend fun signWithClientKey(input: ByteArray): ByteArray = ByteArray(64) { 0x02 }
         override suspend fun signWithDpopKey(input: ByteArray): ByteArray = ByteArray(64) { 0x03 }
         override suspend fun readSmbCertificate(p12File: String, alias: String, password: String): ByteArray = ByteArray(0)
@@ -372,6 +379,7 @@ class AccessTokenProviderImplTest {
     private class FakeSubjectTokenProvider : SubjectTokenProvider {
         override suspend fun createSubjectToken(
             clientId: String,
+            dpopKey: String,
             nonceBytes: ByteArray,
             audience: String,
             now: Long,

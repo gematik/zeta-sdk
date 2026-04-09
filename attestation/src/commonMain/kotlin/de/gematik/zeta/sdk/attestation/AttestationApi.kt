@@ -118,7 +118,7 @@ class AttestationApiImpl(
         platformProductId: PlatformProductId,
     ): String {
         Log.i { "Getting client instant keys" }
-        val clientInstanceKeys = tpmProvider.generateClientInstanceKey()
+        val clientInstanceKeys = tpmProvider.getOrGenerateClientInstancePublicKey()
 
         Log.i { "Getting uuid for jti" }
         val jti: String = uuidGen()

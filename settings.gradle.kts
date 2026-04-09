@@ -16,7 +16,7 @@ pluginManagement {
     }
 
     plugins {
-        id("co.touchlab.skie") version "0.10.6"
+        id("co.touchlab.skie") version "0.10.10"
     }
 }
 
@@ -33,7 +33,7 @@ fun autoDetectModules(dir: File) {
         if (file.name in setOf("src", "build-logic", "build", "gradle", "docs") || file.name.startsWith(".")) {
             continue
         }
-        if (file.isDirectory()) {
+        if (file.isDirectory) {
             if ("build.gradle.kts" in file.list()) {
                 include(":" + file.relativeTo(rootDir).path.replace("/", ":"))
             } else {

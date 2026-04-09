@@ -48,20 +48,20 @@
 
 package de.gematik.zeta.sdk.attestation.config
 
-public object CliArgs {
+object CliArgs {
     private var args: Array<String> = emptyArray()
 
-    public fun init(cliArgs: Array<String>) {
+    fun init(cliArgs: Array<String>) {
         args = cliArgs
     }
 
-    public fun get(key: String): String? {
+    fun get(key: String): String? {
         val prefix = "--$key="
         return args.firstOrNull { it.startsWith(prefix) }
             ?.removePrefix(prefix)
     }
 
-    public fun contains(key: String): Boolean {
+    fun contains(key: String): Boolean {
         val prefix = "--$key"
         return args.any { it.contains(prefix) }
     }
