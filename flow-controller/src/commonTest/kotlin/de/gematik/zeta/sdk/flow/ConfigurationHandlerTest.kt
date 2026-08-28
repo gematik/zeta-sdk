@@ -22,6 +22,8 @@
  * #L%
  */
 
+import de.gematik.zeta.sdk.configuration.ConfigurationApi
+import de.gematik.zeta.sdk.configuration.DiscoveryFetchResult
 import de.gematik.zeta.sdk.configuration.models.AuthorizationServerMetadata
 import de.gematik.zeta.sdk.flow.CapabilityResult
 import de.gematik.zeta.sdk.flow.FakeApi
@@ -38,6 +40,7 @@ import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -71,7 +74,7 @@ class ConfigurationHandlerTest {
             getDummyProtectedResourceObject(resource, listOf("https://auth.example.com"))
         val ctx = getDummyFlowContext()
         val authServer = getDummyAuthServerObject(resource)
-        ctx.configurationStorage.saveProtectedResource(Json.encodeToString(protectedResourceMetadata))
+        ctx.configurationStorage.saveProtectedResource(Json.encodeToString(protectedResourceMetadata), maxAgeSeconds = 10)
         ctx.configurationStorage.linkResourceToAuthorizationServer(authServer)
         val h = ConfigurationHandler(FakeApi(), FakeValidator())
 
@@ -94,7 +97,7 @@ class ConfigurationHandlerTest {
 
         val h = ConfigurationHandler(api, FakeValidator())
         val ctx = getDummyFlowContext()
-        ctx.configurationStorage.saveProtectedResource(Json.encodeToString(protectedResourceMetadata))
+        ctx.configurationStorage.saveProtectedResource(Json.encodeToString(protectedResourceMetadata), maxAgeSeconds = 10)
 
         // Act
         val result = h.handle(FlowNeed.ConfigurationFiles, ctx)
@@ -268,6 +271,339 @@ class ConfigurationHandlerTest {
     }
 
     @Test
+    fun handle_fetchesProtectedResource_withCachedETag() = runTest {
+        // Arrange
+        val resource = "https://api.example.com"
+        val issuer = "https://auth.example.com"
+        val cachedETag = "\"pr-etag\""
+        val ctx = getDummyFlowContext()
+
+        ctx.configurationStorage.saveProtectedResource(
+            protectedRes = Json.encodeToString(
+                getDummyProtectedResourceObject(resource, listOf(issuer)),
+            ),
+            maxAgeSeconds = -1,
+            eTag = cachedETag,
+        )
+
+        val api = RecordingConfigurationApi(
+            resourceResult = DiscoveryFetchResult(
+                body = Json.encodeToString(
+                    getDummyProtectedResourceObject(resource, listOf(issuer)),
+                ),
+                maxAgeSeconds = 120,
+                eTag = "\"new-pr-etag\"",
+                notModified = false,
+            ),
+            authorizationResult = DiscoveryFetchResult(
+                body = Json.encodeToString(getDummyAuthServerObject(issuer)),
+                maxAgeSeconds = 120,
+                eTag = "\"as-etag\"",
+                notModified = false,
+            ),
+        )
+        val h = ConfigurationHandler(api, FakeValidator())
+
+        // Act
+        val result = h.handle(FlowNeed.ConfigurationFiles, ctx)
+
+        // Assert
+        assertEquals(CapabilityResult.Done, result)
+        assertEquals(cachedETag, api.lastResourceETag)
+        assertEquals(resource, api.lastResourceUrl)
+    }
+
+    @Test
+    fun handle_throwsValidationFailed_whenResourceReturns304ButCacheIsMissing() = runTest {
+        // Arrange
+        val resource = "https://api.example.com"
+        val api = RecordingConfigurationApi(
+            resourceResult = DiscoveryFetchResult(
+                body = null,
+                maxAgeSeconds = 300,
+                eTag = "\"pr-etag\"",
+                notModified = true,
+            ),
+        )
+        val h = ConfigurationHandler(api, FakeValidator())
+
+        // Act / Assert
+        val error = assertFailsWith<ConfigurationError.ValidationFailed> {
+            h.handle(FlowNeed.ConfigurationFiles, getDummyFlowContext())
+        }
+
+        assertTrue(
+            error.message.orEmpty().contains(
+                "Protected resource metadata missing after 304 revalidation",
+            ),
+        )
+    }
+
+    @Test
+    fun handle_throwsWhenProtectedResourceResponseHasNoBody_andIsNot304() = runTest {
+        // Arrange
+        val resource = "https://api.example.com"
+        val api = RecordingConfigurationApi(
+            resourceResult = DiscoveryFetchResult(
+                body = null,
+                maxAgeSeconds = 120,
+                eTag = "\"pr-etag\"",
+                notModified = false,
+            ),
+        )
+        val h = ConfigurationHandler(api, FakeValidator())
+
+        // Act / Assert
+        val error = assertFailsWith<IllegalArgumentException> {
+            h.handle(FlowNeed.ConfigurationFiles, getDummyFlowContext())
+        }
+
+        assertTrue(
+            error.message.orEmpty().contains(
+                "Missing body for 200 OK discovery response",
+            ),
+        )
+    }
+
+    @Test
+    fun handle_savesProtectedResource_withResponseTtlAndETag() = runTest {
+        // Arrange
+        val resource = "https://api.example.com"
+        val issuer = "https://auth.example.com"
+        val ctx = getDummyFlowContext()
+        val api = RecordingConfigurationApi(
+            resourceResult = DiscoveryFetchResult(
+                body = Json.encodeToString(
+                    getDummyProtectedResourceObject(resource, listOf(issuer)),
+                ),
+                maxAgeSeconds = 123,
+                eTag = "\"saved-pr-etag\"",
+                notModified = false,
+            ),
+            authorizationResult = DiscoveryFetchResult(
+                body = Json.encodeToString(getDummyAuthServerObject(issuer)),
+                maxAgeSeconds = 456,
+                eTag = "\"saved-as-etag\"",
+                notModified = false,
+            ),
+        )
+        val h = ConfigurationHandler(api, FakeValidator())
+
+        // Act
+        val result = h.handle(FlowNeed.ConfigurationFiles, ctx)
+
+        // Assert
+        assertEquals(CapabilityResult.Done, result)
+        assertEquals(
+            "\"saved-pr-etag\"",
+            ctx.configurationStorage.getProtectedResourceETag(),
+        )
+        assertNotNull(ctx.configurationStorage.getProtectedResource())
+    }
+
+    @Test
+    fun handle_fetchesAuthorizationServer_withCachedETag() = runTest {
+        // Arrange
+        val resource = "https://api.example.com"
+        val issuer = "https://auth.example.com"
+        val authFqdn = "auth.example.com"
+        val cachedETag = "\"as-etag\""
+        val ctx = getDummyFlowContext()
+
+        // PR is fresh, AS is stale but retains its ETag.
+        ctx.configurationStorage.saveProtectedResource(
+            protectedRes = Json.encodeToString(
+                getDummyProtectedResourceObject(resource, listOf(issuer)),
+            ),
+            maxAgeSeconds = 100,
+        )
+        val asMetadata = getDummyAuthServerObject(issuer)
+        ctx.configurationStorage.saveAuthServer(
+            metadata = asMetadata,
+            maxAgeSeconds = -1,
+            eTag = cachedETag,
+        )
+        ctx.configurationStorage.linkResourceToAuthorizationServer(asMetadata)
+
+        val api = RecordingConfigurationApi(
+            authorizationResult = DiscoveryFetchResult(
+                body = Json.encodeToString(asMetadata),
+                maxAgeSeconds = 600,
+                eTag = "\"new-as-etag\"",
+                notModified = false,
+            ),
+        )
+        val h = ConfigurationHandler(api, FakeValidator())
+
+        // Act
+        val result = h.handle(FlowNeed.ConfigurationFiles, ctx)
+
+        // Assert
+        assertEquals(CapabilityResult.Done, result)
+        assertEquals(cachedETag, api.lastAuthorizationETag)
+        assertEquals(issuer, api.lastAuthorizationFqdn)
+        assertEquals(
+            "\"new-as-etag\"",
+            ctx.configurationStorage.getAuthServerETag(authFqdn),
+        )
+    }
+
+    @Test
+    fun handle_touchesAuthorizationServer_whenAuthorizationServerReturns304() = runTest {
+        // Arrange
+        val resource = "https://api.example.com"
+        val issuer = "https://auth.example.com"
+        val authFqdn = "auth.example.com"
+        val ctx = getDummyFlowContext()
+
+        ctx.configurationStorage.saveProtectedResource(
+            protectedRes = Json.encodeToString(
+                getDummyProtectedResourceObject(resource, listOf(issuer)),
+            ),
+            maxAgeSeconds = 100,
+        )
+
+        val asMetadata = getDummyAuthServerObject(issuer)
+        ctx.configurationStorage.saveAuthServer(
+            metadata = asMetadata,
+            maxAgeSeconds = -1,
+            eTag = "\"old-as-etag\"",
+        )
+        ctx.configurationStorage.linkResourceToAuthorizationServer(asMetadata)
+
+        val api = RecordingConfigurationApi(
+            authorizationResult = DiscoveryFetchResult(
+                body = null,
+                maxAgeSeconds = 600,
+                eTag = "\"new-as-etag\"",
+                notModified = true,
+            ),
+        )
+        val h = ConfigurationHandler(api, FakeValidator())
+
+        // Act
+        val result = h.handle(FlowNeed.ConfigurationFiles, ctx)
+
+        // Assert
+        assertEquals(CapabilityResult.Done, result)
+        assertEquals("\"old-as-etag\"", api.lastAuthorizationETag)
+
+        assertNotNull(ctx.configurationStorage.getAuthServer())
+        assertEquals(
+            "\"new-as-etag\"",
+            ctx.configurationStorage.getAuthServerETag(authFqdn),
+        )
+    }
+
+    @Test
+    fun handle_throwsValidationFailed_whenAuthorizationServerReturns304ButCacheIsMissing() = runTest {
+        // Arrange
+        val resource = "https://api.example.com"
+        val issuer = "https://auth.example.com"
+        val ctx = getDummyFlowContext()
+
+        ctx.configurationStorage.saveProtectedResource(
+            protectedRes = Json.encodeToString(
+                getDummyProtectedResourceObject(resource, listOf(issuer)),
+            ),
+            maxAgeSeconds = 100,
+        )
+
+        val api = RecordingConfigurationApi(
+            authorizationResult = DiscoveryFetchResult(
+                body = null,
+                maxAgeSeconds = 600,
+                eTag = "\"as-etag\"",
+                notModified = true,
+            ),
+        )
+        val h = ConfigurationHandler(api, FakeValidator())
+
+        // Act / Assert
+        val error = assertFailsWith<ConfigurationError.ValidationFailed> {
+            h.handle(FlowNeed.ConfigurationFiles, ctx)
+        }
+
+        assertTrue(
+            error.message.orEmpty().contains(
+                "Auth server metadata missing after 304 revalidation",
+            ),
+        )
+    }
+
+    @Test
+    fun handle_throwsWhenAuthorizationServerResponseHasNoBody_andIsNot304() = runTest {
+        // Arrange
+        val resource = "https://api.example.com"
+        val issuer = "https://auth.example.com"
+        val ctx = getDummyFlowContext()
+
+        ctx.configurationStorage.saveProtectedResource(
+            protectedRes = Json.encodeToString(
+                getDummyProtectedResourceObject(resource, listOf(issuer)),
+            ),
+            maxAgeSeconds = 100,
+        )
+
+        val api = RecordingConfigurationApi(
+            authorizationResult = DiscoveryFetchResult(
+                body = null,
+                maxAgeSeconds = 600,
+                eTag = "\"as-etag\"",
+                notModified = false,
+            ),
+        )
+        val h = ConfigurationHandler(api, FakeValidator())
+
+        // Act / Assert
+        val error = assertFailsWith<IllegalArgumentException> {
+            h.handle(FlowNeed.ConfigurationFiles, ctx)
+        }
+
+        assertTrue(
+            error.message.orEmpty().contains(
+                "Missing body for 200 OK discovery response",
+            ),
+        )
+    }
+
+    @Test
+    fun handle_savesAuthorizationServer_withResponseTtlAndETag() = runTest {
+        // Arrange
+        val resource = "https://api.example.com"
+        val issuer = "https://auth.example.com"
+        val authFqdn = "auth.example.com"
+        val ctx = getDummyFlowContext()
+
+        ctx.configurationStorage.saveProtectedResource(
+            protectedRes = Json.encodeToString(
+                getDummyProtectedResourceObject(resource, listOf(issuer)),
+            ),
+            maxAgeSeconds = 100,
+        )
+
+        val api = RecordingConfigurationApi(
+            authorizationResult = DiscoveryFetchResult(
+                body = Json.encodeToString(getDummyAuthServerObject(issuer)),
+                maxAgeSeconds = 777,
+                eTag = "\"saved-as-etag\"",
+                notModified = false,
+            ),
+        )
+        val h = ConfigurationHandler(api, FakeValidator())
+
+        // Act
+        val result = h.handle(FlowNeed.ConfigurationFiles, ctx)
+
+        // Assert
+        assertEquals(CapabilityResult.Done, result)
+        assertEquals(
+            "\"saved-as-etag\"",
+            ctx.configurationStorage.getAuthServerETag(authFqdn),
+        )
+    }
+
+    @Test
     fun deserializesRequiredFields() {
         val metadata = json.decodeFromString<AuthorizationServerMetadata>(minimalJson())
         assertEquals("https://auth.example.com", metadata.issuer)
@@ -334,6 +670,64 @@ class ConfigurationHandlerTest {
         assertFailsWith<SerializationException> {
             Json.decodeFromString<AuthorizationServerMetadata>(withoutIssuer)
         }
+    }
+
+    private class RecordingConfigurationApi(
+        var resourceResult: DiscoveryFetchResult = DiscoveryFetchResult(
+            body = null,
+            maxAgeSeconds = null,
+            eTag = null,
+            notModified = false,
+        ),
+        var authorizationResult: DiscoveryFetchResult = DiscoveryFetchResult(
+            body = null,
+            maxAgeSeconds = null,
+            eTag = null,
+            notModified = false,
+        ),
+    ) : ConfigurationApi {
+        var resourceFetchCalls: Int = 0
+            private set
+        var authorizationFetchCalls: Int = 0
+            private set
+
+        var lastResourceUrl: String? = null
+            private set
+        var lastResourceSubpath: String? = null
+            private set
+        var lastResourceETag: String? = null
+            private set
+
+        var lastAuthorizationFqdn: String? = null
+            private set
+        var lastAuthorizationETag: String? = null
+            private set
+
+        override suspend fun fetchResourceMetadata(
+            resourceUrl: String,
+            subpath: String?,
+            eTag: String?,
+        ): DiscoveryFetchResult {
+            resourceFetchCalls++
+            lastResourceUrl = resourceUrl
+            lastResourceSubpath = subpath
+            lastResourceETag = eTag
+            return resourceResult
+        }
+
+        override suspend fun fetchAuthorizationMetadata(
+            authFqdns: String,
+            eTag: String?,
+        ): DiscoveryFetchResult {
+            authorizationFetchCalls++
+            lastAuthorizationFqdn = authFqdns
+            lastAuthorizationETag = eTag
+            return authorizationResult
+        }
+
+        override suspend fun getResourceSchema(): String = "{}"
+
+        override suspend fun getAuthorizationSchema(): String = "{}"
     }
 
     private fun minimalJson() = """

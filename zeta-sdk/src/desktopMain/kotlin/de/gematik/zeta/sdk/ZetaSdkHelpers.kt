@@ -94,6 +94,7 @@ data class NativeHttpSecurityConfig(
     val disableServerValidation: Boolean = false,
     val sslVerbose: Boolean = false,
     val proxyConfig: ProxyConfig? = null,
+    val revocationCacheDurationSeconds: Long? = null,
 )
 var globalHttpSecurityConfig = NativeHttpSecurityConfig()
 var globalNetworkConfig: NetworkConfig? = null
@@ -120,6 +121,16 @@ fun ZetaSdk_getLastError(): CPointer<ByteVar>? =
 
 @CName(externName = "ZetaSdk_freeLastError")
 fun ZetaSdk_freeLastError(ptr: CPointer<ByteVar>?): Unit = guardExportedFunction(Unit) {
+    ptr?.let { free(it) }
+}
+
+@CName(externName = "ZetaSdk_getVersion")
+fun ZetaSdk_getVersion(): CPointer<ByteVar>? = guardExportedFunction(errorValue = null) {
+    strdup(ZetaSdk.getVersion())
+}
+
+@CName(externName = "ZetaSdk_freeVersion")
+fun ZetaSdk_freeVersion(ptr: CPointer<ByteVar>?): Unit = guardExportedFunction(Unit) {
     ptr?.let { free(it) }
 }
 
@@ -167,11 +178,16 @@ fun ZetaSdk_buildSdkClient(
         )
     }
 
+    val revocationCacheDurationSeconds = cSecurityConfig
+        ?.revocationCacheDurationSeconds
+        ?.takeIf { it > 0 }
+
     globalHttpSecurityConfig = NativeHttpSecurityConfig(
         additionalCaPem = additionalCaPem,
         additionalCaFile = additionalCaFile,
         disableServerValidation = disableServerValidation,
         sslVerbose = sslVerbose,
+        revocationCacheDurationSeconds = revocationCacheDurationSeconds,
         proxyConfig = cBuildConfig.proxyConfig?.pointed?.let {
             ProxyConfig(
                 type = if (it.type == 1) ProxyType.SOCKS else ProxyType.HTTP,
@@ -208,8 +224,8 @@ fun ZetaSdk_buildSdkClient(
                         addCaPemFile(file)
                     }
 
-                    if (globalHttpSecurityConfig.sslVerbose) {
-                        logging(LogLevel.ALL)
+                    globalHttpSecurityConfig.revocationCacheDurationSeconds?.let { seconds ->
+                        revocationCacheDuration(seconds)
                     }
 
                     globalHttpSecurityConfig.proxyConfig?.let { proxy(it) }
@@ -388,6 +404,10 @@ fun ZetaSdk_buildHttpClient(
         }
         contentNegotiation(true)
         globalHttpSecurityConfig.proxyConfig?.let { proxy(it) }
+
+        globalHttpSecurityConfig.revocationCacheDurationSeconds?.let { seconds ->
+            revocationCacheDuration(seconds)
+        }
         globalNetworkConfig?.let { net ->
             timeouts(
                 connectMs = net.connectionTimeoutMillis,

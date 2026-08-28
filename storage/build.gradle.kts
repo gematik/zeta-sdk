@@ -1,5 +1,4 @@
 import de.gematik.zeta.sdk.buildlogic.isJvmEnabled
-import de.gematik.zeta.sdk.buildlogic.isNativeEnabled
 import de.gematik.zeta.sdk.buildlogic.setupBuildLogic
 import org.jetbrains.kotlin.gradle.dsl.ExplicitApiMode
 
@@ -39,8 +38,8 @@ setupBuildLogic {
 
         sourceSets.commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation(libs.multiplatform.settings.test)
             implementation(libs.coroutines.test)
         }
     }
-
 }

@@ -24,6 +24,27 @@
 
 package de.gematik.zeta.client.config
 
-public actual fun getConfig(key: String): String? {
-    error("$key can not be resolved. Actual not implemented on Android")
+import android.content.Context
+
+public actual fun getConfig(key: String): String? = AndroidConfig.get(key)
+
+public object AndroidConfig {
+    private var values: Map<String, String> = emptyMap()
+    private var appContext: Context? = null
+
+    public fun init(context: Context) {
+        appContext = context.applicationContext
+        values = context.assets.open("zeta.env")
+            .bufferedReader()
+            .readLines()
+            .filter { it.isNotBlank() && !it.startsWith("#") }
+            .mapNotNull { line ->
+                val parts = line.split("=", limit = 2)
+                if (parts.size == 2) parts[0].trim() to parts[1].trim() else null
+            }
+            .toMap()
+    }
+
+    public fun get(key: String): String? = values[key]
+    public fun context(): Context = appContext ?: error("AndroidConfig not initialized")
 }

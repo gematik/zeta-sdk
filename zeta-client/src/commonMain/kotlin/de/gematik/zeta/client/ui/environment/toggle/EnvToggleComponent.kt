@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.ensody.reactivestate.ExperimentalReactiveStateApi
 import de.gematik.zeta.client.di.DIContainer.ENVIRONMENTS
 import de.gematik.zeta.client.ui.utils.buildViewModel
+import io.ktor.http.Url
 
 @OptIn(ExperimentalReactiveStateApi::class)
 @Composable
@@ -48,9 +50,7 @@ public fun EnvToggleComponent() {
     val viewModel by buildViewModel {
         EnvToggleViewModel(scope)
     }
-
     val state by viewModel.state.collectAsState()
-
     var showMenu by remember { mutableStateOf(false) }
 
     DropdownMenu(
@@ -83,7 +83,7 @@ public fun EnvToggleDropdownItem(
     onClick: (String) -> Unit,
 ) {
     DropdownMenuItem(
-        text = { Text(envUrl) },
+        text = { Text(envUrl.toShortEnvLabel()) },
         onClick = { onClick(envUrl) },
     )
 }
@@ -96,6 +96,14 @@ public fun EnvToggleField(
     OutlinedButton(
         onClick = onClick,
     ) {
-        Text(envUrl)
+        Text(
+            text = "Environment: ",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(envUrl.toShortEnvLabel())
+        Text(" \u25BE")
     }
 }
+
+private fun String.toShortEnvLabel(): String =
+    runCatching { Url(this).host }.getOrDefault(this)

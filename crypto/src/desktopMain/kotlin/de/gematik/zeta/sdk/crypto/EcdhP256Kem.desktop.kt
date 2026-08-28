@@ -24,15 +24,12 @@
 
 package de.gematik.zeta.sdk.crypto
 
-import AsymAlg
 import Jwk
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.algorithms.EC
 import dev.whyoleg.cryptography.algorithms.EC.Curve.Companion.P256
 import dev.whyoleg.cryptography.algorithms.ECDH
 import dev.whyoleg.cryptography.algorithms.ECDSA
-import dev.whyoleg.cryptography.algorithms.SHA256
-import kotlin.io.encoding.Base64
 
 actual class EcdhP256Kem actual constructor() : Kem {
 
@@ -77,32 +74,8 @@ actual class EcdhP256Kem actual constructor() : Kem {
     actual fun toJwk(publicKey: ByteArray): Jwk {
         val pub: EC.PublicKey = ecdsa.publicKeyDecoder(P256)
             .decodeFromByteArrayBlocking(EC.PublicKey.Format.RAW.Uncompressed, publicKey)
-
         val sec1: ByteArray = pub.encodeToByteArrayBlocking(EC.PublicKey.Format.RAW.Uncompressed)
-
-        require(sec1.size == 65 && sec1[0] == 0x04.toByte()) { "Invalid P-256 public key" }
-
-        val x = sec1.copyOfRange(1, 33)
-        val y = sec1.copyOfRange(33, 65)
-
-        val xB = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(x)
-        val yB = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(y)
-
-        val jwkJson = """{"crv":"P-256","kty":"EC","x":"$xB","y":"$yB"}"""
-        val kid = Base64
-            .UrlSafe
-            .withPadding(Base64.PaddingOption.ABSENT)
-            .encode(hashWithSha256(jwkJson.encodeToByteArray()))
-
-        return Jwk(
-            kid = kid,
-            kty = "EC",
-            alg = AsymAlg.ES256.name,
-            use = "sig",
-            crv = "P-256",
-            x = xB,
-            y = yB,
-        )
+        return p256UncompressedPointToJwk(sec1)
     }
 
     actual fun loadKeys(priv: ByteArray, pub: ByteArray): KeyPair {
@@ -117,14 +90,3 @@ actual class EcdhP256Kem actual constructor() : Kem {
         )
     }
 }
-
-fun ECDH.PublicKey.toSec1Uncompressed(): ByteArray {
-    val sec1 = encodeToByteArrayBlocking(EC.PublicKey.Format.RAW.Uncompressed)
-    require(sec1.size == 65 && sec1[0] == 0x04.toByte()) { "Invalid P-256 public key" }
-    val x = sec1.copyOfRange(1, 33)
-    val y = sec1.copyOfRange(33, 65)
-    return byteArrayOf(0x04) + x + y
-}
-
-actual fun hashWithSha256(input: ByteArray): ByteArray =
-    CryptographyProvider.Default.get(SHA256).hasher().hashBlocking(input)

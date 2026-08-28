@@ -29,12 +29,17 @@ import de.gematik.zeta.sdk.asl.AslApi
 import de.gematik.zeta.sdk.asl.AslApiImpl
 import de.gematik.zeta.sdk.asl.InnerHttpCodecImpl
 import de.gematik.zeta.sdk.asl.aslDecryptionPlugin
-import de.gematik.zeta.sdk.authentication.AccessTokenProvider
+import de.gematik.zeta.sdk.attestation.isAppAttestSupported
+import de.gematik.zeta.sdk.authentication.AccessTokenParams
 import de.gematik.zeta.sdk.authentication.AccessTokenProviderImpl
 import de.gematik.zeta.sdk.authentication.AuthenticationApiImpl
 import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
+import de.gematik.zeta.sdk.authentication.OidcTokenProvider
+import de.gematik.zeta.sdk.authentication.identity.ChangeEmailClient
+import de.gematik.zeta.sdk.authentication.identity.ChangeEmailResponse
 import de.gematik.zeta.sdk.clientregistration.ClientRegistrationApiImpl
 import de.gematik.zeta.sdk.configuration.ConfigurationApiImpl
+import de.gematik.zeta.sdk.configuration.models.AuthorizationServerMetadata
 import de.gematik.zeta.sdk.flow.CapabilityResult
 import de.gematik.zeta.sdk.flow.FlowContextImpl
 import de.gematik.zeta.sdk.flow.FlowNeed
@@ -47,10 +52,17 @@ import de.gematik.zeta.sdk.flow.handler.EnsureAccessTokenHandler
 import de.gematik.zeta.sdk.flow.handler.RetryHandler
 import de.gematik.zeta.sdk.flow.zetaPlugin
 import de.gematik.zeta.sdk.network.http.client.CompositeCookieStorage
+import de.gematik.zeta.sdk.network.http.client.DEFAULT_MIN_REVOCATION_CACHE_SECONDS
 import de.gematik.zeta.sdk.network.http.client.RevocationChecker
 import de.gematik.zeta.sdk.network.http.client.SdkCookieStorage
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
+import de.gematik.zeta.sdk.notifications.NotificationApiClientImpl
+import de.gematik.zeta.sdk.notifications.NotificationClient
+import de.gematik.zeta.sdk.notifications.NotificationClientImpl
+import de.gematik.zeta.sdk.notifications.NotificationTokenEndpoints
+import de.gematik.zeta.sdk.notifications.ReauthNotificationTokenProvider
+import de.gematik.zeta.sdk.notifications.ZetaDpopNotificationProvider
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.storage.SdkStorage
 import de.gematik.zeta.sdk.storage.StorageConfig
@@ -62,10 +74,14 @@ import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.header
 import io.ktor.client.request.url
 import io.ktor.http.HttpHeaders
+import io.ktor.http.Url
 import io.ktor.util.appendAll
 import kotlinx.coroutines.coroutineScope
 import kotlin.time.Clock.System
 import kotlin.time.measureTimedValue
+
+private const val AUTH_SERVER_METADATA_UNAVAILABLE =
+    "Authorization Server metadata unavailable - discovery did not run"
 
 /**
  * Zeta SDK entry point.
@@ -83,6 +99,8 @@ import kotlin.time.measureTimedValue
  */
 
 object ZetaSdk {
+    fun getVersion(): String = ZETA_SDK_VERSION
+
     fun build(
         resource: String,
         config: BuildConfig,
@@ -151,6 +169,9 @@ class ZetaSdkClientImpl(
 
     private val revocationChecker = RevocationChecker(
         storage = flowContext.revocationStorage,
+        cacheDurationSeconds = cfg.httpClientBuilder
+            ?.revocationCacheMinDurationSeconds
+            ?: DEFAULT_MIN_REVOCATION_CACHE_SECONDS,
     )
 
     private val httpClientBuilder: ZetaHttpClientBuilder =
@@ -163,6 +184,14 @@ class ZetaSdkClientImpl(
 
     init {
         cfg.logger?.let { Log.setLogger(it) }
+        Log.i { "[SDK-INIT] ZETA SDK version ${ZetaSdk.getVersion()}" }
+        (cfg.authConfig.subjectTokenProvider as? OidcTokenProvider)?.let { oidc ->
+            oidc.httpClientBuilder = httpClientBuilder
+            OidcEndpointResolver(
+                getAuthServer = { flowContext.configurationStorage.getAuthServer() },
+                httpClientBuilder = httpClientBuilder,
+            ).resolve(oidc)
+        }
     }
 
     private var clientRegistrationApiClient: ZetaHttpClient? = null
@@ -172,17 +201,29 @@ class ZetaSdkClientImpl(
     private val configHandler: ConfigurationHandler by lazy {
         ConfigurationHandler(ConfigurationApiImpl(httpClientBuilder))
     }
-    val tpmProvider: TpmProvider = platformDefaultProvider(flowContext.tpmStorage)
+    val tpmProvider: TpmProvider = platformDefaultProvider(flowContext.tpmStorage, isAppAttestSupported())
     private val clientRegistrationHandler: ClientRegistrationHandler by lazy {
-        ClientRegistrationHandler(cfg.clientName, ClientRegistrationApiImpl(httpClientBuilder.build().also { clientRegistrationApiClient = it }), tpmProvider)
+        val redirectUris = (cfg.authConfig.subjectTokenProvider as? OidcTokenProvider)
+            ?.config
+            ?.let { listOf(it.requestUriApp, it.requestUriOidc) }
+            ?: emptyList()
+
+        ClientRegistrationHandler(
+            cfg.clientName,
+            ClientRegistrationApiImpl(httpClientBuilder.build().also { clientRegistrationApiClient = it }),
+            tpmProvider,
+            redirectUris = redirectUris,
+        )
     }
 
-    private lateinit var accessTokenProvider: AccessTokenProvider
+    private lateinit var accessTokenProvider: AccessTokenProviderImpl
+    private lateinit var authApi: AuthenticationApiImpl
     private val authHandler: EnsureAccessTokenHandler by lazy {
+        authApi = AuthenticationApiImpl(httpClientBuilder.build().also { authApiClient = it })
         accessTokenProvider = AccessTokenProviderImpl(
             resourceScope.storageKey,
             cfg.authConfig,
-            AuthenticationApiImpl(httpClientBuilder.build().also { authApiClient = it }),
+            authApi,
             flowContext.authenticationStorage,
             { System.now().epochSeconds },
             tpmProvider,
@@ -211,6 +252,117 @@ class ZetaSdkClientImpl(
         )
 
         AslHandler(aslApi)
+    }
+
+    private var notificationHttpClient: ZetaHttpClient? = null
+    private var identityHttpClient: ZetaHttpClient? = null
+
+    private val changeEmailClient: ChangeEmailClient by lazy {
+        ChangeEmailClient(
+            httpClient = httpClientBuilder.build().also { identityHttpClient = it },
+            tpmProvider = tpmProvider,
+        )
+    }
+
+    /**
+     * Client for the Notification Service co-deployed with this instance's guard. Lazy and
+     * memoized: initialization performs no I/O; NS discovery and token acquisition happen inside
+     * the first operation call. Exposed to consumers through the platform-gated
+     * `ZetaSdkClient.notifications()` extensions (Android/iOS) — push notifications do not
+     * exist on the other platforms.
+     */
+    internal val notificationClient: NotificationClient? by lazy {
+        // Notifications are opt-in: a null config disables them entirely (no client wired).
+        val nc = cfg.notificationConfig ?: return@lazy null
+
+        // Touching authHandler assigns accessTokenProvider and authApi (both lateinit).
+        authHandler
+
+        val nsBaseUrl = notificationServiceBaseUrl(resourceScope.fqdn, nc.apiBasePath)
+        val nsHttpClient = httpClientBuilder
+            .copy(baseUrl = nsBaseUrl, cookieStorage = sdkCookieStorage)
+            .build() // plain build: no zetaPlugin/ASL plugin — auth headers are set per request, like ws()
+            .also { notificationHttpClient = it }
+
+        val discovery = NotificationDiscovery(
+            configurationApi = ConfigurationApiImpl(httpClientBuilder),
+            configurationStorage = flowContext.configurationStorage,
+            config = nc,
+            resourceFqdn = resourceScope.fqdn,
+        )
+
+        val tokenProvider = ReauthNotificationTokenProvider(
+            issuerFactory = { store ->
+                AccessTokenProviderImpl(
+                    resourceScope.storageKey,
+                    cfg.authConfig,
+                    authApi,
+                    store,
+                    { System.now().epochSeconds },
+                    tpmProvider,
+                )
+            },
+            endpoints = {
+                val authServer = requireNotNull(flowContext.configurationStorage.getAuthServer()) {
+                    AUTH_SERVER_METADATA_UNAVAILABLE
+                }
+                NotificationTokenEndpoints(authServer.tokenEndpoint, authServer.nonceEndpoint)
+            },
+            baseParams = { buildServiceAccessTokenParams() },
+            dpopKid = { tpmProvider.generateDpopKey().jwk.kid },
+            stepUp = { authHandler.getValidAccessTokenWithStepUp(flowContext) },
+            resolveRequest = {
+                discover().getOrThrow()
+                register().getOrThrow()
+                discovery.ensureDiscovered()
+            },
+        )
+
+        NotificationClientImpl(
+            api = NotificationApiClientImpl(
+                httpClient = nsHttpClient,
+                serviceBaseUrl = nsBaseUrl,
+                tokenProvider = tokenProvider,
+                dpopProvider = ZetaDpopNotificationProvider(accessTokenProvider, tpmProvider),
+                rateLimitRetryPolicy = nc.rateLimitRetryPolicy,
+            ),
+        )
+    }
+
+    /** The NS lives on the guard host by definition (§4.2): resource host + configured API prefix. */
+    internal fun notificationServiceBaseUrl(resourceFqdn: String, apiBasePath: String): String {
+        val url = Url(resourceFqdn)
+        val defaultPort = when (url.protocol.name.lowercase()) {
+            "https" -> 443
+            "http" -> 80
+            else -> 0
+        }
+        val hostPart = if (':' in url.host) "[${url.host}]" else url.host
+        val portPart = if (url.port > 0 && url.port != defaultPort) ":${url.port}" else ""
+        return "https://$hostPart$portPart/${apiBasePath.trim('/')}"
+    }
+
+    /**
+     * Base parameters for the NS token issuance, mirroring the flow-controller's
+     * [EnsureAccessTokenHandler] parameter assembly; `scopes`/`audience` are placeholders that
+     * [ReauthNotificationTokenProvider] overrides per [NotificationTokenRequest][de.gematik.zeta.sdk.notifications.NotificationTokenRequest].
+     */
+    internal suspend fun buildServiceAccessTokenParams(): AccessTokenParams {
+        val authServer = requireNotNull(flowContext.configurationStorage.getAuthServer()) {
+            AUTH_SERVER_METADATA_UNAVAILABLE
+        }
+        val regKey = authServer.registrationEndpoint?.takeIf { it.isNotBlank() } ?: authServer.issuer
+        val clientId = flowContext.clientRegistrationStorage.getClientId(regKey)
+        require(!clientId.isNullOrBlank()) { "Client not registered - registration did not run" }
+        return AccessTokenParams(
+            clientId = clientId,
+            productId = cfg.productId,
+            productVersion = cfg.productVersion,
+            expiration = cfg.authConfig.exp,
+            scopes = emptyList(),
+            audience = "",
+            platformProductId = cfg.platformProductId,
+        )
     }
 
     private fun newOrchestrator(): FlowOrchestrator =
@@ -342,6 +494,60 @@ class ZetaSdkClientImpl(
         clientRegistrationApiClient?.close()
         authApiClient?.close()
         aslApiClient?.close()
+        notificationHttpClient?.close()
+        identityHttpClient?.close()
         sdkCookieStorage.clearCookie()
+    }
+
+    override suspend fun changeEmail(newEmail: String): Result<ChangeEmailResponse> = runCatching {
+        discover().getOrThrow()
+        register().getOrThrow()
+        val authServer = requireNotNull(flowContext.configurationStorage.getAuthServer()) {
+            AUTH_SERVER_METADATA_UNAVAILABLE
+        }
+        val issuer = authServer.issuer
+        val regKey = authServer.registrationEndpoint?.takeIf { it.isNotBlank() } ?: authServer.issuer
+        val clientId = flowContext.clientRegistrationStorage.getClientId(regKey)
+        require(!clientId.isNullOrBlank()) { "Client not registered - registration did not run" }
+        changeEmailClient.changeEmail(issuer, clientId, newEmail)
+    }
+}
+
+interface HttpClientBuilderAware {
+    var httpClientBuilder: ZetaHttpClientBuilder
+}
+
+interface OidcEndpointAware {
+    var resolveAuthorizationEndpoint: suspend () -> String
+    var resolveBrokerEndpoint: suspend () -> String
+}
+
+/**
+ * Wires the OIDC endpoint lambdas of an [OidcTokenProvider] and its callback: authorization
+ * endpoint from the discovered metadata; PAR, broker relay and the bind-email endpoints derived
+ * from the discovered `issuer`. The lambdas resolve lazily, so they are only valid after
+ * discovery has run.
+ */
+internal class OidcEndpointResolver(
+    private val getAuthServer: suspend () -> AuthorizationServerMetadata?,
+    private val httpClientBuilder: ZetaHttpClientBuilder,
+) {
+    fun resolve(oidc: OidcTokenProvider) {
+        val resolveIssuer: suspend () -> String = {
+            getAuthServer()?.issuer ?: error("Discovery not completed, issuer unavailable")
+        }
+
+        (oidc.config.authenticationCallback as? OidcEndpointAware)?.resolveAuthorizationEndpoint = {
+            getAuthServer()?.authorizationEndpoint ?: error("authorizationEndpoint not available from discovery")
+        }
+        (oidc.config.authenticationCallback as? OidcEndpointAware)?.resolveBrokerEndpoint = {
+            "${resolveIssuer()}/broker/${oidc.config.idpAlias}/endpoint"
+        }
+        (oidc.config.authenticationCallback as? HttpClientBuilderAware)?.httpClientBuilder = httpClientBuilder
+
+        oidc.resolveParEndpoint = { "${resolveIssuer()}/protocol/openid-connect/ext/par/request" }
+        oidc.resolveBindEmailEndpoint = { "${resolveIssuer()}/zeta/identity/bind-email" }
+        oidc.resolveVerifyEmailEndpoint = { "${resolveIssuer()}/zeta/identity/bind-email/verify" }
+        oidc.resolveResendEmailEndpoint = { "${resolveIssuer()}/zeta/identity/bind-email/resend" }
     }
 }

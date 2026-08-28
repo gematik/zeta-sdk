@@ -27,15 +27,24 @@ package de.gematik.zeta.sdk.network.http.client.config
 /**
  * TLS / trust configuration.
  *
- * @property additionalCaPem Extra CA certificates, in PEM format (each entry is a full PEM string).
- *                           These are appended to the platform/default trust store by the
- *                           platform-specific engine in [buildPlatformClient].
- * @property disableServerValidation when set to true, disable server certificate and hostname checks
- *                           Defaults to false as secure default.
+ * @property additionalCaPem Extra CA certificates in PEM format appended to the platform trust store.
+ * @property additionalCaFile Path to a file containing additional CA certificates in PEM format.
+ * @property disableServerValidation Disables server certificate and hostname validation.
+ *                                   Must only be used in test environments. Defaults to false.
+ * @property sslVerbose Enables verbose SSL/TLS logging for debugging. Defaults to false.
+ * @property revocationCacheDurationSeconds Duration in seconds to cache OCSP/CRL responses
+ *                                             when no [nextUpdate] field is present.
  */
 public data class SecurityConfig(
     val additionalCaPem: List<String> = emptyList(),
     val additionalCaFile: String? = null,
     val disableServerValidation: Boolean = false,
     val sslVerbose: Boolean = false,
-)
+    val revocationCacheDurationSeconds: Long = 3_600L,
+) {
+    init {
+        require(revocationCacheDurationSeconds >= 3_600L) {
+            "revocationCacheDurationSeconds must be at least 3600s (1h), was $revocationCacheDurationSeconds"
+        }
+    }
+}

@@ -27,6 +27,14 @@ using ZetaSdk.Native;
 
 namespace ZetaSdk.Http;
 
+/// <summary>
+/// Asynchronous HTTP client for making ZETA-authenticated requests against the
+/// configured resource server. Obtained via <see cref="ZetaSdk.ZetaClient.CreateHttpClientAsync"/>.
+/// </summary>
+/// <remarks>
+/// Note: unlike <see cref="ZetaHttpClient"/>, responses returned by this client
+/// currently do not populate <see cref="ZetaHttpResponse.Headers"/>.
+/// </remarks>
 public sealed class ZetaHttpClientAsync : IDisposable
 {
     private readonly IntPtr _ptr;
@@ -34,36 +42,81 @@ public sealed class ZetaHttpClientAsync : IDisposable
 
     internal ZetaHttpClientAsync(IntPtr ptr) => _ptr = ptr;
 
+    /// <summary>Sends a GET request asynchronously.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public Task<ZetaHttpResponse> GetAsync(string relativeUrl,
         IReadOnlyDictionary<string, string>? headers = null,
         CancellationToken ct = default)
         => ExecuteAsync(relativeUrl, body: null, headers, ZetaSdkNative.ZetaHttpClient_getAsync, ct);
 
+    /// <summary>Sends a POST request asynchronously.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="body">Optional request body.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public Task<ZetaHttpResponse> PostAsync(string relativeUrl, string? body = null,
         IReadOnlyDictionary<string, string>? headers = null,
         CancellationToken ct = default)
         => ExecuteAsync(relativeUrl, body, headers, ZetaSdkNative.ZetaHttpClient_postAsync, ct);
 
+    /// <summary>Sends a PUT request asynchronously.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="body">Optional request body.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public Task<ZetaHttpResponse> PutAsync(string relativeUrl, string? body = null,
         IReadOnlyDictionary<string, string>? headers = null,
         CancellationToken ct = default)
         => ExecuteAsync(relativeUrl, body, headers, ZetaSdkNative.ZetaHttpClient_putAsync, ct);
 
+    /// <summary>Sends a PATCH request asynchronously.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="body">Optional request body.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public Task<ZetaHttpResponse> PatchAsync(string relativeUrl, string? body = null,
         IReadOnlyDictionary<string, string>? headers = null,
         CancellationToken ct = default)
         => ExecuteAsync(relativeUrl, body, headers, ZetaSdkNative.ZetaHttpClient_patchAsync, ct);
 
+    /// <summary>Sends a DELETE request asynchronously.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public Task<ZetaHttpResponse> DeleteAsync(string relativeUrl,
         IReadOnlyDictionary<string, string>? headers = null,
         CancellationToken ct = default)
         => ExecuteAsync(relativeUrl, body: null, headers, ZetaSdkNative.ZetaHttpClient_deleteAsync, ct);
 
+    /// <summary>Sends a HEAD request asynchronously.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public Task<ZetaHttpResponse> HeadAsync(string relativeUrl,
         IReadOnlyDictionary<string, string>? headers = null,
         CancellationToken ct = default)
         => ExecuteAsync(relativeUrl, body: null, headers, ZetaSdkNative.ZetaHttpClient_headAsync, ct);
 
+    /// <summary>Sends an OPTIONS request asynchronously.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public Task<ZetaHttpResponse> OptionsAsync(string relativeUrl,
         IReadOnlyDictionary<string, string>? headers = null,
         CancellationToken ct = default)
@@ -140,6 +193,7 @@ public sealed class ZetaHttpClientAsync : IDisposable
         return tcs.Task;
     }
 
+    /// <summary>Releases the underlying native HTTP client.</summary>
     public void Dispose()
     {
         if (_disposed) return;

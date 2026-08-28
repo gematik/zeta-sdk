@@ -34,16 +34,13 @@ import derEcdsaToJose
 import java.util.Base64
 import kotlin.time.TimeSource
 import kotlin.time.measureTimedValue
-import kotlin.uuid.Uuid
 
 private class SoftwareCryptoProvider(
-    private val storage: TpmStorage,
+    storage: TpmStorage,
     private val keyPairGenerator: EcdhP256Kem,
     private val signer: EcdhSigner,
-    private val x509PemReader: X509PemReader,
-) : TpmProvider {
-    override val isHardwareBacked: Boolean = false
-    private var clientKey: KeyPair? = null
+    x509PemReader: X509PemReader,
+) : AbstractSoftwareCryptoProvider(storage, x509PemReader) {
 
     @Suppress("UnsafeCallOnNullableType")
     override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut {
@@ -106,40 +103,8 @@ private class SoftwareCryptoProvider(
         return result
     }
 
-    override suspend fun readSmbCertificate(p12File: String, alias: String, password: String): ByteArray {
-        check(p12File.isNotEmpty()) { "SM-B certificate .PEM file is empty" }
-        return x509PemReader.loadCertificate(p12File, alias, password)
-    }
-
-    override suspend fun readSmbCertificateFromBytes(data: ByteArray, alias: String, password: String): ByteArray {
-        check(data.isNotEmpty()) { "SM-B certificate bytes are empty" }
-        return x509PemReader.loadCertificateFromBytes(data, alias, password)
-    }
-
-    override suspend fun getRegistrationNumber(certificate: ByteArray): String {
-        return x509PemReader.getRegistrationNumber(certificate).orEmpty()
-    }
-
-    override suspend fun signWithSmbKey(input: ByteArray, p12File: String, alias: String, password: String): ByteArray {
-        val smbKey = x509PemReader.loadPrivateKey(p12File, alias, password)
-        return signForJws(smbKey, input)
-    }
-
-    override suspend fun signWithSmbKeyFromBytes(input: ByteArray, keystoreBytes: ByteArray, alias: String, password: String): ByteArray {
-        val smbKey = x509PemReader.loadPrivateKeyFromBytes(keystoreBytes, alias, password)
-        return signForJws(smbKey, input)
-    }
-
-    override suspend fun randomUuid(): Uuid = Uuid.random()
-
-    override suspend fun forget(resource: String?) {
-        if (resource != null) {
-            storage.deleteDpopKeys()
-        } else {
-            clientKey = null
-            storage.deleteAllDpopKeys()
-        }
-    }
+    override suspend fun signSmb(privateKey: ByteArray, signingInput: ByteArray): ByteArray =
+        signForJws(privateKey, signingInput)
 
     private suspend fun loadDpopKeysFromStorage(): KeyPair? {
         val privRaw = storage.getDpopPrivateKey() ?: return null
@@ -207,7 +172,7 @@ private class SoftwareCryptoProvider(
 @Suppress("FunctionOnlyReturningConstant")
 internal fun hardwareBackedAvailable(): Boolean = false
 
-actual fun platformDefaultProvider(storage: TpmStorage): TpmProvider {
+actual fun platformDefaultProvider(storage: TpmStorage, appAttestSupported: Boolean): TpmProvider {
     if (hardwareBackedAvailable()) {
         Log.d { "Using hardware crypto provider (JVM)" }
         TODO("hardware backed provider")

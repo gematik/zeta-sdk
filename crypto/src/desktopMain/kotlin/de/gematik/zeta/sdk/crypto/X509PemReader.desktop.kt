@@ -83,7 +83,7 @@ import okio.Path.Companion.toPath
 import okio.buffer
 import okio.use
 
-actual class X509PemReader {
+actual class X509PemReader actual constructor() {
 
     actual fun loadCertificateFromBytes(
         data: ByteArray,

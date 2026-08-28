@@ -27,18 +27,65 @@ package de.gematik.zeta.sdk.flow
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.asl.AslErrorMessage
 import de.gematik.zeta.sdk.asl.decodeAslError
+import de.gematik.zeta.sdk.flow.ResponseEvaluator.Companion.ZETA_ERROR_ORIGIN
+import de.gematik.zeta.sdk.network.http.client.InnerHeadersKey
+import de.gematik.zeta.sdk.network.http.client.InnerStatusKey
 import io.ktor.client.call.HttpClientCall
+import io.ktor.http.HttpStatusCode
 
 class AslResponseEvaluator : ResponseEvaluator {
-    override suspend fun evaluate(call: HttpClientCall, ctx: FlowContext, retryState: FlowOrchestrator.RetryState): FlowDirective {
+    override suspend fun evaluate(
+        call: HttpClientCall,
+        ctx: FlowContext,
+        retryState: FlowOrchestrator.RetryState,
+    ): FlowDirective {
         return when (call.response.status.value) {
             200 -> {
-                Log.d { "ASL 200 response. Retrying handshake" }
-                FlowDirective.Proceed(call.response)
-            }
+                val attributes = call.response.call.attributes
+                val innerStatus = attributes.getOrNull(InnerStatusKey)
+                val innerHeaders = attributes.getOrNull(InnerHeadersKey)
+                val errorOrigin = innerHeaders
+                    ?.entries
+                    ?.firstOrNull {
+                        it.key.equals(
+                            ZETA_ERROR_ORIGIN,
+                            ignoreCase = true,
+                        )
+                    }
+                    ?.value
 
+                Log.d { "ASL: 200 transport response. " + "InnerStatus=${innerStatus ?: "none"}" }
+
+                when (innerStatus) {
+                    401 -> handle(
+                        call = call,
+                        ctx = ctx,
+                        retryState = retryState,
+                        statusCode = HttpStatusCode.Unauthorized,
+                        errorOrigin = errorOrigin,
+                    )
+
+                    403 -> handle(
+                        call = call,
+                        ctx = ctx,
+                        retryState = retryState,
+                        statusCode = HttpStatusCode.Forbidden,
+                        errorOrigin = errorOrigin,
+                    )
+
+                    404 -> handle(
+                        call = call,
+                        ctx = ctx,
+                        retryState = retryState,
+                        statusCode = HttpStatusCode.NotFound,
+                        errorOrigin = errorOrigin,
+                    )
+
+                    else -> FlowDirective.Proceed(call.response)
+                }
+            }
             500 -> {
-                Log.w { "ASL 500 response. Retrying handshake" }
+                Log.w { "ASL: 500 response. Retrying handshake" }
                 ctx.aslStorage.clear()
                 FlowDirective.Perform(FlowNeed.Asl)
             }

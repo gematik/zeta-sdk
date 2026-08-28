@@ -27,6 +27,7 @@ package de.gematik.zeta.sdk.buildlogic
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.findByType
 import org.gradle.kotlin.dsl.get
+import org.gradle.kotlin.dsl.register
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import java.io.File
@@ -76,13 +77,31 @@ fun shell(
 
 fun Project.withGeneratedBuildFile(category: String, path: String, sourceSet: String? = null, content: () -> String) {
     val generatedDir = file("${getGeneratedBuildFilesRoot()}/$category")
-    extensions.findByType<KotlinJvmExtension>()?.apply {
-        sourceSets[sourceSet ?: "main"].kotlin.srcDir(generatedDir)
-    } ?: extensions.findByType<KotlinMultiplatformExtension>()?.apply {
-        sourceSets[sourceSet ?: "commonMain"].kotlin.srcDir(generatedDir)
-    } ?: error("Don't know how to add generated build file because project ${this.path} has unknown type")
     val outputPath = file("$generatedDir/$path")
-    outputPath.writeTextIfDifferent(content().trimIndent().trimStart() + "\n")
+    val text = content().trimIndent().trimStart() + "\n"
+
+    // Regenerate the file via a task whose output is the generated directory. This keeps the
+    // file present even when a `clean` runs in the same Gradle invocation as compilation
+    // (e.g. CI's `./gradlew clean jar`), which would otherwise delete the eagerly written file
+    // before consumers run. `mustRunAfter(clean)` enforces clean -> generate ordering.
+    val generateTask = tasks.register("generateBuildFile${category.replaceFirstChar { it.uppercase() }}") {
+        outputs.dir(generatedDir)
+        mustRunAfter(tasks.matching { it.name == "clean" })
+        doLast { outputPath.writeTextIfDifferent(text) }
+    }
+
+    // Register the generated directory as a source dir *via the task provider* so every
+    // consumer of the source set (compilation, sourcesJar, metadata, ...) automatically
+    // depends on the task. Wiring only KotlinCompilationTask would miss e.g. jvmSourcesJar
+    // and trip Gradle's implicit-dependency validation.
+    extensions.findByType<KotlinJvmExtension>()?.apply {
+        sourceSets[sourceSet ?: "main"].kotlin.srcDir(generateTask)
+    } ?: extensions.findByType<KotlinMultiplatformExtension>()?.apply {
+        sourceSets[sourceSet ?: "commonMain"].kotlin.srcDir(generateTask)
+    } ?: error("Don't know how to add generated build file because project ${this.path} has unknown type")
+
+    // Eager write so IDE sync and non-clean builds immediately see the file.
+    outputPath.writeTextIfDifferent(text)
     generatedFiles.getOrPut(this.path) { mutableSetOf() }.add(outputPath.normalize().absoluteFile)
 }
 

@@ -24,9 +24,26 @@
 
 package de.gematik.zeta.sdk.authentication
 
+import de.gematik.zeta.sdk.authentication.oidc.OidcConfig
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.tpm.TpmProvider
 
-fun interface SubjectTokenProvider {
+sealed interface AuthTokenProvider
+
+enum class AuthMode {
+    SMB,
+    OIDC,
+}
+
+class OidcTokenProvider(val config: OidcConfig) : AuthTokenProvider {
+    lateinit var httpClientBuilder: ZetaHttpClientBuilder
+    lateinit var resolveParEndpoint: suspend () -> String
+    lateinit var resolveBindEmailEndpoint: suspend () -> String
+    lateinit var resolveVerifyEmailEndpoint: suspend () -> String
+    lateinit var resolveResendEmailEndpoint: suspend () -> String
+}
+
+fun interface SubjectTokenProvider : AuthTokenProvider {
     suspend fun createSubjectToken(
         clientId: String,
         dpopKey: String,

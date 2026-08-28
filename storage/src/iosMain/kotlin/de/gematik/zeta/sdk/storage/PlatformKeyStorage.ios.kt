@@ -24,5 +24,4 @@
 
 package de.gematik.zeta.sdk.storage
 
-actual fun provideSdkStorage(config: StorageConfig.Default): SdkStorage =
-    TODO("Not yet implemented")
+actual fun provideSdkStorage(config: StorageConfig.Default): SdkStorage = InMemoryStorage()

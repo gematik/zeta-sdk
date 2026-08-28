@@ -31,9 +31,14 @@ using ZetaSdk.WebSocket;
 
 namespace ZetaSdk;
 
+/// <summary>
+/// Main entry point for the ZETA SDK. Wraps a native ZETA client instance and
+/// exposes discovery, registration, authentication, HTTP, and WebSocket access
+/// to ZETA-protected resources.
+/// </summary>
 public sealed class ZetaClient : IDisposable
 {
-    private readonly IntPtr _ptr;
+    private          IntPtr _ptr;
     private          bool   _disposed;
     private CustomSmcbHandle? _customSmcbHandle;
     private CustomStorageHandle? _customStorageHandle;
@@ -41,12 +46,11 @@ public sealed class ZetaClient : IDisposable
 
     private ZetaClient(IntPtr ptr) => _ptr = ptr;
 
-    private ZetaClient(IntPtr ptr, CustomSmcbHandle? customSmcbHandle = null)
-    {
-        _ptr = ptr;
-        _customSmcbHandle = customSmcbHandle;
-    }
-
+    /// <summary>
+    /// Builds and initializes a new <see cref="ZetaClient"/> from the given configuration.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="config"/> is <c>null</c>.</exception>
+    /// <exception cref="ZetaSdkException">The native client could not be built.</exception>
     public static ZetaClient Build(ZetaClientConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
@@ -57,11 +61,18 @@ public sealed class ZetaClient : IDisposable
         var       ptr       = ZetaSdkNative.ZetaSdk_buildZetaClient(buildCfg);
 
         if (ptr == IntPtr.Zero)
+        {
+            instance.FreeNativeHandles();
             throw new ZetaSdkException("ZetaSdk_buildZetaClient returned null. Check your configuration.");
+        }
 
-        return new ZetaClient(ptr, instance._customSmcbHandle);
+        instance._ptr = ptr;
+        return instance;
     }
 
+    /// <summary>Creates a synchronous HTTP client authenticated for this ZETA session.</summary>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The native HTTP client could not be created.</exception>
     public ZetaHttpClient CreateHttpClient()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -71,6 +82,9 @@ public sealed class ZetaClient : IDisposable
         return new ZetaHttpClient(ptr);
     }
 
+    /// <summary>Creates an asynchronous HTTP client authenticated for this ZETA session.</summary>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The native HTTP client could not be created.</exception>
     public ZetaHttpClientAsync CreateHttpClientAsync()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -80,6 +94,8 @@ public sealed class ZetaClient : IDisposable
         return new ZetaHttpClientAsync(ptr);
     }
 
+    /// <summary>Returns the current registration/token status of this client.</summary>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
     public ZetaSdkStatus GetStatus()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -95,6 +111,8 @@ public sealed class ZetaClient : IDisposable
         };
     }
 
+    /// <summary>Clears the current session's access and refresh tokens. Client registration is preserved.</summary>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
     public void Logout()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -102,30 +120,49 @@ public sealed class ZetaClient : IDisposable
         ZetaSdkNative.ZetaSdk_logout(_ptr);
     }
 
+    /// <summary>Runs OAuth/ASL service discovery against the configured resource server.</summary>
+    /// <returns><c>0</c> on success; a non-zero error code otherwise (see <see cref="GetLastError"/>).</returns>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
     public int Discover()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return ZetaSdkNative.ZetaSdk_discover(_ptr);
     }
 
+    /// <summary>Performs dynamic client registration against the authorization server, if not already registered.</summary>
+    /// <returns><c>0</c> on success; a non-zero error code otherwise (see <see cref="GetLastError"/>).</returns>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
     public int Register()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return ZetaSdkNative.ZetaSdk_register(_ptr);
     }
 
+    /// <summary>Obtains a DPoP-bound access token for the configured resource and scopes.</summary>
+    /// <returns><c>0</c> on success; a non-zero error code otherwise (see <see cref="GetLastError"/>).</returns>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
     public int Authenticate()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return ZetaSdkNative.ZetaSdk_authenticate(_ptr);
     }
 
+    /// <summary>Clears the client's registration, forcing a new <see cref="Register"/> call on next use.</summary>
+    /// <returns><c>0</c> on success; a non-zero error code otherwise (see <see cref="GetLastError"/>).</returns>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
     public int ClearRegistration()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return ZetaSdkNative.ZetaSdk_clearRegistration(_ptr);
     }
 
+    /// <summary>Opens a WebSocket (STOMP) session to <paramref name="url"/> through this ZETA-authenticated connection.</summary>
+    /// <param name="url">The WebSocket URL to connect to.</param>
+    /// <param name="headers">Optional additional headers for the WebSocket upgrade request.</param>
+    /// <param name="handler">Callback invoked with the opened <see cref="WsSession"/>.</param>
+    /// <returns><c>0</c> on success; <c>-1</c> otherwise (see <see cref="GetLastError"/>).</returns>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="handler"/> is <c>null</c>.</exception>
     public int OpenWebSocket(
         string url,
         IReadOnlyDictionary<string, string>? headers,
@@ -151,6 +188,7 @@ public sealed class ZetaClient : IDisposable
         return GetLastError() == null ? 0 : -1;
     }
 
+    /// <summary>Returns and clears the most recent error message set by the native SDK, if any.</summary>
     public static string? GetLastError()
     {
         var ptr = ZetaSdkNative.ZetaSdk_getLastError();
@@ -160,11 +198,34 @@ public sealed class ZetaClient : IDisposable
         return message;
     }
 
+    /// <summary>Returns the version of the native ZETA SDK linked into this process.</summary>
+    public static string GetVersion()
+    {
+        var ptr = ZetaSdkNative.ZetaSdk_getVersion();
+        if (ptr == IntPtr.Zero) return "";
+        var version = Marshal.PtrToStringUTF8(ptr) ?? "";
+        ZetaSdkNative.ZetaSdk_freeVersion(ptr);
+        return version;
+    }
+
+    /// <summary>Releases the underlying native client and its associated callback handles.</summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
         ZetaSdkNative.ZetaSdk_clearZetaClient(_ptr);
+
+        FreeNativeHandles();
+    }
+
+    private void FreeNativeHandles()
+    {
+        _customSmcbHandle?.Dispose();
+        _customSmcbHandle = null;
+        _customStorageHandle?.Free();
+        _customStorageHandle = null;
+        _customLogHandle?.Free();
+        _customLogHandle = null;
     }
 
     private IntPtr BuildNativeConfig(ZetaClientConfig cfg, NativeMem mem)
@@ -251,7 +312,8 @@ public sealed class ZetaClient : IDisposable
             additionalCaPemCount = caPemLen,
             additionalCaFile = mem.Str(cfg.Security?.AdditionalCaFile),
             disableServerValidation = cfg.Security?.DisableServerValidation ?? false,
-            sslVerbose = cfg.Security?.SslVerbose ?? false
+            sslVerbose = cfg.Security?.SslVerbose ?? false,
+            revocationCacheDurationSeconds = cfg.Security?.RevocationCacheDurationSeconds ?? 0,
         });
 
          var networkPtr = IntPtr.Zero;

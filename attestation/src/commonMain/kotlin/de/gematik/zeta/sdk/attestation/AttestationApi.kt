@@ -66,11 +66,11 @@ fun interface AttestationApi {
      * @param nonce            Server-provided value mixed into the attestation challenge.
      * @param clientId         OAuth 2.0 `client_id` (used as `iss` and `sub`).
      * @param exp              Expiration time in **epoch seconds** for the JWT `exp` claim.
-     * @param tokenEndpoint    OAuth/OIDC token endpoint URL (used as `aud`).
+     * @param aud              OAuth/OIDC token endpoint URL (used as `aud`).
      *
      * @return Compact JWS string: `<base64url(header)>.<base64url(payload)>.<base64url(signature)>`.
      */
-    suspend fun createClientAssertion(productId: String, productVersion: String, nonce: ByteArray, clientId: String, exp: Long, tokenEndpoint: String, platformProductId: PlatformProductId): String
+    suspend fun createClientAssertion(productId: String, productVersion: String, nonce: ByteArray, clientId: String, exp: Long, aud: String, platformProductId: PlatformProductId): String
 }
 
 /**
@@ -104,7 +104,7 @@ class AttestationApiImpl(
      * @param nonce           Server-provided nonce, mixed into the attestation challenge.
      * @param clientId        OAuth client_id (iss/sub).
      * @param exp             Expiration (seconds since epoch).
-     * @param tokenEndpoint   Token endpoint URL (aud).
+     * @param aud             Token endpoint URL (aud).
      * @return JWS string.
      */
     override suspend fun createClientAssertion(
@@ -113,7 +113,7 @@ class AttestationApiImpl(
         nonce: ByteArray,
         clientId: String,
         exp: Long,
-        tokenEndpoint: String,
+        aud: String,
         platformProductId: PlatformProductId,
     ): String {
         Log.i { "Getting client instant keys" }
@@ -133,9 +133,9 @@ class AttestationApiImpl(
                 var actualPlatformProductId: PlatformProductId?
                 actualPlatformProductId = platformProductId
                 if (platformProductId is PlatformProductId.AppleProductId) {
-                    // At this time, due to schema issues, Software Assertion does not work with Apple PlatformProductId.
-                    // Therefore, we set it to null in this case, as it is optional.
-                    actualPlatformProductId = null
+                    // Temporary workaround for backend schema/validation issue.
+                    // ApplePosture requires a non-null platformProductId
+                    actualPlatformProductId = PlatformProductId.WindowsProductId("windows", "", "")
                 }
 
                 getSoftwareStatement(
@@ -152,14 +152,14 @@ class AttestationApiImpl(
             is AttestationConfig.TpmCustom,
             -> {
                 Log.i { "Generating TPM attestation statement" }
-                getTpmStatement(attChallenge, clientId, productId, clientId, platformProductId)
+                getTpmStatement(attChallenge, productId, productVersion, clientId, platformProductId)
             }
         }
 
         Log.i { "Getting client assertion jwt" }
         val clientAssertion = ClientAssertionJwt(
             header = ClientAssertionJwt.Header(alg = AsymAlg.ES256.name, typ = "JWT", jwk = clientInstanceKeys.jwk),
-            payload = ClientAssertionJwt.Payload(clientId, clientId, listOf(tokenEndpoint), exp, jti, attestationConfig.type, statementJson),
+            payload = ClientAssertionJwt.Payload(clientId, clientId, listOf(aud), exp, jti, attestationConfig.type, statementJson),
         )
 
         return getJwt(clientAssertion)

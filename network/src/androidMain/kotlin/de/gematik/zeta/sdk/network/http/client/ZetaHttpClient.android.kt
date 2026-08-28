@@ -24,76 +24,39 @@
 
 package de.gematik.zeta.sdk.network.http.client
 
-import de.gematik.zeta.sdk.network.http.client.config.ClientConfig
-import io.ktor.client.HttpClient
-import io.ktor.client.HttpClientConfig
-import io.ktor.client.engine.okhttp.OkHttp
-import okhttp3.OkHttpClient
-import okhttp3.tls.HandshakeCertificates
-import java.io.ByteArrayInputStream
+import android.os.Build
+import de.gematik.zeta.android.SdkAndroidContext
+import de.gematik.zeta.logging.Log
+import java.io.File
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import javax.net.ssl.ExtendedSSLSession
+import javax.net.ssl.SSLSession
+import javax.net.ssl.SSLSocketFactory
+
+internal actual fun loadCaFromFile(
+    path: String,
+    certFactory: CertificateFactory,
+): List<X509Certificate> =
+    SdkAndroidContext.get().assets.open(File(path).name).use { input ->
+        certFactory.generateCertificates(input).map { it as X509Certificate }
+    }
+
+internal actual fun createPlatformSslSocketFactory(base: SSLSocketFactory): SSLSocketFactory =
+    ZetaSslSocketAndroidFactory(base)
 
 /**
- * JVM/Android actual that builds an OkHttp-backed [HttpClient].
- *
- * Responsibilities:
- * 1. Parse additional CA certificates from [cfg.security.additionalCaPem] (PEM strings),
- *    and append them to the platform trust store via OkHttp's [HandshakeCertificates].
- * 2. Create a preconfigured [okhttp3.OkHttpClient] that uses the resulting SSL context +
- *    trust manager.
- * 3. Build a Ktor [HttpClient] with the OkHttp engine, applying the shared [commonSetup].
- *
- * Security notes:
- * - Extra CAs are trusted for **server authentication** only (no mutual TLS/client certs here).
- * - Each entry in [cfg.security.additionalCaPem] must be a **complete PEM** block, including
- *   the delimiters:
- *
- *     -----BEGIN CERTIFICATE-----
- *     (base64)
- *     -----END CERTIFICATE-----
- *
- * - Invalid PEMs will cause a [java.security.cert.CertificateException] at parse time.
- *
- * Lifecycle:
- * - The provided OkHttpClient instance is passed to Ktor as `preconfigured`. If you reuse
- *   that instance elsewhere, be mindful of its dispatcher/connection-pool lifecycle.
- *
- * @param cfg Finalized client configuration (timeouts, retries, security, etc.).
- * @param commonSetup Cross-platform Ktor configuration to apply to the client (plugins, JSON, …).
- * @return A ready-to-use Ktor [HttpClient] using OkHttp on JVM/Android.
+ * OCSP stapling extraction on Android.
+ * ExtendedSSLSession.getStatusResponses() requires API level 37+.
+ * On older devices, this returns null.
  */
-internal actual fun buildPlatformClient(
-    cfg: ClientConfig,
-    dependencies: HttpClientDependencies,
-    commonSetup: HttpClientConfig<*>.() -> Unit,
-): HttpClient {
-    // Parse additional CA PEMs to X.509 certificates.
-    val certFactory = CertificateFactory.getInstance("X.509")
-
-    // Each string is expected to be a full PEM including BEGIN/END delimiters.
-    val extraCerts: List<X509Certificate> = cfg.security.additionalCaPem.map { pem ->
-        certFactory.generateCertificate(ByteArrayInputStream(pem.toByteArray())) as X509Certificate
+internal actual fun extractStaple(session: SSLSession): ByteArray? {
+    if (Build.VERSION.SDK_INT < 37) {
+        Log.i { "ZetaTls: staple response cannot be extracted for Android SDK prior to 37" }
+        return null
     }
 
-    // Build a trust manager that combines platform CAs with the extra CAs.
-    val handshakeCerts = HandshakeCertificates.Builder()
-        .addPlatformTrustedCertificates()
-        .apply { extraCerts.forEach { addTrustedCertificate(it) } }
-        .build()
-
-    // Preconfigure OkHttp with the custom trust manager + SSLSocketFactory.
-    val okClient = OkHttpClient.Builder()
-        .sslSocketFactory(handshakeCerts.sslSocketFactory(), handshakeCerts.trustManager)
-        .build()
-
-    // Create the Ktor client with OkHttp engine, applying shared setup and the preconfigured client.
-    return HttpClient(OkHttp) {
-        this.apply {
-            commonSetup(this)
-            engine {
-                preconfigured = okClient
-            }
-        }
-    }
+    val extendedSession = session as? ExtendedSSLSession ?: return null
+    val statusResponses = extendedSession.statusResponses
+    return statusResponses?.firstOrNull()
 }

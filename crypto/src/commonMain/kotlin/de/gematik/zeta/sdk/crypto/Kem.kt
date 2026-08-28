@@ -25,6 +25,10 @@
 package de.gematik.zeta.sdk.crypto
 
 import Jwk
+import dev.whyoleg.cryptography.CryptographyProvider
+import dev.whyoleg.cryptography.algorithms.EC
+import dev.whyoleg.cryptography.algorithms.ECDH
+import dev.whyoleg.cryptography.algorithms.SHA256
 import kotlinx.serialization.Serializable
 
 interface Kem {
@@ -46,8 +50,6 @@ expect class ML768Kem() : Kem {
     override fun decapsulate(privateKeyRaw: ByteArray, ciphertext: ByteArray): ByteArray
 }
 
-expect fun hashWithSha256(input: ByteArray): ByteArray
-
 @Serializable
 data class KeyPair(
     val skpi: ByteArray,
@@ -68,3 +70,15 @@ data class EcPointP256(
     val x: ByteArray,
     val y: ByteArray,
 )
+
+fun ECDH.PublicKey.toSec1Uncompressed(): ByteArray {
+    val sec1 = encodeToByteArrayBlocking(EC.PublicKey.Format.RAW.Uncompressed)
+    require(sec1.size == 65 && sec1[0] == 0x04.toByte()) { "Invalid P-256 public key" }
+    val x = sec1.copyOfRange(1, 33)
+    val y = sec1.copyOfRange(33, 65)
+
+    return byteArrayOf(0x04) + x + y
+}
+
+fun hashWithSha256(input: ByteArray): ByteArray =
+    CryptographyProvider.Default.get(SHA256).hasher().hashBlocking(input)

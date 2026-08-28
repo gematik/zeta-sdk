@@ -29,7 +29,6 @@ import java.math.BigInteger
 import java.security.AlgorithmParameters
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
-import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.PublicKey
 import java.security.interfaces.ECPublicKey
@@ -39,7 +38,6 @@ import java.security.spec.ECPoint
 import java.security.spec.ECPublicKeySpec
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
-import java.util.Base64
 import javax.crypto.KeyAgreement
 
 actual class EcdhP256Kem actual constructor() : Kem {
@@ -85,12 +83,7 @@ actual class EcdhP256Kem actual constructor() : Kem {
         val pub = kf.generatePublic(X509EncodedKeySpec(publicKey)) as ECPublicKey
 
         require(pub.params.curve.field.fieldSize == 256) { "Expected P-256" }
-        val x = toFixedUnsigned(pub.w.affineX)
-        val y = toFixedUnsigned(pub.w.affineY)
-        val xB = b64url(x); val yB = b64url(y)
-        val kid = b64url(hashWithSha256("""{"crv":"P-256","kty":"EC","x":"$xB","y":"$yB"}""".toByteArray()))
-
-        return Jwk(kid = kid, kty = "EC", alg = AsymAlg.ES256.name, use = "sig", crv = "P-256", x = xB, y = yB)
+        return p256CoordinatesToJwk(toFixedUnsigned(pub.w.affineX), toFixedUnsigned(pub.w.affineY))
     }
 
     actual fun loadKeys(priv: ByteArray, pub: ByteArray): KeyPair {
@@ -119,9 +112,6 @@ actual class EcdhP256Kem actual constructor() : Kem {
         }
     }
 
-    private fun b64url(b: ByteArray) =
-        Base64.getUrlEncoder().withoutPadding().encodeToString(b)
-
     private fun ecParams(): ECParameterSpec =
         AlgorithmParameters.getInstance("EC").apply {
             init(ECGenParameterSpec("secp256r1"))
@@ -146,6 +136,3 @@ actual class EcdhP256Kem actual constructor() : Kem {
             init(priv); doPhase(peer, true); generateSecret()
         }
 }
-
-actual fun hashWithSha256(input: ByteArray): ByteArray =
-    MessageDigest.getInstance("SHA-256").digest(input)

@@ -37,6 +37,7 @@ import de.gematik.zeta.sdk.flow.CapabilityHandler
 import de.gematik.zeta.sdk.flow.CapabilityResult
 import de.gematik.zeta.sdk.flow.FlowContext
 import de.gematik.zeta.sdk.flow.FlowNeed
+import de.gematik.zeta.sdk.network.http.client.hostOf
 import de.gematik.zeta.sdk.storage.ResourceScope
 import kotlinx.serialization.json.Json
 
@@ -108,13 +109,25 @@ class ConfigurationHandler(
         storage.getProtectedResource()?.let { return it }
 
         Log.i { "[ZETA-SDK] call getProtectedResource from api: ${resourceScope.fqdn}" }
-        val prJson = configurationApi.fetchResourceMetadata(resourceScope.fqdn)
+        val cachedETag = storage.getProtectedResourceETag()
+        val result = configurationApi.fetchResourceMetadata(resourceScope.fqdn, eTag = cachedETag)
+
+        if (result.notModified) {
+            Log.i { "[ZETA-SDK] Protected resource metadata not modified (304), refreshing TTL only" }
+            storage.touchProtectedResource(maxAgeSeconds = result.maxAgeSeconds)
+            return storage.getProtectedResource()
+                ?: throw ConfigurationError.ValidationFailed("Protected resource metadata missing after 304 revalidation")
+        }
+
+        val body = requireNotNull(result.body) {
+            "Missing body for 200 OK discovery response"
+        }
 
         Log.i { "[ZETA-SDK] validate resource metadata" }
-        validateOrThrow(WellKnownTypes.RESOURCE_METADATA, prJson, configurationApi.getResourceSchema())
+        validateOrThrow(WellKnownTypes.RESOURCE_METADATA, body, configurationApi.getResourceSchema())
 
         Log.i { "[ZETA-SDK] persist json" }
-        return storage.saveProtectedResource(prJson)
+        return storage.saveProtectedResource(body, maxAgeSeconds = result.maxAgeSeconds, eTag = result.eTag)
     }
 
     /**
@@ -131,17 +144,28 @@ class ConfigurationHandler(
         }
         val cachedMatch: AuthorizationServerMetadata? = storage
             .getAuthServers()
-            .let { cached ->
-                cached.firstOrNull { meta -> meta.issuer in authServers }
-            }
+            .let { cached -> cached.firstOrNull { meta -> meta.issuer in authServers } }
         if (cachedMatch != null) return cachedMatch
 
-        val asJson = configurationApi.fetchAuthorizationMetadata(authServers.first())
-        validateOrThrow(WellKnownTypes.AUTHORIZATION_METADATA, asJson, configurationApi.getAuthorizationSchema())
+        val authFqdn = authServers.first()
+        val cachedETag = storage.getAuthServerETag(hostOf(authFqdn))
+        val result = configurationApi.fetchAuthorizationMetadata(authFqdn, eTag = cachedETag)
 
-        return Json {
-            ignoreUnknownKeys = true
-        }.decodeFromString(asJson)
+        if (result.notModified) {
+            Log.i { "[ZETA-SDK] Auth server metadata not modified (304), refreshing TTL only" }
+            storage.touchAuthServer(hostOf(authFqdn), maxAgeSeconds = result.maxAgeSeconds, eTag = result.eTag)
+            return storage.getAuthServer()
+                ?: throw ConfigurationError.ValidationFailed("Auth server metadata missing after 304 revalidation")
+        }
+
+        val body = requireNotNull(result.body) {
+            "Missing body for 200 OK discovery response"
+        }
+
+        validateOrThrow(WellKnownTypes.AUTHORIZATION_METADATA, body, configurationApi.getAuthorizationSchema())
+        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString<AuthorizationServerMetadata>(body)
+
+        return storage.saveAuthServer(parsed, maxAgeSeconds = result.maxAgeSeconds, eTag = result.eTag)
     }
 
     /**

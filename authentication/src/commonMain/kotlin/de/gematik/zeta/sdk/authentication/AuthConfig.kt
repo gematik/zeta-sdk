@@ -30,7 +30,7 @@ data class AuthConfig(
     val scopes: List<String>,
     val exp: Long,
     val aslProdEnvironment: Boolean = true,
-    val subjectTokenProvider: SubjectTokenProvider,
+    val subjectTokenProvider: AuthTokenProvider,
     val attestation: AttestationConfig = AttestationConfig.software(),
     val requiredRoleOid: String,
 ) {

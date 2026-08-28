@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
+		6053C4CA301B6AB900E67343 /* iosApp.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = iosApp.xcodeproj; sourceTree = "<group>"; };
 		8F0B5BFB2E801A5000915331 /* iosApp.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = iosApp.xcodeproj; sourceTree = "<group>"; };
 		8F0ECC352E7DFEA500CA4DE6 /* iosApp.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = iosApp.xcodeproj; sourceTree = "<group>"; };
 		8F0ECC4D2E7E054100CA4DE6 /* iosApp.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = iosApp.xcodeproj; sourceTree = "<group>"; };
@@ -47,6 +48,13 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		6053C4CB301B6AB900E67343 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		8F0B5BFC2E801A5000915331 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -160,6 +168,10 @@
 				{
 					ProductGroup = 8F0ECC672E7E061C00CA4DE6 /* Products */;
 					ProjectRef = 8F0ECC662E7E061C00CA4DE6 /* iosApp.xcodeproj */;
+				},
+				{
+					ProductGroup = 6053C4CB301B6AB900E67343 /* Products */;
+					ProjectRef = 6053C4CA301B6AB900E67343 /* iosApp.xcodeproj */;
 				},
 			);
 			projectRoot = "";

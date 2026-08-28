@@ -28,17 +28,29 @@ setupBuildLogic {
             api(libs.ktor.kotlinx.serialization.xml)
         }
 
-        if (project.isAndroidEnabled) {
-            sourceSets.androidMain.dependencies {
-                api(libs.ktor.client.okhttp)
-                implementation(libs.okhttp.tls)
-            }
+        sourceSets.commonTest.dependencies {
+            api(kotlin("test"))
+            api(libs.ktor.client.mock)
+            api(libs.coroutines.test)
         }
 
         if (project.isJvmEnabled) {
-            sourceSets.jvmMain.dependencies {
+            sourceSets["jvmCommonMain"].dependencies {
                 api(libs.ktor.client.okhttp)
                 implementation(libs.okhttp.tls)
+            }
+            sourceSets.jvmTest.dependencies {
+                implementation(kotlin("test"))
+                implementation(libs.okhttp.mockwebserver)
+                implementation(libs.okhttp.tls)
+                implementation(libs.mockk)
+            }
+
+            sourceSets["jvmCommonTest"].dependencies {
+                implementation(kotlin("test"))
+                implementation(libs.okhttp.mockwebserver)
+                implementation(libs.okhttp.tls)
+                implementation(libs.mockk)
             }
         }
 
@@ -54,26 +66,11 @@ setupBuildLogic {
             }
         }
 
-        sourceSets.commonTest.dependencies {
-            api(kotlin("test"))
-            api(libs.ktor.client.mock)
-            api(libs.coroutines.test)
-        }
-
         if (project.isAndroidEnabled) {
             sourceSets.androidUnitTest.dependencies {
                 implementation(kotlin("test"))
                 implementation(libs.okhttp.mockwebserver)
                 implementation(libs.okhttp.tls)
-            }
-        }
-
-        if (project.isJvmEnabled) {
-            sourceSets.jvmTest.dependencies {
-                implementation(kotlin("test"))
-                implementation(libs.okhttp.mockwebserver)
-                implementation(libs.okhttp.tls)
-                implementation(libs.mockk)
             }
         }
     }

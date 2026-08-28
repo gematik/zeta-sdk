@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.ensody.reactivestate.ExperimentalReactiveStateApi
 import de.gematik.zeta.client.di.DIContainer
 import de.gematik.zeta.client.ui.utils.buildViewModel
+import de.gematik.zeta.sdk.authentication.AuthMode
 
 @OptIn(ExperimentalReactiveStateApi::class)
 @Composable
@@ -66,11 +68,11 @@ private fun SettingsForm(
 ) {
     Column(modifier = Modifier.padding(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Enable TLS validation")
+            Text("Disable TLS validation")
             Spacer(modifier = Modifier.width(8.dp))
             Switch(
-                checked = state.tlsValidationEnabled,
-                onCheckedChange = viewModel::setTlsValidationEnabled,
+                checked = state.disableServerValidation,
+                onCheckedChange = viewModel::setDisableServerValidation,
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
@@ -80,6 +82,20 @@ private fun SettingsForm(
             val launchPicker = rememberPemFilePicker { path -> viewModel.setPemFile(path) }
             Button(onClick = launchPicker) {
                 Text("Select PEM file")
+            }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Token provider", modifier = Modifier.padding(top = 16.dp))
+            AuthMode.entries.forEach { mode ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = state.authMode == mode,
+                        onClick = { viewModel.setAuthMode(mode) },
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(mode.name)
+                }
             }
         }
     }

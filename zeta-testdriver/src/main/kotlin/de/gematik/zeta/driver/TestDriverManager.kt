@@ -27,9 +27,13 @@ package de.gematik.zeta.driver
 import de.gematik.zeta.driver.model.ConfigureRequest
 import de.gematik.zeta.driver.model.SdkInstanceConfig
 import de.gematik.zeta.driver.model.toKtorLogLevel
+import de.gematik.zeta.driver.oidc.TestDriverOtpCallback
 import de.gematik.zeta.logging.Log
+import de.gematik.zeta.sdk.InternalZetaApi
 import de.gematik.zeta.sdk.ZetaSdkClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.sdk.notifications.NotificationClient
+import de.gematik.zeta.sdk.notificationsForTesting
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -44,6 +48,7 @@ public open class TestDriverManager(
     initialConfig: SdkInstanceConfig = SdkInstanceConfig.fromFileOrEnv(),
 ) {
     private val store = InMemoryStorage()
+    public val otpCallback: TestDriverOtpCallback = TestDriverOtpCallback(initialConfig.oidcBindingEmail)
     public var config: SdkInstanceConfig = initialConfig
         private set
 
@@ -63,6 +68,14 @@ public open class TestDriverManager(
             customCaPems.clear()
             customCaPems.add(request.caCertificatePem)
         }
+
+        rebuildClient()
+    }
+
+    public open fun setKvnrEmail(kvnr: String, email: String) {
+        config = config.copy(oidcTestKvnr = kvnr)
+        config = config.copy(oidcBindingEmail = email)
+        otpCallback.setBoundEmail(email)
 
         rebuildClient()
     }
@@ -98,6 +111,9 @@ public open class TestDriverManager(
         }
     }
 
+    @OptIn(InternalZetaApi::class)
+    public fun notifications(): NotificationClient = sdk.notificationsForTesting()
+
     public fun getStorage(): InMemoryStorage = store
 
     private fun rebuildClient() {
@@ -106,7 +122,7 @@ public open class TestDriverManager(
     }
 
     private fun createSdk(): ZetaSdkClient {
-        return newSdk(storage = store, config)
+        return newSdk(storage = store, config, otpCallback)
     }
 
     private fun createHttpClient(): ZetaHttpClient {

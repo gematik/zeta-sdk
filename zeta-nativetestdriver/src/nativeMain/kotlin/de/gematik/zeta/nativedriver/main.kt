@@ -154,7 +154,7 @@ private fun buildSdk(fachdienstUrl: String, disableTlsVerification: Boolean, caP
         resource = fachdienstUrl,
         BuildConfig(
             productId = "zeta-native-server",
-            productVersion = "0.5.0",
+            productVersion = "1.3.0",
             clientName = "zeta-native-server",
             storageConfig = StorageConfig.Custom(InMemoryStorage()),
             tpmConfig = object : TpmConfig {},

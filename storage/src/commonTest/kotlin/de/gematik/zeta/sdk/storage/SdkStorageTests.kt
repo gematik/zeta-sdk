@@ -401,6 +401,56 @@ class SdkStorageTest {
         assertEquals(2, result.size)
     }
 
+    @Test
+    fun putIndexed_isolatesEntries_perResourceScope() = runTest {
+        // Arrange
+        val shared = FakeSdkStorage()
+        val a = ExtendedStorage(shared, ResourceScope("a.example.com", listOf("scope")))
+        val b = ExtendedStorage(shared, ResourceScope("b.example.com", listOf("scope")))
+
+        // Act
+        a.putIndexed("tpm_key_index", "tpm", mapOf("client_private_key" to "KEY_A"))
+        b.putIndexed("tpm_key_index", "tpm", mapOf("client_private_key" to "KEY_B"))
+
+        // Assert
+        assertEquals("KEY_A", a.getIndexed("tpm", "client_private_key"))
+        assertEquals("KEY_B", b.getIndexed("tpm", "client_private_key"))
+    }
+
+    @Test
+    fun clearIndexed_keepsEntries_ofOtherResourceScope() = runTest {
+        // Arrange
+        val shared = FakeSdkStorage()
+        val a = ExtendedStorage(shared, ResourceScope("a.example.com", listOf("scope")))
+        val b = ExtendedStorage(shared, ResourceScope("b.example.com", listOf("scope")))
+        a.putIndexed("tpm_key_index", "tpm", mapOf("client_private_key" to "KEY_A"))
+        b.putIndexed("tpm_key_index", "tpm", mapOf("client_private_key" to "KEY_B"))
+
+        // Act
+        b.clearIndexed("tpm_key_index", "tpm", listOf("client_private_key"))
+
+        // Assert
+        assertEquals("KEY_A", a.getIndexed("tpm", "client_private_key"))
+        assertNull(b.getIndexed("tpm", "client_private_key"))
+    }
+
+    @Test
+    fun removeIndexed_keepsEntries_ofOtherResourceScope() = runTest {
+        // Arrange
+        val shared = FakeSdkStorage()
+        val a = ExtendedStorage(shared, ResourceScope("a.example.com", listOf("scope")))
+        val b = ExtendedStorage(shared, ResourceScope("b.example.com", listOf("scope")))
+        a.putIndexed("tpm_key_index", "tpm", mapOf("dpop_private_key" to "KEY_A"))
+        b.putIndexed("tpm_key_index", "tpm", mapOf("dpop_private_key" to "KEY_B"))
+
+        // Act
+        b.removeIndexed("tpm_key_index", "tpm", listOf("dpop_private_key"))
+
+        // Assert
+        assertEquals("KEY_A", a.getIndexed("tpm", "dpop_private_key"))
+        assertNull(b.getIndexed("tpm", "dpop_private_key"))
+    }
+
     private fun buildSut(fakeStorage: FakeSdkStorage = FakeSdkStorage()) =
         ExtendedStorage(fakeStorage) to fakeStorage
 

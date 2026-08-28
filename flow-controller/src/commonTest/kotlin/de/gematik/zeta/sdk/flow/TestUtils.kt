@@ -25,6 +25,7 @@
 package de.gematik.zeta.sdk.flow
 
 import de.gematik.zeta.sdk.configuration.ConfigurationApi
+import de.gematik.zeta.sdk.configuration.DiscoveryFetchResult
 import de.gematik.zeta.sdk.configuration.WellKnownSchemaValidation
 import de.gematik.zeta.sdk.configuration.models.ApiVersion
 import de.gematik.zeta.sdk.configuration.models.ApiVersionStatus
@@ -64,8 +65,12 @@ class FakeApi(
     private val authSchema: String = "",
     private val resSchema: String = "",
 ) : ConfigurationApi {
-    override suspend fun fetchResourceMetadata(resourceUrl: String): String = resJson[resourceUrl] ?: error("unknown resource $resourceUrl")
-    override suspend fun fetchAuthorizationMetadata(authFqdns: String) = authJson[authFqdns] ?: error("unknown issuer $authFqdns")
+    override suspend fun fetchResourceMetadata(resourceUrl: String, subpath: String?, eTag: String?): DiscoveryFetchResult =
+        DiscoveryFetchResult(resJson[resourceUrl] ?: error("unknown resource $resourceUrl"), maxAgeSeconds = 10, eTag = "test", false)
+
+    override suspend fun fetchAuthorizationMetadata(authFqdns: String, eTag: String?): DiscoveryFetchResult =
+        DiscoveryFetchResult(authJson[authFqdns] ?: error("unknown resource $authFqdns"), maxAgeSeconds = 10, eTag = "test", false)
+
     override suspend fun getResourceSchema(): String = resSchema
     override suspend fun getAuthorizationSchema(): String = authSchema
 }
@@ -177,7 +182,7 @@ suspend fun getDummyContextWithResource(fwdClient: ForwardingClient = FakeForwar
     val ctx = FlowContextImpl(resourceScope, fwdClient, storage)
 
     val good = getDummyProtectedResourceObject("test", listOf("https://auth.example.com"))
-    ctx.configurationStorage.saveProtectedResource(Json.encodeToString(good))
+    ctx.configurationStorage.saveProtectedResource(Json.encodeToString(good), maxAgeSeconds = 0)
 
     val authServer = getDummyAuthServerObject(registrationEndpoint = "test", issuer = "issuer")
     ctx.configurationStorage.linkResourceToAuthorizationServer(authServer)

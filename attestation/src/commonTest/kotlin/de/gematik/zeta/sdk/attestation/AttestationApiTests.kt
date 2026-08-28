@@ -55,7 +55,7 @@ class AttestationApiImplTest {
     private val productId = "product"
     private val productVersion = "1.0.0"
     private val defaultClientId = "client-id"
-    private val defaultTokenEndpoint = "https://token.example.com"
+    private val defaultaud = "https://token.example.com"
 
     @Test
     fun createClientAssertion_returnsJwtWithThreeParts() = runTest {
@@ -67,7 +67,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = defaultClientId,
             exp = fixedExp,
-            tokenEndpoint = defaultTokenEndpoint,
+            aud = defaultaud,
             platformProductId = platformProductId(),
         )
 
@@ -85,7 +85,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = defaultClientId,
             exp = fixedExp,
-            tokenEndpoint = defaultTokenEndpoint,
+            aud = defaultaud,
             platformProductId = platformProductId(),
         )
 
@@ -107,7 +107,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = "my-client",
             exp = fixedExp,
-            tokenEndpoint = "https://token.example.com",
+            aud = "https://token.example.com",
             platformProductId = platformProductId(),
         )
 
@@ -137,7 +137,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = defaultClientId,
             exp = fixedExp,
-            tokenEndpoint = defaultTokenEndpoint,
+            aud = defaultaud,
             platformProductId = platformProductId(),
         )
 
@@ -180,7 +180,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = defaultClientId,
             exp = fixedExp,
-            tokenEndpoint = defaultTokenEndpoint,
+            aud = defaultaud,
             platformProductId = platformProductId(),
         )
 
@@ -200,7 +200,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = defaultClientId,
             exp = fixedExp,
-            tokenEndpoint = defaultTokenEndpoint,
+            aud = defaultaud,
             platformProductId = platformProductId(),
         )
 
@@ -210,7 +210,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = defaultClientId,
             exp = fixedExp,
-            tokenEndpoint = defaultTokenEndpoint,
+            aud = defaultaud,
             platformProductId = platformProductId(),
         )
 
@@ -227,7 +227,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = "client-a",
             exp = fixedExp,
-            tokenEndpoint = defaultTokenEndpoint,
+            aud = defaultaud,
             platformProductId = platformProductId(),
         )
 
@@ -237,7 +237,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = "client-b",
             exp = fixedExp,
-            tokenEndpoint = defaultTokenEndpoint,
+            aud = defaultaud,
             platformProductId = platformProductId(),
         )
 
@@ -254,7 +254,7 @@ class AttestationApiImplTest {
     }
 
     @Test
-    fun createClientAssertion_changesAudWhenTokenEndpointChanges() = runTest {
+    fun createClientAssertion_changesAudWhenaudChanges() = runTest {
         val impl = buildImpl()
 
         val jwt1 = impl.createClientAssertion(
@@ -263,7 +263,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = defaultClientId,
             exp = fixedExp,
-            tokenEndpoint = "https://token-a.example.com",
+            aud = "https://token-a.example.com",
             platformProductId = platformProductId(),
         )
 
@@ -273,7 +273,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = defaultClientId,
             exp = fixedExp,
-            tokenEndpoint = "https://token-b.example.com",
+            aud = "https://token-b.example.com",
             platformProductId = platformProductId(),
         )
 
@@ -301,7 +301,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = defaultClientId,
             exp = fixedExp,
-            tokenEndpoint = defaultTokenEndpoint,
+            aud = defaultaud,
             platformProductId = platformProductId(),
         )
 
@@ -311,7 +311,7 @@ class AttestationApiImplTest {
             nonce = fixedNonce,
             clientId = defaultClientId,
             exp = fixedExp + 999,
-            tokenEndpoint = defaultTokenEndpoint,
+            aud = defaultaud,
             platformProductId = platformProductId(),
         )
 
@@ -327,7 +327,7 @@ class AttestationApiImplTest {
     }
 
     open class FakeTpmProvider : TpmProvider {
-        override val isHardwareBacked = false
+        override suspend fun isHardwareBacked(): Boolean = false
 
         override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut = PublicKeyOut(
             encoded = ByteArray(32) { 0x01 },

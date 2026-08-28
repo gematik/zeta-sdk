@@ -168,6 +168,16 @@ public open class ZetaHttpClientBuilder(
     }
 
     /**
+     * Configure the minimum duration for caching OCSP/CRL revocation responses.
+     *
+     * @param seconds Minimum cache duration in seconds. Defaults to 3600s (1h).
+     * @return This builder for chaining.
+     */
+    public fun revocationCacheDuration(seconds: Long): ZetaHttpClientBuilder = apply {
+        security = security.copy(revocationCacheDurationSeconds = seconds)
+    }
+
+    /**
      * Set the client log verbosity used for request/response monitoring.
      *
      * @param level Desired [LogLevel] (e.g., [LogLevel.NONE], [LogLevel.INFO], [LogLevel.HEADERS], [LogLevel.BODY]).
@@ -301,4 +311,7 @@ public open class ZetaHttpClientBuilder(
 
     public val isServerValidationDisabled: Boolean
         get() = security.disableServerValidation
+
+    public val revocationCacheMinDurationSeconds: Long
+        get() = security.revocationCacheDurationSeconds
 }

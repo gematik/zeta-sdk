@@ -28,12 +28,14 @@ import Jwk
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/** DCR request body (RFC 7591); [jwks] carries the TPM client instance public key. */
 @Serializable
 data class ClientRegistrationRequest(
     @SerialName("token_endpoint_auth_method") val tokenEndpointAuthMethod: String,
     @SerialName("grant_types") val grantTypes: List<String>,
     @SerialName("response_types") val responseTypes: List<String>,
     @SerialName("client_name") val clientName: String,
+    @SerialName("redirect_uris") val redirectUris: List<String>,
     val jwks: Jwks,
 )
 

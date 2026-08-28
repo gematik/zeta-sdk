@@ -33,6 +33,9 @@ import de.gematik.zeta.sdk.authentication.model.AccessTokenRequest
 import de.gematik.zeta.sdk.authentication.model.DPoPTokenClaims
 import de.gematik.zeta.sdk.authentication.model.DPopTokenHeader
 import de.gematik.zeta.sdk.authentication.model.TokenType
+import de.gematik.zeta.sdk.authentication.oidc.OidcTokenIssuance
+import de.gematik.zeta.sdk.authentication.oidc.TokenIssuanceRequest
+import de.gematik.zeta.sdk.authentication.oidc.TokenIssuanceResult
 import de.gematik.zeta.sdk.crypto.hashWithSha256
 import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.utils.io.core.toByteArray
@@ -72,6 +75,29 @@ open class AccessTokenProviderImpl(
         AttestationApiImpl(
             tpmProvider = tpmProvider,
             attestationConfig = authConfig.attestation,
+        )
+    }
+
+    private val subjectTokenIssuance by lazy {
+        SubjectTokenIssuance(
+            authConfig = authConfig,
+            authApi = authApi,
+            authStorage = authStorage,
+            tpmProvider = tpmProvider,
+            clock = clock,
+        )
+    }
+
+    private val oidcTokenIssuance by lazy {
+        OidcTokenIssuance(
+            authApi = authApi,
+            authStorage = authStorage,
+            clock = clock,
+            authenticationCallback = (authConfig.subjectTokenProvider as OidcTokenProvider).config.authenticationCallback,
+            resolveParEndpoint = authConfig.subjectTokenProvider.resolveParEndpoint,
+            resolveBindEmailEndpoint = authConfig.subjectTokenProvider.resolveBindEmailEndpoint,
+            resolveVerifyEmailEndpoint = authConfig.subjectTokenProvider.resolveVerifyEmailEndpoint,
+            resolveResendEmailEndpoint = authConfig.subjectTokenProvider.resolveResendEmailEndpoint,
         )
     }
 
@@ -129,38 +155,43 @@ open class AccessTokenProviderImpl(
         params: AccessTokenParams,
         dpopKey: String,
     ): String {
-        val start = TimeSource.Monotonic.markNow()
         val (nonce, nonceTime) = measureTimedValue { authApi.fetchNonce(nonceEndpoint) }
         Log.d { "[AUTH-TIMING] issueNewAccessToken fetchNonce=$nonceTime" }
 
-        val subjectToken = suspend {
-            val (token, subjectTime) = measureTimedValue {
-                authConfig.subjectTokenProvider.createSubjectToken(
-                    params.clientId,
-                    dpopKey,
-                    nonce,
-                    tokenEndpoint,
-                    clock(),
-                    authConfig.exp,
-                    tpmProvider,
+        val dpopKeyGenerated = tpmProvider.generateDpopKey()
+
+        val request = TokenIssuanceRequest(
+            tokenEndpoint = tokenEndpoint,
+            nonce = nonce,
+            dpopProvider = { htu, tokenToHash ->
+                val ath = tokenToHash?.let { hash(it) }
+                createDpopToken(dpopKeyGenerated.jwk, "POST", htu, nonce, ath)
+            },
+            clientAssertionProvider = {
+                attestationApi.createClientAssertion(
+                    productId = params.productId,
+                    productVersion = params.productVersion,
+                    nonce = nonce,
+                    clientId = params.clientId,
+                    exp = clock() + params.expiration,
+                    aud = tokenEndpoint,
+                    platformProductId = params.platformProductId,
+                )
+            },
+            params = params,
+        )
+
+        return when (val provider = authConfig.subjectTokenProvider) {
+            is SubjectTokenProvider -> subjectTokenIssuance.issue(request, dpopKey, provider)
+            is OidcTokenProvider -> when (val result = oidcTokenIssuance.issue(request, provider)) {
+                is TokenIssuanceResult.Issued -> result.accessToken
+                is TokenIssuanceResult.EmailBindingRequired -> oidcTokenIssuance.completeEmailBinding(
+                    pending = result,
+                    request = request,
+                    otpCallback = provider.config.otpCallback,
                 )
             }
-            Log.d { "[AUTH-TIMING] issueNewAccessToken createSubjectToken=$subjectTime" }
-            token
         }
-
-        val (result, requestTime) = measureTimedValue {
-            requestAccessToken(
-                grantType = "urn:ietf:params:oauth:grant-type:token-exchange",
-                tokenEndpoint = tokenEndpoint,
-                nonce = nonce,
-                params = params,
-                subjectToken = subjectToken,
-                subjectTokenType = "urn:ietf:params:oauth:token-type:jwt",
-            )
-        }
-        Log.d { "[AUTH-TIMING] issueNewAccessToken requestAccessToken=$requestTime total=${start.elapsedNow()}" }
-        return result
     }
 
     private suspend fun requestAccessToken(
@@ -175,38 +206,16 @@ open class AccessTokenProviderImpl(
         val start = TimeSource.Monotonic.markNow()
         val requestId = Random.nextInt()
         try {
-            val (clientAssertion, assertionTime) = measureTimedValue {
-                attestationApi.createClientAssertion(
-                    params.productId,
-                    params.productVersion,
-                    nonce,
-                    params.clientId,
-                    clock() + params.expiration,
-                    tokenEndpoint,
-                    params.platformProductId,
-                )
-            }
+            val (clientAssertion, assertionTime) = measureTimedValue { createClientAssertion(tokenEndpoint, nonce, params) }
             Log.d { "[AUTH-TIMING][$requestId] requestAccessToken createClientAssertion=$assertionTime" }
 
-            val dpopKey = tpmProvider.generateDpopKey()
-            val (dpop, dpopTime) = measureTimedValue { createDpopToken(dpopKey.jwk, "POST", tokenEndpoint, nonce) }
+            val (dpop, dpopTime) = measureTimedValue { createDpopForTokenEndpoint(tokenEndpoint, nonce) }
             Log.d { "[AUTH-TIMING][$requestId] requestAccessToken createDpopToken=$dpopTime" }
 
             val (subjectTokenValue, subjectTokenTime) = measureTimedValue { subjectToken() }
             Log.d { "[AUTH-TIMING][$requestId] requestAccessToken subjectToken=$subjectTokenTime" }
 
-            val request = AccessTokenRequest(
-                grantType = grantType,
-                clientId = params.clientId,
-                requestedTokenType = "urn:ietf:params:oauth:token-type:refresh_token",
-                clientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-                clientAssertion = clientAssertion,
-                scope = params.scopes.joinToString(" "),
-                refreshToken = refreshToken,
-                subjectToken = subjectTokenValue,
-                subjectTokenType = subjectTokenType,
-                audience = params.audience,
-            )
+            val request = buildAccessTokenRequest(grantType, params, clientAssertion, refreshToken, subjectTokenValue, subjectTokenType)
 
             val sendEpoch = clock()
             Log.d { "[AUTH-TIMING][$requestId] requestAccessToken sending_http epoch=$sendEpoch monotonic=${start.elapsedNow()}" }
@@ -227,6 +236,42 @@ open class AccessTokenProviderImpl(
             throw e
         }
     }
+
+    private suspend fun createClientAssertion(tokenEndpoint: String, nonce: ByteArray, params: AccessTokenParams): String =
+        attestationApi.createClientAssertion(
+            productId = params.productId,
+            productVersion = params.productVersion,
+            nonce = nonce,
+            clientId = params.clientId,
+            exp = clock() + params.expiration,
+            aud = tokenEndpoint,
+            platformProductId = params.platformProductId,
+        )
+
+    private suspend fun createDpopForTokenEndpoint(tokenEndpoint: String, nonce: ByteArray): String {
+        val dpopKey = tpmProvider.generateDpopKey()
+        return createDpopToken(dpopKey.jwk, "POST", tokenEndpoint, nonce)
+    }
+
+    private fun buildAccessTokenRequest(
+        grantType: String,
+        params: AccessTokenParams,
+        clientAssertion: String,
+        refreshToken: String?,
+        subjectToken: String?,
+        subjectTokenType: String?,
+    ): AccessTokenRequest = AccessTokenRequest(
+        grantType = grantType,
+        clientId = params.clientId,
+        requestedTokenType = "urn:ietf:params:oauth:token-type:refresh_token",
+        clientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        clientAssertion = clientAssertion,
+        scope = params.scopes.joinToString(" "),
+        refreshToken = refreshToken,
+        subjectToken = subjectToken,
+        subjectTokenType = subjectTokenType,
+        audience = params.audience,
+    )
 
     override suspend fun createDpopToken(dpopKey: Jwk, method: String, url: String, nonceBytes: ByteArray?, accessTokenHash: String?): String {
         val start = TimeSource.Monotonic.markNow()

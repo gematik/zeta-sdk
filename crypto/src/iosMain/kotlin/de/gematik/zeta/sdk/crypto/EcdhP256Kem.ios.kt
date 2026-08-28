@@ -25,32 +25,68 @@
 package de.gematik.zeta.sdk.crypto
 
 import Jwk
+import dev.whyoleg.cryptography.CryptographyProvider
+import dev.whyoleg.cryptography.algorithms.EC
+import dev.whyoleg.cryptography.algorithms.EC.Curve.Companion.P256
+import dev.whyoleg.cryptography.algorithms.ECDH
+import dev.whyoleg.cryptography.algorithms.ECDSA
 
-// because sonar
-private const val NOT_YET_IMPLEMENTED = "Not yet implemented"
+actual class EcdhP256Kem actual constructor() : Kem {
 
-actual class EcdhP256Kem : Kem {
+    private val provider = CryptographyProvider.Default
+
+    // CryptographyProvider.get() cannot be replaced with index operator
+    // as the [] operator is not available on this type
+    private val ecdh = provider.get(ECDH)
+
+    // CryptographyProvider.get() cannot be replaced with index operator
+    // as the [] operator is not available on this type
+    private val ecdsa = provider.get(ECDSA)
+
     actual override fun generateKeys(): KeyPair {
-        TODO(NOT_YET_IMPLEMENTED)
+        val eph = ecdh.keyPairGenerator(P256).generateKeyBlocking()
+        return KeyPair(
+            skpi = eph.publicKey.encodeToByteArrayBlocking(EC.PublicKey.Format.RAW),
+            sec1 = eph.publicKey.toSec1Uncompressed(),
+            privateKey = eph.privateKey.encodeToByteArrayBlocking(EC.PrivateKey.Format.RAW),
+        )
     }
 
     actual override fun encapsulate(peerPublicKey: ByteArray): KemEncapResult {
-        TODO(NOT_YET_IMPLEMENTED)
+        val peer = ecdh.publicKeyDecoder(P256)
+            .decodeFromByteArrayBlocking(EC.PublicKey.Format.RAW, peerPublicKey)
+        val eph = ecdh.keyPairGenerator(P256).generateKeyBlocking()
+        val ss = peer.sharedSecretGenerator().generateSharedSecretToByteArrayBlocking(eph.privateKey)
+        val ct = eph.publicKey.toSec1Uncompressed()
+
+        return KemEncapResult(ciphertext = ct, sharedSecret = ss)
     }
 
     actual override fun decapsulate(privateKeyRaw: ByteArray, ciphertext: ByteArray): ByteArray {
-        TODO(NOT_YET_IMPLEMENTED)
-    }
+        val ephPub = ecdh.publicKeyDecoder(P256)
+            .decodeFromByteArrayBlocking(EC.PublicKey.Format.RAW, ciphertext)
+        val priv = ecdh.privateKeyDecoder(P256)
+            .decodeFromByteArrayBlocking(EC.PrivateKey.Format.RAW, privateKeyRaw)
 
-    actual fun loadKeys(priv: ByteArray, pub: ByteArray): KeyPair {
-        TODO(NOT_YET_IMPLEMENTED)
+        return priv.sharedSecretGenerator().generateSharedSecretToByteArrayBlocking(ephPub)
     }
 
     actual fun toJwk(publicKey: ByteArray): Jwk {
-        TODO(NOT_YET_IMPLEMENTED)
+        val pub: EC.PublicKey = ecdsa.publicKeyDecoder(P256)
+            .decodeFromByteArrayBlocking(EC.PublicKey.Format.RAW.Uncompressed, publicKey)
+        val sec1: ByteArray = pub.encodeToByteArrayBlocking(EC.PublicKey.Format.RAW.Uncompressed)
+        return p256UncompressedPointToJwk(sec1)
     }
-}
 
-actual fun hashWithSha256(input: ByteArray): ByteArray {
-    TODO(NOT_YET_IMPLEMENTED)
+    actual fun loadKeys(priv: ByteArray, pub: ByteArray): KeyPair {
+        val privateKey = ecdh.privateKeyDecoder(P256)
+            .decodeFromByteArrayBlocking(EC.PrivateKey.Format.RAW, priv)
+        val publicKey = ecdh.publicKeyDecoder(P256)
+            .decodeFromByteArrayBlocking(EC.PublicKey.Format.RAW, pub)
+        return KeyPair(
+            skpi = publicKey.encodeToByteArrayBlocking(EC.PublicKey.Format.RAW),
+            sec1 = publicKey.toSec1Uncompressed(),
+            privateKey = privateKey.encodeToByteArrayBlocking(EC.PrivateKey.Format.RAW),
+        )
+    }
 }

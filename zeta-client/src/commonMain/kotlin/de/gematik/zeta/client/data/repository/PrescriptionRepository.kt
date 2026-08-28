@@ -25,9 +25,7 @@
 package de.gematik.zeta.client.data.repository
 
 import de.gematik.zeta.client.data.service.PrescriptionService
-import de.gematik.zeta.client.di.DIContainer
 import de.gematik.zeta.client.model.PrescriptionModel
-import de.gematik.zeta.sdk.SdkStatus
 
 public interface PrescriptionRepository {
     public suspend fun prescriptionList(): List<PrescriptionModel>
@@ -35,13 +33,6 @@ public interface PrescriptionRepository {
     public suspend fun addPrescription(model: PrescriptionModel)
     public suspend fun updatePrescription(id: Long, model: PrescriptionModel)
     public suspend fun deletePrescription(id: Long)
-    public suspend fun forgetAuthorization()
-    public suspend fun forgetRegistration()
-    public suspend fun logoutAuthorization()
-    public suspend fun status(): SdkStatus
-    public suspend fun doAuthentication()
-    public suspend fun doRegistration()
-    public suspend fun doDiscovery()
 }
 
 public class PrescriptionRepositoryImpl(
@@ -66,33 +57,5 @@ public class PrescriptionRepositoryImpl(
 
     override suspend fun deletePrescription(id: Long) {
         return prescriptionService.deletePrescription(id)
-    }
-
-    override suspend fun doAuthentication() {
-        DIContainer.httpClientProvider.authenticate()
-    }
-
-    override suspend fun doRegistration() {
-        DIContainer.httpClientProvider.register()
-    }
-
-    override suspend fun doDiscovery() {
-        DIContainer.httpClientProvider.discover()
-    }
-
-    override suspend fun forgetAuthorization() {
-        DIContainer.httpClientProvider.forget()
-    }
-
-    override suspend fun forgetRegistration() {
-        DIContainer.httpClientProvider.clearRegistration()
-    }
-
-    override suspend fun logoutAuthorization() {
-        DIContainer.httpClientProvider.logout()
-    }
-
-    override suspend fun status(): SdkStatus {
-        return DIContainer.httpClientProvider.status()
     }
 }

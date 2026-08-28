@@ -54,7 +54,7 @@ class AslStorageImplTest {
 
         // Assert
         val stored = storage.getAll()
-        val sessionKey = stored.keys.first { it.startsWith(AslStorageImpl.PREFIX) }
+        val sessionKey = stored.keys.first { it.startsWith(AslStorageImpl.SESSION_PREFIX) }
         val storedJson = stored[sessionKey] ?: error("Session not found in storage for key: $sessionKey")
         val decoded = json.decodeFromString<EstablishedSession>(storedJson)
         assertEquals(42L, decoded.requestCounter)
@@ -71,7 +71,7 @@ class AslStorageImplTest {
         sut.saveSession(session)
 
         // Assert
-        val sessionKeys = storage.getAll().keys.filter { it.startsWith(AslStorageImpl.PREFIX) }
+        val sessionKeys = storage.getAll().keys.filter { it.startsWith(AslStorageImpl.SESSION_PREFIX) }
         assertEquals(1, sessionKeys.size)
         assertFalse(sessionKeys.first().contains("example.com"))
     }
@@ -108,7 +108,7 @@ class AslStorageImplTest {
         val storage = FakeSdkStorage()
         val (sut, _) = buildSut(storage)
         sut.saveSession(buildSession())
-        val sessionKey = storage.getAll().keys.first { it.startsWith(AslStorageImpl.PREFIX) }
+        val sessionKey = storage.getAll().keys.first { it.startsWith(AslStorageImpl.SESSION_PREFIX) }
         storage.put(sessionKey, "{invalid json}")
 
         // Act & Assert
@@ -140,7 +140,7 @@ class AslStorageImplTest {
         sut.clear()
 
         // Assert
-        val sessionKeys = storage.getAll().keys.filter { it.startsWith(AslStorageImpl.PREFIX) }
+        val sessionKeys = storage.getAll().keys.filter { it.startsWith(AslStorageImpl.SESSION_PREFIX) }
         assertTrue(sessionKeys.isEmpty())
     }
 

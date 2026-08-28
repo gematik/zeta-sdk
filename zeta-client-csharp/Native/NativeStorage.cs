@@ -41,6 +41,8 @@ internal sealed class CustomStorageHandle
     private readonly RemoveDelegate _remove;
     private readonly ClearDelegate  _clear;
 
+    private readonly GCHandle _selfHandle;
+
     public IntPtr VTablePtr { get; }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -54,6 +56,8 @@ internal sealed class CustomStorageHandle
 
     public CustomStorageHandle(ICustomStorage storage)
     {
+      _selfHandle = GCHandle.Alloc(this);
+
       _get = (ctx, key, cb, cbCtx) =>
       {
           var result = storage.Get(Marshal.PtrToStringUTF8(key)!);
@@ -93,7 +97,11 @@ internal sealed class CustomStorageHandle
         Marshal.StructureToPtr(vtable, VTablePtr, false);
     }
 
-    public void Free() => Marshal.FreeHGlobal(VTablePtr);
+    public void Free()
+    {
+        Marshal.FreeHGlobal(VTablePtr);
+        if (_selfHandle.IsAllocated) _selfHandle.Free();
+    }
 }
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]

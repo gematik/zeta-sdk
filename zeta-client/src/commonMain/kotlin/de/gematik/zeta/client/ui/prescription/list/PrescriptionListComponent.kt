@@ -27,6 +27,7 @@ package de.gematik.zeta.client.ui.prescription.list
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,7 +46,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +62,7 @@ import de.gematik.zeta.client.state.AttestationState
 import de.gematik.zeta.client.ui.common.ErrorMessage
 import de.gematik.zeta.client.ui.common.LoadingIndicator
 import de.gematik.zeta.client.ui.common.mvi.MviState
+import de.gematik.zeta.client.ui.hello.SectionLabel
 import de.gematik.zeta.client.ui.prescription.add.AddPrescriptionComponent
 import de.gematik.zeta.client.ui.prescription.edit.EditPrescriptionComponent
 import de.gematik.zeta.client.ui.utils.buildViewModel
@@ -69,7 +70,10 @@ import de.gematik.zeta.sdk.attestation.model.AttestationStatus
 
 @OptIn(ExperimentalReactiveStateApi::class)
 @Composable
-public fun PrescriptionListComponent() {
+public fun PrescriptionListComponent(
+    modifier: Modifier = Modifier,
+    showList: Boolean = true,
+) {
     val attestationStatus = AttestationState.status
     val isEnabled = AttestationState.isEnabled
 
@@ -82,63 +86,32 @@ public fun PrescriptionListComponent() {
     var showEditPrescription by remember { mutableStateOf(false) }
     var editableModelId by remember { mutableStateOf(-1L) }
 
-    LaunchedEffect(Unit) {
-        viewModel.loadPrescriptionList()
-    }
-
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         attestationStatus?.let { AttestationBanner(it) }
-
-        Row(
+        SectionLabel("Prescriptions")
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Button(onClick = viewModel::loadPrescriptionList) {
-                Text("Load")
-            }
-            Button(
-                onClick = { showAddPrescription = !showAddPrescription },
-                enabled = isEnabled,
-            ) {
-                Text("Add")
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            Button(onClick = viewModel::doDiscovery) {
-                Text("Discover")
-            }
-            Button(onClick = viewModel::doRegistration) {
-                Text("Register")
-            }
-            Button(onClick = viewModel::doAuthentication) {
-                Text("Authenticate")
-            }
-            Button(onClick = viewModel::logoutAuthorization) {
-                Text("Logout")
-            }
-            Button(onClick = viewModel::forgetRegistration) {
-                Text("Clear Registration")
-            }
-            Button(onClick = viewModel::forgetAuthorization) {
-                Text("Forget")
-            }
-            Button(onClick = viewModel::statusSdk) {
-                Text("Status")
-            }
+            Button(onClick = viewModel::loadPrescriptionList) { Text("Load") }
+            Button(onClick = { showAddPrescription = !showAddPrescription }, enabled = isEnabled) { Text("Add") }
         }
         when (val s = state) {
-            is PrescriptionListState.Result -> PrescriptionList(
-                (state as PrescriptionListState.Result).result,
-                {
-                    editableModelId = it.id ?: -1
-                    showEditPrescription = true
-                },
-                viewModel::deletePrescription,
-            )
+            is PrescriptionListState.Result -> if (showList) {
+                PrescriptionList(
+                    (state as PrescriptionListState.Result).result,
+                    {
+                        editableModelId = it.id ?: -1
+                        showEditPrescription = true
+                    },
+                    viewModel::deletePrescription,
+                )
+            }
             is PrescriptionListState.StatusResult -> {
                 AlertDialog(
                     onDismissRequest = viewModel::dismissStatus,

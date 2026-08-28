@@ -34,6 +34,7 @@ interface AuthenticationStorage {
     suspend fun getAccessToken(): String?
     suspend fun getRefreshToken(): String?
     suspend fun getTokenExpiration(): String?
+    suspend fun clearAccessToken()
     suspend fun clear()
 }
 
@@ -66,8 +67,13 @@ class AuthenticationStorageImpl(
     override suspend fun getRefreshToken(): String? = extended.getIndexed(ENTRY_KEY, PREFIX_REFRESH)
     override suspend fun getTokenExpiration(): String? = extended.getIndexed(ENTRY_KEY, PREFIX_EXPIRES)
 
+    override suspend fun clearAccessToken() {
+        Log.d { "Removing access token, keeping refresh token" }
+        extended.removeIndexed(INDEX_KEY, ENTRY_KEY, listOf(PREFIX_ACCESS, PREFIX_EXPIRES))
+    }
+
     override suspend fun clear() {
         Log.d { "Removing all auth tokens" }
-        extended.clearIndexed(INDEX_KEY, listOf(PREFIX_ACCESS, PREFIX_REFRESH, PREFIX_EXPIRES))
+        extended.clearIndexed(INDEX_KEY, ENTRY_KEY, listOf(PREFIX_ACCESS, PREFIX_REFRESH, PREFIX_EXPIRES))
     }
 }

@@ -28,6 +28,7 @@ import Jwk
 import PublicKeyOut
 import de.gematik.zeta.sdk.clientregistration.ClientRegistrationApiImpl
 import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationResponse
+import de.gematik.zeta.sdk.clientregistration.model.Jwks
 import de.gematik.zeta.sdk.configuration.ConfigurationStorage
 import de.gematik.zeta.sdk.configuration.models.AuthorizationServerMetadata
 import de.gematik.zeta.sdk.configuration.models.ProtectedResourceMetadata
@@ -63,6 +64,8 @@ import kotlin.uuid.Uuid
 
 class ClientRegistrationHandlerTest {
     private val MAX_RETRIES = 3
+    private val CURRENT_KID = "current-client-key"
+    private val REGISTRATION_ENDPOINT = "https://as.example.com/register"
 
     @Test
     fun handle_success_onFirstAttempt() = runTest {
@@ -200,7 +203,7 @@ class ClientRegistrationHandlerTest {
 
         // Assert
         assertTrue(result is CapabilityResult.Error)
-        assertEquals(HttpStatusCode.Forbidden, result.httpResponse.status)
+        assertEquals(HttpStatusCode.Forbidden, result.httpResponse!!.status)
         assertEquals(1, mock.requestHistory.size)
     }
 
@@ -224,12 +227,12 @@ class ClientRegistrationHandlerTest {
 
         // Assert
         assertTrue(result is CapabilityResult.Error)
-        assertEquals(HttpStatusCode.Conflict, result.httpResponse.status)
+        assertEquals(HttpStatusCode.Conflict, result.httpResponse!!.status)
         assertEquals(1, mock.requestHistory.size)
     }
 
     @Test
-    fun handle_retries5Times_withMaxRetry5() = runTest {
+    fun handle_retries3Times_withMaxRetry3() = runTest {
         // Arrange
         val response = ClientRegistrationResponse(clientId = "")
         val mock = MockEngine {
@@ -240,7 +243,7 @@ class ClientRegistrationHandlerTest {
             )
         }
 
-        val handler = createHandler(mock, 5)
+        val handler = createHandler(mock)
         val ctx = createContext()
 
         // Act
@@ -248,8 +251,91 @@ class ClientRegistrationHandlerTest {
 
         // Assert
         assertTrue(result is CapabilityResult.Error)
-        assertEquals(HttpStatusCode.InternalServerError, result.httpResponse.status)
-        assertEquals(5, mock.requestHistory.size)
+        assertEquals(HttpStatusCode.InternalServerError, result.httpResponse!!.status)
+        assertEquals(3, mock.requestHistory.size)
+    }
+
+    @Test
+    fun handle_reRegisters_whenCachedRegistrationUsedDifferentClientKey() = runTest {
+        // Arrange
+        val mock = respondWithCreated(ClientRegistrationResponse(clientId = "fresh-client"))
+        val handler = createHandler(mock)
+        val ctx = createContext(REGISTRATION_ENDPOINT)
+        ctx.clientRegistrationStorage.saveRegistration(
+            REGISTRATION_ENDPOINT,
+            ClientRegistrationResponse(clientId = "stale-client", jwks = Jwks(listOf(createClientKey("gone-key")))),
+        )
+
+        // Act
+        val result = handler.handle(FlowNeed.ClientRegistration, ctx)
+
+        // Assert
+        assertTrue(result is CapabilityResult.Done)
+        assertEquals(1, mock.requestHistory.size)
+        assertEquals("fresh-client", ctx.clientRegistrationStorage.getClientId(REGISTRATION_ENDPOINT))
+    }
+
+    @Test
+    fun handle_skipsRegistration_whenCachedRegistrationUsedCurrentClientKey() = runTest {
+        // Arrange
+        val mock = respondWithCreated(ClientRegistrationResponse(clientId = "fresh-client"))
+        val handler = createHandler(mock)
+        val ctx = createContext(REGISTRATION_ENDPOINT)
+        ctx.clientRegistrationStorage.saveRegistration(
+            REGISTRATION_ENDPOINT,
+            ClientRegistrationResponse(clientId = "cached-client", jwks = Jwks(listOf(createClientKey(CURRENT_KID)))),
+        )
+
+        // Act
+        val result = handler.handle(FlowNeed.ClientRegistration, ctx)
+
+        // Assert
+        assertTrue(result is CapabilityResult.Done)
+        assertEquals(0, mock.requestHistory.size)
+        assertEquals("cached-client", ctx.clientRegistrationStorage.getClientId(REGISTRATION_ENDPOINT))
+    }
+
+    @Test
+    fun handle_reRegisters_whenCachedRegistrationHasNoRecordedClientKey() = runTest {
+        // Arrange
+        val mock = respondWithCreated(ClientRegistrationResponse(clientId = "fresh-client"))
+        val handler = createHandler(mock)
+        val ctx = createContext(REGISTRATION_ENDPOINT)
+        ctx.clientRegistrationStorage.saveRegistration(
+            REGISTRATION_ENDPOINT,
+            ClientRegistrationResponse(clientId = "legacy-client"),
+        )
+
+        // Act
+        val result = handler.handle(FlowNeed.ClientRegistration, ctx)
+
+        // Assert
+        assertTrue(result is CapabilityResult.Done)
+        assertEquals(1, mock.requestHistory.size)
+        assertEquals("fresh-client", ctx.clientRegistrationStorage.getClientId(REGISTRATION_ENDPOINT))
+    }
+
+    @Test
+    fun handle_recordsClientKey_inSavedRegistration() = runTest {
+        // Arrange
+        val mock = respondWithCreated(ClientRegistrationResponse(clientId = "fresh-client"))
+        val handler = createHandler(mock)
+        val ctx = createContext(REGISTRATION_ENDPOINT)
+
+        // Act
+        handler.handle(FlowNeed.ClientRegistration, ctx)
+
+        // Assert
+        val saved = ctx.clientRegistrationStorage.getRegistrationInfo(REGISTRATION_ENDPOINT)
+        assertEquals(listOf(CURRENT_KID), saved?.jwks?.keys?.map { it.kid })
+    }
+
+    private fun respondWithCreated(response: ClientRegistrationResponse) = MockEngine {
+        respond(
+            content = Json.encodeToString(response),
+            status = HttpStatusCode.Created,
+            headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+        )
     }
 
     private fun createClient(mockEngine: MockEngine): ZetaHttpClient =
@@ -257,19 +343,33 @@ class ClientRegistrationHandlerTest {
             .contentNegotiation(true)
             .build(mockEngine)
 
-    private fun createHandler(mock: MockEngine, maxRetries: Int = MAX_RETRIES): ClientRegistrationHandler {
+    private fun createClientKey(kid: String) = Jwk(kid, "EC", "ES256", "sig", "P-256", "x", "y")
+
+    private fun createHandler(
+        mock: MockEngine,
+        clientKeyKid: String = CURRENT_KID,
+    ): ClientRegistrationHandler {
         val client = createClient(mock)
         val api = ClientRegistrationApiImpl(client)
-        val tpm = FakeTpmProvider(false)
+        val tpm = FakeTpmProvider(false, createClientKey(clientKeyKid))
 
-        return ClientRegistrationHandler("TestClientName", api, tpm, maxRetries)
+        return ClientRegistrationHandler("TestClientName", api, tpm)
     }
 
-    private fun createContext(): FlowContext = FlowContextImpl(ResourceScope("test", listOf("test")), FakeForwardingClient(), InMemoryStorage(), configurationStorage = FakeConfigurationStorage())
+    private fun createContext(registrationEndpoint: String = ""): FlowContext = FlowContextImpl(
+        ResourceScope("test", listOf("test")),
+        FakeForwardingClient(),
+        InMemoryStorage(),
+        configurationStorage = FakeConfigurationStorage(registrationEndpoint),
+    )
 
-    private class FakeTpmProvider(override val isHardwareBacked: Boolean) : TpmProvider {
+    private class FakeTpmProvider(
+        private val hardwareBacked: Boolean,
+        private val clientKey: Jwk = Jwk("", "", "", "", "", "", ""),
+    ) : TpmProvider {
+        override suspend fun isHardwareBacked(): Boolean = hardwareBacked
         override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut {
-            return PublicKeyOut(byteArrayOf(1), Jwk("", "", "", "", "", "", ""))
+            return PublicKeyOut(byteArrayOf(1), clientKey)
         }
 
         override suspend fun generateDpopKey(): PublicKeyOut {
@@ -313,12 +413,22 @@ class ClientRegistrationHandlerTest {
         }
     }
 
-    private class FakeConfigurationStorage : ConfigurationStorage {
-        override suspend fun getProtectedResource(): ProtectedResourceMetadata? {
+    private class FakeConfigurationStorage(
+        private val registrationEndpointValue: String = "",
+    ) : ConfigurationStorage {
+        override suspend fun getProtectedResource(name: String): ProtectedResourceMetadata? {
             error("not in scope of the test")
         }
 
-        override suspend fun saveProtectedResource(protectedRes: String): ProtectedResourceMetadata {
+        override suspend fun getProtectedResourceETag(name: String): String? {
+            error("not in scope of the test")
+        }
+
+        override suspend fun saveProtectedResource(protectedRes: String, name: String, maxAgeSeconds: Long?, eTag: String?): ProtectedResourceMetadata {
+            error("not in scope of the test")
+        }
+
+        override suspend fun touchProtectedResource(name: String, maxAgeSeconds: Long?, eTag: String?) {
             error("not in scope of the test")
         }
 
@@ -343,8 +453,20 @@ class ClientRegistrationHandlerTest {
                 serviceDocumentation = "",
                 uiLocalesSupported = listOf(""),
                 codeChallengeMethodsSupported = listOf(""),
-                registrationEndpoint = "",
+                registrationEndpoint = registrationEndpointValue,
             )
+        }
+
+        override suspend fun getAuthServerETag(authFqdn: String): String? {
+            error("not in scope of the test")
+        }
+
+        override suspend fun saveAuthServer(metadata: AuthorizationServerMetadata, maxAgeSeconds: Long?, eTag: String?): AuthorizationServerMetadata {
+            error("not in scope of the test")
+        }
+
+        override suspend fun touchAuthServer(authFqdn: String, maxAgeSeconds: Long?, eTag: String?) {
+            error("not in scope of the test")
         }
 
         override suspend fun linkResourceToAuthorizationServer(authServerMetadata: AuthorizationServerMetadata) {
@@ -356,6 +478,10 @@ class ClientRegistrationHandlerTest {
         }
 
         override suspend fun clear() {
+            error("not in scope of the test")
+        }
+
+        override suspend fun invalidateDiscovery() {
             error("not in scope of the test")
         }
     }
@@ -389,7 +515,7 @@ class ConfigurationHandlerTest {
             getDummyProtectedResourceObject(resource, listOf("https://auth.example.com"))
         val ctx = getDummyFlowContext()
         val authServer = getDummyAuthServerObject(resource)
-        ctx.configurationStorage.saveProtectedResource(Json.encodeToString(protectedResourceMetadata))
+        ctx.configurationStorage.saveProtectedResource(Json.encodeToString(protectedResourceMetadata), maxAgeSeconds = 10)
         ctx.configurationStorage.linkResourceToAuthorizationServer(authServer)
         val h = ConfigurationHandler(FakeApi(), FakeValidator())
 
@@ -412,7 +538,7 @@ class ConfigurationHandlerTest {
 
         val h = ConfigurationHandler(api, FakeValidator())
         val ctx = getDummyFlowContext()
-        ctx.configurationStorage.saveProtectedResource(Json.encodeToString(protectedResourceMetadata))
+        ctx.configurationStorage.saveProtectedResource(Json.encodeToString(protectedResourceMetadata), maxAgeSeconds = 10)
 
         // Act
         val result = h.handle(FlowNeed.ConfigurationFiles, ctx)
@@ -434,6 +560,7 @@ class ConfigurationHandlerTest {
 
         val h = ConfigurationHandler(api, FakeValidator())
         val ctx = getDummyFlowContext()
+        ctx.configurationStorage.saveAuthServer(asMetadata, maxAgeSeconds = null)
         ctx.configurationStorage.linkResourceToAuthorizationServer(asMetadata)
 
         // Act

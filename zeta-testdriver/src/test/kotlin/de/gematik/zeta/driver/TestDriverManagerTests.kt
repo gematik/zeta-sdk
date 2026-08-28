@@ -146,6 +146,36 @@ class TestDriverManagerTest {
     }
 
     @Test
+    fun notifications_returnsClient_whenNotificationsAreEnabled() {
+        // Act
+        val client = manager.notifications()
+
+        // Assert: NotificationConfig() is wired into newSdk, so the lazy client is available
+        // (discovery/network happens only on first NS call, not here).
+        assertNotNull(client)
+    }
+
+    @Test
+    fun notifications_followsRebuiltSdk_afterConfigure() {
+        // Arrange
+        val before = manager.notifications()
+
+        // Act
+        manager.configure(
+            ConfigureRequest(
+                resource = "https://new.example.com",
+                disableTlsVerification = true,
+                caCertificatePem = "",
+            ),
+        )
+        val after = manager.notifications()
+
+        // Assert: rebuildClient() produces a fresh SDK, hence a fresh notification client
+        assertNotNull(after)
+        assertNotSame(before, after)
+    }
+
+    @Test
     fun configure_updatesDisableTlsVerification_whenProvided() {
         // Arrange
         val request = ConfigureRequest(
@@ -211,6 +241,20 @@ class TestDriverManagerTest {
         // Assert
         assertNotSame(oldSdk, manager.sdk)
         assertNotSame(oldHttpClient, manager.httpClient)
+    }
+
+    @Test
+    fun setKvnr_updatesConfigAndRebuildsClient() {
+        // Arrange
+        val oldSdk = manager.sdk
+
+        // Act
+        manager.setKvnrEmail("X110411675", "test@mail.com")
+
+        // Assert
+        assertEquals("X110411675", manager.config.oidcTestKvnr)
+        assertEquals("test@mail.com", manager.config.oidcBindingEmail)
+        assertNotSame(oldSdk, manager.sdk)
     }
 
     @Test

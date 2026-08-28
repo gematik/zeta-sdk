@@ -99,7 +99,8 @@ class FlowOrchestrator(
     }
 
     class RetryState {
-        var hasAttemptedStepUp: Boolean = false
+        var stepUpAttempts: Int = 0
+        var hasAttemptedDiscoveryRefresh: Boolean = false
     }
 
     private suspend fun executePrerequisites(req: HttpRequestBuilder, ctx: FlowContext): HttpResponse? {

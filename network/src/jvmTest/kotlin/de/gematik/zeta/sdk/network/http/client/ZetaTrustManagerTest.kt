@@ -26,7 +26,6 @@ package de.gematik.zeta.sdk.network.http.client
 
 import de.gematik.zeta.sdk.crypto.OcspRequestData
 import de.gematik.zeta.sdk.crypto.RevocationHandler
-import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaTrustManager
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import io.ktor.client.HttpClient
@@ -72,6 +71,7 @@ import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
 
+@Suppress("FunctionNaming")
 class ZetaTrustManagerTest {
 
     companion object {
@@ -105,7 +105,14 @@ class ZetaTrustManagerTest {
     private fun buildCaCert(): X509Certificate {
         val (start, end) = validityWindow()
         return JcaX509CertificateConverter().setProvider("BC").getCertificate(
-            JcaX509v3CertificateBuilder(caName, BigInteger.valueOf(99), start, end, caName, caKeyPair.public)
+            JcaX509v3CertificateBuilder(
+                caName,
+                BigInteger.valueOf(99),
+                start,
+                end,
+                caName,
+                caKeyPair.public,
+            )
                 .build(caSigner),
         )
     }
@@ -126,7 +133,14 @@ class ZetaTrustManagerTest {
     private fun buildCertWithoutSan(serial: Long = 2L): X509Certificate {
         val (start, end) = validityWindow()
         return JcaX509CertificateConverter().setProvider("BC").getCertificate(
-            JcaX509v3CertificateBuilder(caName, BigInteger.valueOf(serial), start, end, X500Name("CN=NoSan"), caKeyPair.public)
+            JcaX509v3CertificateBuilder(
+                caName,
+                BigInteger.valueOf(serial),
+                start,
+                end,
+                X500Name("CN=NoSan"),
+                caKeyPair.public,
+            )
                 .build(caSigner),
         )
     }
@@ -135,7 +149,14 @@ class ZetaTrustManagerTest {
         val pastStart = Date(now.time - 2 * 86_400_000L)
         val pastEnd = Date(now.time - 86_400_000L)
         return JcaX509CertificateConverter().setProvider("BC").getCertificate(
-            JcaX509v3CertificateBuilder(caName, BigInteger.valueOf(3), pastStart, pastEnd, X500Name("CN=Expired"), caKeyPair.public)
+            JcaX509v3CertificateBuilder(
+                caName,
+                BigInteger.valueOf(3),
+                pastStart,
+                pastEnd,
+                X500Name("CN=Expired"),
+                caKeyPair.public,
+            )
                 .build(caSigner),
         )
     }
@@ -147,7 +168,14 @@ class ZetaTrustManagerTest {
         val weakSigner = JcaContentSignerBuilder("SHA1WithECDSA").setProvider("BC").build(weakKeyPair.private)
         val (start, end) = validityWindow()
         return JcaX509CertificateConverter().setProvider("BC").getCertificate(
-            JcaX509v3CertificateBuilder(caName, BigInteger.valueOf(4), start, end, X500Name("CN=Weak"), weakKeyPair.public)
+            JcaX509v3CertificateBuilder(
+                caName,
+                BigInteger.valueOf(4),
+                start,
+                end,
+                X500Name("CN=Weak"),
+                weakKeyPair.public,
+            )
                 .build(weakSigner),
         )
     }
@@ -171,9 +199,12 @@ class ZetaTrustManagerTest {
             every { engine.handshakeSession } returns buildExtendedSession(peerHost, staple)
         }
 
-    private fun buildRevocationChecker(handler: RevocationHandler, httpClient: HttpClient = HttpClient(MockEngine { error("unexpected network call: ${it.url}") })): RevocationChecker =
+    private fun buildRevocationChecker(handler: RevocationHandler, httpClient: HttpClient = HttpClient(MockEngine.Companion { error("unexpected network call: ${it.url}") })): RevocationChecker =
         RevocationChecker(
-            storage = RevocationStorage(InMemoryStorage(), ResourceScope("https://localhost", emptyList())),
+            storage = RevocationStorage(
+                InMemoryStorage(),
+                ResourceScope("https://localhost", emptyList()),
+            ),
             httpClient = httpClient,
             handler = handler,
         )
@@ -223,12 +254,21 @@ class ZetaTrustManagerTest {
         val ex = assertFailsWith<CertificateException> {
             buildManager().checkServerTrusted(arrayOf(buildExpiredCert()), "RSA")
         }
-        assertEquals(ex.message?.contains("gematik cert validation failed"), true, "Expected gematik prefix in: ${ex.message}")
+        assertEquals(
+            ex.message?.contains("gematik cert validation failed"),
+            true,
+            "Expected gematik prefix in: ${ex.message}",
+        )
     }
 
     @Test
     fun checkServerTrusted_propagatesCertificateException_whenDelegateThrows() {
-        every { mockDelegate.checkServerTrusted(any(), any()) } throws CertificateException("untrusted root")
+        every {
+            mockDelegate.checkServerTrusted(
+                any(),
+                any(),
+            )
+        } throws CertificateException("untrusted root")
         assertFailsWith<CertificateException> {
             buildManager().checkServerTrusted(arrayOf(buildValidCert()), "RSA")
         }
@@ -341,12 +381,18 @@ class ZetaTrustManagerTest {
         coEvery { handler.prepareOcspRequest(any(), any()) } returns OcspRequestData(
             "https://ocsp.example.com", byteArrayOf(1),
         )
-        every { handler.getNextUpdateEpochSeconds(any(), any(), any()) } returns Clock.System.now().epochSeconds + 3600
+        every {
+            handler.getNextUpdateEpochSeconds(
+                any(),
+                any(),
+                any(),
+            )
+        } returns Clock.System.now().epochSeconds + 3600
         every { handler.validate(any(), any(), any()) } returns Unit
 
         val ocspResponseBytes = ByteArray(64) { it.toByte() }
         val httpClient = HttpClient(
-            MockEngine { _ ->
+            MockEngine.Companion { _ ->
                 respond(
                     content = ocspResponseBytes,
                     status = HttpStatusCode.OK,
@@ -381,22 +427,29 @@ class ZetaTrustManagerTest {
 
     @Test
     @Ignore // only for local tests
-    fun checkServerTrusted_socket_throwsCertificateException_whenRevocationCheckExceedsTimeout() = runTest {
-        val handler = mockk<RevocationHandler>()
-        every { handler.getNextUpdateEpochSeconds(any(), any(), any()) } returns Clock.System.now().epochSeconds + 3600
-        coEvery { handler.validate(any(), any(), any()) } coAnswers {
-            delay(10_000.milliseconds)
-            error("should never resolve")
-        }
-        val checker = buildRevocationChecker(handler)
+    fun checkServerTrusted_socket_throwsCertificateException_whenRevocationCheckExceedsTimeout() =
+        runTest {
+            val handler = mockk<RevocationHandler>()
+            every {
+                handler.getNextUpdateEpochSeconds(
+                    any(),
+                    any(),
+                    any(),
+                )
+            } returns Clock.System.now().epochSeconds + 3600
+            coEvery { handler.validate(any(), any(), any()) } coAnswers {
+                delay(10_000.milliseconds)
+                error("should never resolve")
+            }
+            val checker = buildRevocationChecker(handler)
 
-        val chain = arrayOf(buildValidCert(), buildCaCert())
-        val socket = buildSocket(peerHost = "valid.example.com", staple = byteArrayOf(1))
+            val chain = arrayOf(buildValidCert(), buildCaCert())
+            val socket = buildSocket(peerHost = "valid.example.com", staple = byteArrayOf(1))
 
-        assertFailsWith<CertificateException> {
-            buildManager(revocationChecker = checker).checkServerTrusted(chain, "RSA", socket)
+            assertFailsWith<CertificateException> {
+                buildManager(revocationChecker = checker).checkServerTrusted(chain, "RSA", socket)
+            }
         }
-    }
 
     @Test
     fun checkServerTrusted_socket_doesNotThrowForRevocation_whenNoCheckerConfigured() {

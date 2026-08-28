@@ -36,6 +36,8 @@ import de.gematik.zeta.sdk.authentication.smcb.CustomSmcbTokenProvider;
 import de.gematik.zeta.sdk.network.http.client.HttpClientExtension;
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient;
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder;
+import de.gematik.zeta.sdk.notifications.NotificationConfig;
+import de.gematik.zeta.sdk.notifications.RateLimitRetryPolicy;
 import de.gematik.zeta.sdk.storage.InMemoryStorage;
 import de.gematik.zeta.sdk.storage.StorageConfig;
 import io.ktor.client.plugins.logging.LogLevel;
@@ -141,7 +143,7 @@ public class Main {
             getFirstResourceUrl(props),
             new BuildConfig(
                 "ZETA-Test-Client",
-                "1.0.0",
+                "1.3.0",
                 "sdk-client",
                 new StorageConfig.Custom(new InMemoryStorage()),
                 new TpmConfig() {
@@ -162,7 +164,11 @@ public class Main {
                     .logging(LogLevel.ALL),
                 null,
                 null,
-                null
+                new NotificationConfig(
+                    "notification-service",
+                    "/push/v1",
+                    new RateLimitRetryPolicy(2, 500L)
+                )
             ));
 
         var status = ZetaSdkClientExtension.status(sdkClient);

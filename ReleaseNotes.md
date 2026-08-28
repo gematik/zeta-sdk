@@ -1,35 +1,106 @@
 
 # RELEASE NOTES
 
-## Version: v1.2.5
+## Version: v1.3.0
 
 This version implements the ZETA protocol for the ZETA client SDK.
 
-It provides SDK bindings for kotlin (as original implementation), Java, and C++.
+It provides SDK bindings for kotlin (as original implementation), Java, C++, and C#
 
 ### Included Features:
 
 #### General Protocol:
 
+The implementation covers two main use cases, with a large overlap. The general functions are:
+
 - Discovery of server parameters via .well-known files
 - Software-based Client Attestation
 - DPoP token generation
 - Client Registration
-- SM(C)-B Token generation and use
 - Access Token handling
 - ASL protocol implementation (messages 1-4 as well as payload encryption/decryption)
 - Web Sockets
 
+Specifically for practitioner-side implementations ("Stufe 1"), the following features are implemented:
+
+- SM(C)-B Token generation and use
+- Support for stationary clients (see below)
+
+For insurant-side implementations ("Stufe 2"), the following features are implemented as preview:
+
+- Dynamic Client Registration (DCR) using e-Mail OTP identity verification
+- OIDC-based login using a SekIDP
+- Support for mobile clients (see below)
+
 #### Clients:
 
-- kotlin multiplatform based client and SDK implementation
-- testdriver client as container image to use as a proxy for a resource server in test setups
-- demo client in kotlin to manually test against the test Fachdienst (resource server)
+This section has the available client implementations, all based on the SDK:
+
+- kotlin multiplatform based SDK implementation
+
+The other clients use this SDK and show how to integrate the SDK into the various, supported
+runtime environments.
+
+##### Test clients
+- testdriver client as container image to use as a proxy for a resource server in test setups, using the JDK-based runtime.
+- nativedriver client as container image to use as a proxy for a resource server in test setups, using the native build runtime.
+- kotlin-based demo client to manually test against the test Fachdienst (resource server)
+
+##### Stationary clients:
 - Java-client example for how to integrate and use the SDK in a Java application
 - C++ client build
 - C# client build
 
+##### Mobile clients:
+- Demo client app for Android
+- Demo client app for iOS
+
 ### Known issues:
+
+- Android devices currently supported from API >= 37 (due to change in Android crypto API.
+  Will be fixed in the following release)
+- TLS validation is not fully implemented on iOS
+- The SDK does not fully handle paths parts in the AS well-known URL. The AS well-known is defined
+  as on the root path, so this is WONTFIX.
+
+## Changes in 1.3.0 (from 1.2.5)
+
+### New Features
+
+Please note that mobile device features ("Stufe 2") are preview only.
+
+- Support for mobile clients (using software attestation)
+- iOS Mobile demo app (preview)
+- Android Mobile demo app (preview)
+- SDK API extended to include DCR and OIDC callbacks for gathering user e-Mail and One-Time-Password (OTP).
+- SDK API extension to register / unregister for notifications
+- Sample (test-client-) integration with the gematik SekIDP reference implementation, with
+  OIDC handling and buttons to register / unregister for notifications.
+
+Other new features are:
+
+- new version API to return the (hardcoded at build time) client SDK version.
+
+### Behavioural Changes
+
+- ZETAP-1387: Revocation caching configurable
+
+### Bug Fixes
+
+- ANFTI2-781: C# WebSocket WsSession.ReceiveNext doesn't always return the complete message (frame fragmentation fix)
+- ANFTI2-788/-782: regression regarding using handling multiple Guards
+- ANFTI2-810: Implementierung zeta-sdk Client C# .NET 10 - TLSServerVerification
+- ANFTI2-813: extend .gitignore for Windows / Visual Studio builds
+- ANFTI2-843: Fix retry on ASL session expiration
+- ANFTI2-859: Bug bei ASL Retry-Logik sowie ggf. zeta-guard
+- ANFTI2-875: asl_cert_cache Value für zeta storage zu groß
+- OCSP Signature issuer check
+- Netty security update
+- Avoid hardcoding TLS 1.2 in insecure debug SSLContext
+- ZETA Client skips optional refresh attempt after 401/403 from PEP HTTP proxy
+- No service discovery after 404, ETags/If-None-Match caching
+- CVE-2026-8484: Jansi vulnerability fix
+- Bump BouncyCastle to v1.85 to fix vulnerabilities found in v1.84
 
 ## Changes in 1.2.5 (from 1.2.4)
 

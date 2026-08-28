@@ -24,7 +24,6 @@
 
 package de.gematik.zeta.sdk.network.http.client
 
-import de.gematik.zeta.sdk.network.http.client.config.tls.toZetaCertInfo
 import io.mockk.every
 import io.mockk.mockk
 import junit.framework.TestCase.assertTrue

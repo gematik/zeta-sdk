@@ -32,6 +32,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.request
 import io.ktor.client.statement.HttpResponse
+import io.ktor.http.Headers
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLBuilder
 import io.ktor.http.headersOf
@@ -40,6 +41,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 class StatusCodeEvaluatorTest {
 
@@ -70,7 +72,7 @@ class StatusCodeEvaluatorTest {
     }
 
     @Test
-    fun evaluate_returns_perform_authentication_on_401() = runTest {
+    fun evaluate_returns_proceed_on_401_not_from_pep() = runTest {
         // Arrange
         val resp = responseWith(HttpStatusCode.Unauthorized)
 
@@ -78,7 +80,71 @@ class StatusCodeEvaluatorTest {
         val directive = evaluator.evaluate(resp.call, dummyCtx(), FlowOrchestrator.RetryState())
 
         // Assert
+        assertIs<FlowDirective.Proceed>(directive)
+    }
+
+    @Test
+    fun evaluate_returns_perform_authentication_on_401_from_pep() = runTest {
+        // Arrange
+        val resp = responseWith(HttpStatusCode.Unauthorized, pepHeaders())
+
+        // Act
+        val directive = evaluator.evaluate(resp.call, dummyCtx(), FlowOrchestrator.RetryState())
+
+        // Assert
         assertIs<FlowDirective.Perform>(directive)
+        assertEquals(FlowNeed.Authentication, directive.need)
+    }
+
+    @Test
+    fun evaluate_keeps_refresh_token_on_first_401_from_pep() = runTest {
+        // Arrange
+        val ctx = dummyCtx()
+        ctx.authenticationStorage.saveAccessTokens("access", "refresh", 9999L)
+        val resp = responseWith(HttpStatusCode.Unauthorized, pepHeaders())
+        val retryState = FlowOrchestrator.RetryState()
+
+        // Act
+        val directive = evaluator.evaluate(resp.call, ctx, retryState)
+
+        // Assert
+        assertIs<FlowDirective.Perform>(directive)
+        assertEquals(FlowNeed.Authentication, directive.need)
+        assertNull(ctx.authenticationStorage.getAccessToken())
+        assertEquals("refresh", ctx.authenticationStorage.getRefreshToken())
+        assertEquals(1, retryState.stepUpAttempts)
+    }
+
+    @Test
+    fun evaluate_clears_refresh_token_on_second_401_from_pep() = runTest {
+        // Arrange
+        val ctx = dummyCtx()
+        ctx.authenticationStorage.saveAccessTokens("access", "refresh", 9999L)
+        val resp = responseWith(HttpStatusCode.Unauthorized, pepHeaders())
+        val retryState = FlowOrchestrator.RetryState().apply { stepUpAttempts = 1 }
+
+        // Act
+        val directive = evaluator.evaluate(resp.call, ctx, retryState)
+
+        // Assert
+        assertIs<FlowDirective.Perform>(directive)
+        assertEquals(FlowNeed.Authentication, directive.need)
+        assertNull(ctx.authenticationStorage.getRefreshToken())
+        assertEquals(2, retryState.stepUpAttempts)
+    }
+
+    @Test
+    fun evaluate_aborts_on_third_401_from_pep() = runTest {
+        // Arrange
+        val resp = responseWith(HttpStatusCode.Unauthorized, pepHeaders())
+        val retryState = FlowOrchestrator.RetryState().apply { stepUpAttempts = 2 }
+
+        // Act
+        val directive = evaluator.evaluate(resp.call, dummyCtx(), retryState)
+
+        // Assert
+        assertIs<FlowDirective.Abort>(directive)
+        assertIs<ZetaClientError.StepUpFailed>(directive.error)
     }
 
     @Test
@@ -94,7 +160,7 @@ class StatusCodeEvaluatorTest {
     }
 
     @Test
-    fun evaluate_returns_perform_on_403() = runTest {
+    fun evaluate_returns_proceed_on_403_not_from_pep() = runTest {
         // Arrange
         val resp = responseWith(HttpStatusCode.Forbidden)
 
@@ -102,7 +168,23 @@ class StatusCodeEvaluatorTest {
         val directive = evaluator.evaluate(resp.call, dummyCtx(), FlowOrchestrator.RetryState())
 
         // Assert
+        assertIs<FlowDirective.Proceed>(directive)
+    }
+
+    @Test
+    fun evaluate_keeps_refresh_token_on_first_403_from_pep() = runTest {
+        // Arrange
+        val ctx = dummyCtx()
+        ctx.authenticationStorage.saveAccessTokens("access", "refresh", 9999L)
+        val resp = responseWith(HttpStatusCode.Forbidden, pepHeaders())
+
+        // Act
+        val directive = evaluator.evaluate(resp.call, ctx, FlowOrchestrator.RetryState())
+
+        // Assert
         assertIs<FlowDirective.Perform>(directive)
+        assertEquals(FlowNeed.Authentication, directive.need)
+        assertEquals("refresh", ctx.authenticationStorage.getRefreshToken())
     }
 
     @Test
@@ -273,8 +355,10 @@ class StatusCodeEvaluatorTest {
         return FlowContextImpl(ResourceScope("", emptyList()), RequestEvaluatorImplTest.FakeForwardingClient(), storage)
     }
 
-    private suspend fun responseWith(status: HttpStatusCode): HttpResponse {
-        val engine = MockEngine { respond("", status) }
+    private fun pepHeaders() = headersOf(ResponseEvaluator.ZETA_ERROR_ORIGIN, ResponseEvaluator.PEP)
+
+    private suspend fun responseWith(status: HttpStatusCode, headers: Headers = Headers.Empty): HttpResponse {
+        val engine = MockEngine { respond("", status, headers) }
         val client = HttpClient(engine)
         return client.request(
             HttpRequestBuilder().apply {

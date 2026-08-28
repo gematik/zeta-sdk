@@ -25,24 +25,29 @@
 package de.gematik.zeta.client.data.repository
 
 import de.gematik.zeta.client.di.DIContainer
+import de.gematik.zeta.client.di.DIContainer.AUTH_MODE
+import de.gematik.zeta.client.di.DIContainer.DISABLE_SERVER_VALIDATION
+import de.gematik.zeta.sdk.authentication.AuthMode
 
 public interface SettingsRepository {
-    public suspend fun getTlsValidationEnabled(): Boolean
-    public suspend fun setTlsValidationEnabled(enabled: Boolean)
+    public suspend fun getDisableServerValidation(): Boolean
+    public suspend fun setDisableServerValidation(disabled: Boolean)
     public suspend fun getPemFilePath(): String?
     public suspend fun setPemFilePath(path: String?)
+    public suspend fun setAuthMode(mode: AuthMode)
+    public suspend fun getAuthMode(): AuthMode
 }
 
 public class SettingsRepositoryImpl : SettingsRepository {
-
-    private var tlsValidationEnabled: Boolean = true
+    private var tlsValidationDisabled: Boolean = DISABLE_SERVER_VALIDATION
     private var pemFilePath: String? = null
+    private var authMode: AuthMode = AUTH_MODE
 
-    override suspend fun getTlsValidationEnabled(): Boolean = tlsValidationEnabled
+    override suspend fun getDisableServerValidation(): Boolean = tlsValidationDisabled
 
-    override suspend fun setTlsValidationEnabled(enabled: Boolean) {
-        tlsValidationEnabled = enabled
-        DIContainer.httpClientProvider.updateTlsValidation(enabled)
+    override suspend fun setDisableServerValidation(disabled: Boolean) {
+        tlsValidationDisabled = disabled
+        DIContainer.httpClientProvider.updateTlsValidation(disabled)
     }
 
     override suspend fun getPemFilePath(): String? = pemFilePath
@@ -51,4 +56,11 @@ public class SettingsRepositoryImpl : SettingsRepository {
         pemFilePath = path
         DIContainer.httpClientProvider.updateTrustedCa(path)
     }
+
+    override suspend fun setAuthMode(mode: AuthMode) {
+        authMode = mode
+        DIContainer.httpClientProvider.setAuthMode(mode)
+    }
+
+    override suspend fun getAuthMode(): AuthMode = authMode
 }

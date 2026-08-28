@@ -27,7 +27,10 @@ package de.gematik.zeta.client.ui.settings
 import com.ensody.reactivestate.ExperimentalReactiveStateApi
 import com.ensody.reactivestate.ReactiveViewModel
 import de.gematik.zeta.client.data.repository.SettingsRepository
+import de.gematik.zeta.client.di.DIContainer
+import de.gematik.zeta.client.di.DIContainer.DISABLE_SERVER_VALIDATION
 import de.gematik.zeta.client.ui.common.mvi.MviState
+import de.gematik.zeta.sdk.authentication.AuthMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,8 +39,9 @@ import kotlinx.coroutines.launch
 
 public sealed interface SettingsState : MviState {
     public data class Result(
-        val tlsValidationEnabled: Boolean,
+        val disableServerValidation: Boolean,
         val pemFilePath: String? = null,
+        val authMode: AuthMode? = null,
     ) : SettingsState
 }
 
@@ -47,23 +51,24 @@ public class SettingsViewModel(
     private val settingsRepository: SettingsRepository,
 ) : ReactiveViewModel(scope) {
     private val _state = MutableStateFlow<SettingsState>(
-        SettingsState.Result(tlsValidationEnabled = true),
+        SettingsState.Result(disableServerValidation = DISABLE_SERVER_VALIDATION),
     )
     public val state: StateFlow<SettingsState> = _state.asStateFlow()
 
     public fun loadSettings() {
         scope.launch {
-            val enabled = settingsRepository.getTlsValidationEnabled()
+            val disabled = settingsRepository.getDisableServerValidation()
             val pemPath = settingsRepository.getPemFilePath()
-            _state.value = SettingsState.Result(enabled, pemPath)
+            val authMode = settingsRepository.getAuthMode()
+            _state.value = SettingsState.Result(disableServerValidation = disabled, pemFilePath = pemPath, authMode = authMode)
         }
     }
 
-    public fun setTlsValidationEnabled(enabled: Boolean) {
+    public fun setDisableServerValidation(disabled: Boolean) {
         val current = _state.value as? SettingsState.Result ?: return
-        _state.value = current.copy(tlsValidationEnabled = enabled)
+        _state.value = current.copy(disableServerValidation = disabled)
         scope.launch {
-            settingsRepository.setTlsValidationEnabled(enabled)
+            settingsRepository.setDisableServerValidation(disabled)
         }
     }
 
@@ -72,6 +77,13 @@ public class SettingsViewModel(
         _state.value = current.copy(pemFilePath = path)
         scope.launch {
             settingsRepository.setPemFilePath(path)
+        }
+    }
+
+    public fun setAuthMode(mode: AuthMode) {
+        launch {
+            DIContainer.settingsRepository.setAuthMode(mode)
+            loadSettings()
         }
     }
 }

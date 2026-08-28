@@ -24,11 +24,24 @@
 
 namespace ZetaSdk.Config;
 
+/// <summary>
+/// Registration/token status of a <see cref="ZetaSdk.ZetaClient"/>, as returned
+/// by <see cref="ZetaSdk.ZetaClient.GetStatus"/>.
+/// </summary>
 public enum ZetaSdkStatus
 {
+    /// <summary>The client has not been registered with the authorization server.</summary>
     NotRegistered            = 0,
+
+    /// <summary>The client is registered but holds no valid access or refresh token.</summary>
     RegisteredNoValidTokens  = 1,
+
+    /// <summary>The client holds a valid refresh token but no valid access token.</summary>
     HasRefreshToken          = 2,
+
+    /// <summary>The client holds both a valid access token and a valid refresh token.</summary>
     HasAccessAndRefreshToken = 3,
+
+    /// <summary>The status could not be determined.</summary>
     Unknown                  = -1
 }

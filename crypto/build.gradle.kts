@@ -1,5 +1,6 @@
 import com.ensody.nativebuilds.cinterops
-import de.gematik.zeta.sdk.buildlogic.isJvmEnabled
+import de.gematik.zeta.sdk.buildlogic.isAndroidEnabled
+import de.gematik.zeta.sdk.buildlogic.isIOSEnabled
 import de.gematik.zeta.sdk.buildlogic.isJvmEnabled
 import de.gematik.zeta.sdk.buildlogic.isNativeEnabled
 import de.gematik.zeta.sdk.buildlogic.setupBuildLogic
@@ -27,11 +28,18 @@ setupBuildLogic {
             implementation(libs.cryptography.core)
         }
 
-        if (project.isJvmEnabled) {
+        if (project.isJvmEnabled || project.isAndroidEnabled) {
             sourceSets["jvmCommonMain"].dependencies {
                 api(libs.bcprov.jdk18on)
                 api(libs.bcpkix.jdk18on)
                 implementation(libs.cryptography.provider.jdk)
+            }
+        }
+
+        if (project.isIOSEnabled) {
+            sourceSets.iosMain.dependencies {
+                implementation(libs.cryptography.provider.cryptokit)
+                api(libs.nativebuilds.openssl.libcrypto)
             }
         }
 
@@ -43,7 +51,7 @@ setupBuildLogic {
             }
         }
 
-        sourceSets.commonTest.dependencies {
+        sourceSets["jvmCommonTest"].dependencies {
             implementation(kotlin("test"))
             implementation(libs.coroutines.test)
         }

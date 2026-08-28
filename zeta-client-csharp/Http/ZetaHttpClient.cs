@@ -27,14 +27,25 @@ using ZetaSdk.Native;
 
 namespace ZetaSdk.Http;
 
+/// <summary>Result of a ZETA-authenticated HTTP request.</summary>
 public sealed class ZetaHttpResponse
 {
+    /// <summary>The HTTP status code.</summary>
     public int                                Status    { get; }
+
+    /// <summary>The response body as a string.</summary>
     public string                             Body      { get; }
+
+    /// <summary>The response headers.</summary>
     public IReadOnlyDictionary<string,string> Headers   { get; }
 
+    /// <summary><c>true</c> if <see cref="Status"/> is in the 2xx range.</summary>
     public bool IsSuccess     => Status is >= 200 and < 300;
+
+    /// <summary><c>true</c> if <see cref="Status"/> is in the 4xx range.</summary>
     public bool IsClientError => Status is >= 400 and < 500;
+
+    /// <summary><c>true</c> if <see cref="Status"/> is 500 or above.</summary>
     public bool IsServerError => Status is >= 500;
 
     internal ZetaHttpResponse(int status, string body, IReadOnlyDictionary<string,string> headers)
@@ -44,9 +55,14 @@ public sealed class ZetaHttpResponse
         Headers = headers;
     }
 
+    /// <summary>Returns a short string representation of the response, e.g. <c>[200] {...}</c>.</summary>
     public override string ToString() => $"[{Status}] {Body}";
 }
 
+/// <summary>
+/// Synchronous HTTP client for making ZETA-authenticated requests against the
+/// configured resource server. Obtained via <see cref="ZetaSdk.ZetaClient.CreateHttpClient"/>.
+/// </summary>
 public sealed class ZetaHttpClient : IDisposable
 {
     private readonly IntPtr    _ptr;
@@ -54,30 +70,68 @@ public sealed class ZetaHttpClient : IDisposable
 
     internal ZetaHttpClient(IntPtr ptr) => _ptr = ptr;
 
+    /// <summary>Sends a GET request.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public ZetaHttpResponse Get(string relativeUrl,
         IReadOnlyDictionary<string, string>? headers = null)
         => Execute(relativeUrl, body: null, headers, ZetaSdkNative.ZetaHttpClient_get);
 
+    /// <summary>Sends a POST request.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="body">Optional request body.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public ZetaHttpResponse Post(string relativeUrl, string? body = null,
         IReadOnlyDictionary<string, string>? headers = null)
         => Execute(relativeUrl, body, headers, ZetaSdkNative.ZetaHttpClient_post);
 
+    /// <summary>Sends a PUT request.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="body">Optional request body.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public ZetaHttpResponse Put(string relativeUrl, string? body = null,
         IReadOnlyDictionary<string, string>? headers = null)
         => Execute(relativeUrl, body, headers, ZetaSdkNative.ZetaHttpClient_put);
 
+    /// <summary>Sends a PATCH request.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="body">Optional request body.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public ZetaHttpResponse Patch(string relativeUrl, string? body = null,
         IReadOnlyDictionary<string, string>? headers = null)
         => Execute(relativeUrl, body, headers, ZetaSdkNative.ZetaHttpClient_patch);
 
+    /// <summary>Sends a DELETE request.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public ZetaHttpResponse Delete(string relativeUrl,
         IReadOnlyDictionary<string, string>? headers = null)
         => Execute(relativeUrl, body: null, headers, ZetaSdkNative.ZetaHttpClient_delete);
 
+    /// <summary>Sends a HEAD request.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public ZetaHttpResponse Head(string relativeUrl,
         IReadOnlyDictionary<string, string>? headers = null)
         => Execute(relativeUrl, body: null, headers, ZetaSdkNative.ZetaHttpClient_head);
 
+    /// <summary>Sends an OPTIONS request.</summary>
+    /// <param name="relativeUrl">Path relative to the configured resource base URL.</param>
+    /// <param name="headers">Optional additional request headers.</param>
+    /// <exception cref="ObjectDisposedException">The client has already been disposed.</exception>
+    /// <exception cref="ZetaSdkException">The request failed at the transport level.</exception>
     public ZetaHttpResponse Options(string relativeUrl,
         IReadOnlyDictionary<string, string>? headers = null)
         => Execute(relativeUrl, body: null, headers, ZetaSdkNative.ZetaHttpClient_options);
@@ -138,6 +192,7 @@ public sealed class ZetaHttpClient : IDisposable
         return new ZetaHttpResponse(native.status, body ?? "", headers);
     }
 
+    /// <summary>Releases the underlying native HTTP client.</summary>
     public void Dispose()
     {
         if (_disposed) return;
