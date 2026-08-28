@@ -24,6 +24,27 @@
 
 package de.gematik.zeta.client.config
 
-public actual fun getConfig(key: String): String? {
-    error("$key can not be resolved. Actual not implemented on iOS")
+import platform.Foundation.NSBundle
+import platform.Foundation.NSString
+import platform.Foundation.NSUTF8StringEncoding
+import platform.Foundation.stringWithContentsOfFile
+
+public actual fun getConfig(key: String): String? = IosConfig.get(key)
+
+public object IosConfig {
+    private val values: Map<String, String> by lazy {
+        val path = NSBundle.mainBundle.pathForResource("zeta", ofType = "env")
+            ?: return@lazy emptyMap()
+        val content = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
+            ?: return@lazy emptyMap()
+        content.lines()
+            .filter { it.isNotBlank() && !it.startsWith("#") }
+            .mapNotNull { line ->
+                val parts = line.split("=", limit = 2)
+                if (parts.size == 2) parts[0].trim() to parts[1].trim() else null
+            }
+            .toMap()
+    }
+
+    public fun get(key: String): String? = values[key]
 }

@@ -128,6 +128,7 @@ fun Project.setupBuildLogic(block: Project.() -> Unit) {
                         framework {
                             baseName = XcFrameworkDefaultName
                             binaryOption("bundleVersion", project.version.toString().split("-")[0])
+                            export(project(":zeta-sdk"))
                         }
                     }
                 }

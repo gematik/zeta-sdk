@@ -30,6 +30,7 @@ import de.gematik.zeta.logging.Log
 import de.gematik.zeta.logging.ZetaLogLevel
 import de.gematik.zeta.sdk.ZetaSdkClient
 import de.gematik.zeta.sdk.ZetaSdkClientImpl
+import de.gematik.zeta.sdk.authentication.AuthMode
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.storage.SdkStorage
@@ -73,7 +74,14 @@ public data class SdkInstanceConfig(
     public val disableTlsVerification: Boolean = false,
     public val requiredOid: String = "",
     public val filterHostHeaders: Boolean = true,
+    val authMode: AuthMode = AuthMode.SMB,
+    val oidcBaseUri: String? = null,
+    val oidcIdpIss: String? = null,
+    val oidcIdpAlias: String? = null,
+    val oidcTestKvnr: String? = null,
+    val oidcBindingEmail: String? = null,
 ) {
+
     public companion object Companion {
         public fun fromEnv(): SdkInstanceConfig {
             return SdkInstanceConfig(
@@ -86,6 +94,12 @@ public data class SdkInstanceConfig(
                 poppToken = System.getenv("POPP_TOKEN") ?: "",
                 disableTlsVerification = "true".contentEquals((System.getenv(DISABLE_SERVER_VALIDATION) ?: "").lowercase()),
                 requiredOid = System.getenv("REQUIRED_ROLE_OID") ?: "",
+                oidcIdpIss = System.getenv("OIDC_IDP_ISS") ?: "",
+                oidcIdpAlias = System.getenv("OIDC_IDP_ALIAS") ?: "",
+                oidcBaseUri = System.getenv("OIDC_BASE_URI") ?: "",
+                oidcTestKvnr = System.getenv("OIDC_TEST_KVNR") ?: "",
+                oidcBindingEmail = System.getenv("OIDC_BINDING_EMAIL") ?: "",
+                authMode = parseAuthMode(System.getenv("AUTH_MODE")),
                 filterHostHeaders = "true".equals(System.getenv("FILTER_HOST_HEADERS"), ignoreCase = true),
             )
         }
@@ -115,7 +129,13 @@ public data class SdkInstanceConfig(
                     aslProdEnv = props.getProperty("ASL_PROD_1")?.toBoolean() ?: true,
                     poppToken = props.getProperty("POPP_TOKEN_1") ?: "",
                     disableTlsVerification = props.getProperty("DISABLE_SERVER_VALIDATION_1")?.toBoolean() ?: false,
-                    requiredOid = props.getProperty("REQUIRED_ROLE_OID_1"),
+                    oidcIdpIss = props.getProperty("OIDC_IDP_ISS_1") ?: "",
+                    oidcIdpAlias = props.getProperty("OIDC_IDP_ALIAS_1") ?: "",
+                    oidcBaseUri = props.getProperty("OIDC_BASE_URI_1") ?: "",
+                    oidcTestKvnr = props.getProperty("OIDC_TEST_KVNR_1") ?: "",
+                    oidcBindingEmail = props.getProperty("OIDC_BINDING_EMAIL_1") ?: "",
+                    authMode = parseAuthMode(props.getProperty("AUTH_MODE_1")),
+                    requiredOid = props.getProperty("REQUIRED_ROLE_OID_1") ?: "",
                 )
             } else {
                 Log.i { "Loading test driver configuration from environment variables" }
@@ -132,6 +152,12 @@ internal fun ZetaLogLevel.toKtorLogLevel(): LogLevel = when (this) {
     ZetaLogLevel.ERROR -> LogLevel.NONE
     ZetaLogLevel.NONE -> LogLevel.NONE
 }
+
+private fun parseAuthMode(raw: String?): AuthMode =
+    raw?.let { mode ->
+        runCatching { AuthMode.valueOf(mode.uppercase()) }
+            .getOrElse { error("Unknown AUTH_MODE: '$mode' (expected 'SMB' or 'OIDC')") }
+    } ?: AuthMode.SMB
 
 @Serializable
 public data class CreateInstancesRequest(

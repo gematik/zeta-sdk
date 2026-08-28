@@ -29,8 +29,12 @@ import com.russhwolf.settings.RegistrySettings
 import de.gematik.zeta.sdk.crypto.AesGcmCipherImpl
 
 @OptIn(ExperimentalSettingsImplementation::class)
-actual fun provideSdkStorage(config: StorageConfig.Default): SdkStorage =
-    SecureSdkStorage(
-        settings = EncryptedSettings(RegistrySettings("SOFTWARE\\de.gematik.zeta.sdk"), AesGcmCipherImpl(), config.aesB64Key),
+actual fun provideSdkStorage(config: StorageConfig.Default): SdkStorage {
+    val base = RegistrySettings("SOFTWARE\\de.gematik.zeta.sdk")
+    val chunkedBase = ChunkedSettings(base)
+    return SecureSdkStorage(
+        settings = EncryptedSettings(chunkedBase, AesGcmCipherImpl(), config.aesB64Key),
         secrets = null,
+        namespace = config.namespace,
     )
+}

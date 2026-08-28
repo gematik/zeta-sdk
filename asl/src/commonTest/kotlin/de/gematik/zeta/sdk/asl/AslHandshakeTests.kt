@@ -521,7 +521,8 @@ class AslHandshakeStateTest {
         expectedTranscriptHash = ByteArray(0),
     )
 
-    class FakeTpmProvider(override val isHardwareBacked: Boolean) : TpmProvider {
+    class FakeTpmProvider(private val hardwareBacked: Boolean) : TpmProvider {
+        override suspend fun isHardwareBacked(): Boolean = hardwareBacked
         override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut {
             error("not in scope of the test")
         }

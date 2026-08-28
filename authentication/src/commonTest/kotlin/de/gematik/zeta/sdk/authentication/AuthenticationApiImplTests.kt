@@ -25,13 +25,18 @@
 package de.gematik.zeta.sdk.authentication
 
 import de.gematik.zeta.sdk.authentication.model.AccessTokenRequest
+import de.gematik.zeta.sdk.authentication.oidc.BindEmailRequest
+import de.gematik.zeta.sdk.authentication.oidc.OidcTokenIssuance
+import de.gematik.zeta.sdk.authentication.oidc.OtpVerifyRequest
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteReadPacket
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.utils.io.readText
 import kotlinx.coroutines.test.runTest
 import kotlin.io.encoding.Base64
 import kotlin.test.Test
@@ -221,7 +226,6 @@ class AuthenticationApiImplTests {
             )
         }
         assertIs<AuthenticationException>(exception)
-        // Should not be a subclass
         assertEquals(AuthenticationException::class, exception::class)
     }
 
@@ -262,6 +266,407 @@ class AuthenticationApiImplTests {
         assertEquals("", response.refreshToken)
     }
 
+    @Test
+    fun requestOidcToken_returnsOidcAccessTokenResponseOnSuccess() = runTest {
+        // Arrange
+        val engine = MockEngine {
+            respond(
+                content = validOidcTokenResponseBody,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act
+        val response = api.requestOidcToken(
+            fromEndpoint = "https://example.com/token",
+            accessTokenRequest = createOidcTokenRequest(),
+            dpopToken = "dpop-token",
+        )
+
+        // Assert
+        assertEquals("oidc-access-token", response.accessToken)
+        assertEquals(300, response.expiresIn)
+        assertEquals("DPoP", response.tokenType)
+        assertEquals("openid zeta:email-verify", response.scope)
+        assertEquals("oidc-refresh-token", response.refreshToken)
+        assertEquals("t*@e*.com", response.emailHint)
+        assertEquals("verify_otp", response.bindingMode)
+    }
+
+    @Test
+    fun requestOidcToken_handlesResponseWithMissingOptionalFields() = runTest {
+        // Arrange
+        val minimalResponse = """
+            {
+                "access_token": "token",
+                "expires_in": 60,
+                "token_type": "DPoP",
+                "scope": "openid"
+            }
+        """.trimIndent()
+        val engine = MockEngine {
+            respond(
+                content = minimalResponse,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act
+        val response = api.requestOidcToken(
+            fromEndpoint = "https://example.com/token",
+            accessTokenRequest = createOidcTokenRequest(),
+            dpopToken = "dpop-token",
+        )
+
+        // Assert
+        assertEquals("token", response.accessToken)
+        assertEquals(60, response.expiresIn)
+        assertEquals(null, response.refreshExpires)
+        assertEquals(null, response.refreshToken)
+        assertEquals(null, response.emailHint)
+        assertEquals(null, response.bindingMode)
+    }
+
+    @Test
+    fun requestOidcToken_throwsRecoverableExceptionOnUnauthorized() = runTest {
+        // Arrange
+        val engine = MockEngine {
+            respond(
+                content = """{"error":"invalid_grant"}""",
+                status = HttpStatusCode.Unauthorized,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act & Assert
+        assertFailsWith<RecoverableAuthenticationException> {
+            api.requestOidcToken(
+                fromEndpoint = "https://example.com/token",
+                accessTokenRequest = createOidcTokenRequest(),
+                dpopToken = "dpop-token",
+            )
+        }
+    }
+
+    @Test
+    fun requestOidcToken_throwsInvalidClientExceptionOnUnauthorizedWithInvalidClientBody() = runTest {
+        // Arrange
+        val engine = MockEngine {
+            respond(
+                content = """{"error":"invalid_client","error_description":"client_not_found"}""",
+                status = HttpStatusCode.Unauthorized,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act & Assert
+        assertFailsWith<InvalidClientException> {
+            api.requestOidcToken(
+                fromEndpoint = "https://example.com/token",
+                accessTokenRequest = createOidcTokenRequest(),
+                dpopToken = "dpop-token",
+            )
+        }
+    }
+
+    @Test
+    fun postBindEmail_returnsBindEmailResponseOnAccepted() = runTest {
+        // Arrange
+        val engine = MockEngine {
+            respond(
+                content = """{"challenge_type":"email_otp","email_hint":"t*@e*.com"}""",
+                status = HttpStatusCode.Accepted,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act
+        val response = api.postBindEmail(
+            endpoint = "https://example.com/zeta/identity/bind-email",
+            accessToken = "binding-token",
+            dpop = "dpop-token",
+            body = BindEmailRequest(email = "test@example.com"),
+        )
+
+        // Assert
+        assertEquals("email_otp", response.challengeType)
+        assertEquals("t*@e*.com", response.emailHint)
+    }
+
+    @Test
+    fun postBindEmail_sendsEmailAsFormParameter_whenPresent() = runTest {
+        // Arrange
+        var capturedBody: String? = null
+        val engine = MockEngine { request ->
+            capturedBody = request.body.toByteReadPacket().readText()
+            respond(
+                content = """{"challenge_type":"email_otp"}""",
+                status = HttpStatusCode.Accepted,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act
+        api.postBindEmail(
+            endpoint = "https://example.com/zeta/identity/bind-email",
+            accessToken = "binding-token",
+            dpop = "dpop-token",
+            body = BindEmailRequest(email = "test@example.com"),
+        )
+
+        // Assert
+        assertEquals("email=test%40example.com", capturedBody)
+    }
+
+    @Test
+    fun postBindEmail_sendsCorrectAuthorizationAndDpopHeaders() = runTest {
+        // Arrange
+        var capturedAuth: String? = null
+        var capturedDpop: String? = null
+        val engine = MockEngine { request ->
+            capturedAuth = request.headers[HttpHeaders.Authorization]
+            capturedDpop = request.headers["DPoP"]
+            respond(
+                content = """{"challenge_type":"email_otp"}""",
+                status = HttpStatusCode.Accepted,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act
+        api.postBindEmail(
+            endpoint = "https://example.com/zeta/identity/bind-email",
+            accessToken = "binding-token",
+            dpop = "dpop-value",
+            body = BindEmailRequest(email = "test@example.com"),
+        )
+
+        // Assert
+        assertEquals("DPoP binding-token", capturedAuth)
+        assertEquals("dpop-value", capturedDpop)
+    }
+
+    @Test
+    fun postBindEmail_throwsNonRecoverableExceptionOnForbidden() = runTest {
+        // Arrange
+        val engine = MockEngine {
+            respond(
+                content = "forbidden",
+                status = HttpStatusCode.Forbidden,
+                headers = headersOf(HttpHeaders.ContentType, "text/plain"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act & Assert
+        assertFailsWith<NonRecoverableAuthenticationException> {
+            api.postBindEmail(
+                endpoint = "https://example.com/zeta/identity/bind-email",
+                accessToken = "binding-token",
+                dpop = "dpop-token",
+                body = BindEmailRequest(email = "test@example.com"),
+            )
+        }
+    }
+
+    @Test
+    fun postBindEmail_throwsAuthenticationExceptionOnUnexpectedSuccessStatus() = runTest {
+        val engine = MockEngine {
+            respond(
+                content = """{"challenge_type":"email_otp"}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act & Assert
+        assertFailsWith<AuthenticationException> {
+            api.postBindEmail(
+                endpoint = "https://example.com/zeta/identity/bind-email",
+                accessToken = "binding-token",
+                dpop = "dpop-token",
+                body = BindEmailRequest(email = "test@example.com"),
+            )
+        }
+    }
+
+    @Test
+    fun postResendOtp_returnsBindEmailResponseOnAccepted() = runTest {
+        // Arrange
+        val engine = MockEngine {
+            respond(
+                content = """{"challenge_type":"email_otp","email_hint":"t*@e*.com"}""",
+                status = HttpStatusCode.Accepted,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act
+        val response = api.postResendOtp(
+            endpoint = "https://example.com/zeta/identity/bind-email/resend",
+            accessToken = "binding-token",
+            dpop = "dpop-token",
+        )
+
+        // Assert
+        assertEquals("email_otp", response.challengeType)
+        assertEquals("t*@e*.com", response.emailHint)
+    }
+
+    @Test
+    fun postResendOtp_sendsEmptyBody() = runTest {
+        // Arrange
+        var capturedBody: String? = null
+        val engine = MockEngine { request ->
+            capturedBody = request.body.toByteReadPacket().readText()
+            respond(
+                content = """{"challenge_type":"email_otp"}""",
+                status = HttpStatusCode.Accepted,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act
+        api.postResendOtp(
+            endpoint = "https://example.com/zeta/identity/bind-email/resend",
+            accessToken = "binding-token",
+            dpop = "dpop-token",
+        )
+
+        // Assert
+        assertEquals("", capturedBody)
+    }
+
+    @Test
+    fun postResendOtp_throwsRecoverableExceptionOnUnauthorized() = runTest {
+        // Arrange
+        val engine = MockEngine {
+            respond(
+                content = """{"status":"no_pending_challenge"}""",
+                status = HttpStatusCode.Unauthorized,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act & Assert
+        assertFailsWith<RecoverableAuthenticationException> {
+            api.postResendOtp(
+                endpoint = "https://example.com/zeta/identity/bind-email/resend",
+                accessToken = "binding-token",
+                dpop = "dpop-token",
+            )
+        }
+    }
+
+    @Test
+    fun postVerifyOtp_returnsVerifyOtpResponseOnSuccess() = runTest {
+        // Arrange
+        val engine = MockEngine {
+            respond(
+                content = """{"status":"bound"}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act
+        val response = api.postVerifyOtp(
+            endpoint = "https://example.com/zeta/identity/bind-email/verify",
+            accessToken = "binding-token",
+            dpop = "dpop-token",
+            body = OtpVerifyRequest(otp = "123456"),
+        )
+
+        // Assert
+        assertEquals("bound", response.status)
+    }
+
+    @Test
+    fun postVerifyOtp_sendsCodeAsFormParameter() = runTest {
+        // Arrange
+        var capturedBody: String? = null
+        val engine = MockEngine { request ->
+            capturedBody = request.body.toByteReadPacket().readText()
+            respond(
+                content = """{"status":"bound"}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act
+        api.postVerifyOtp(
+            endpoint = "https://example.com/zeta/identity/bind-email/verify",
+            accessToken = "binding-token",
+            dpop = "dpop-token",
+            body = OtpVerifyRequest(otp = "123456"),
+        )
+
+        // Assert
+        assertEquals("code=123456", capturedBody)
+    }
+
+    @Test
+    fun postVerifyOtp_throwsRecoverableExceptionOnUnauthorized_forInvalidOtp() = runTest {
+        // Arrange: this is the path completeEmailBinding() relies on to retry with rejected=true
+        val engine = MockEngine {
+            respond(
+                content = """{"error":"invalid_otp"}""",
+                status = HttpStatusCode.Unauthorized,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act & Assert
+        assertFailsWith<RecoverableAuthenticationException> {
+            api.postVerifyOtp(
+                endpoint = "https://example.com/zeta/identity/bind-email/verify",
+                accessToken = "binding-token",
+                dpop = "dpop-token",
+                body = OtpVerifyRequest(otp = "wrong-code"),
+            )
+        }
+    }
+
+    @Test
+    fun postVerifyOtp_throwsNonRecoverableExceptionOnForbidden() = runTest {
+        // Arrange
+        val engine = MockEngine {
+            respond(
+                content = "forbidden",
+                status = HttpStatusCode.Forbidden,
+                headers = headersOf(HttpHeaders.ContentType, "text/plain"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine))
+
+        // Act & Assert
+        assertFailsWith<NonRecoverableAuthenticationException> {
+            api.postVerifyOtp(
+                endpoint = "https://example.com/zeta/identity/bind-email/verify",
+                accessToken = "binding-token",
+                dpop = "dpop-token",
+                body = OtpVerifyRequest(otp = "123456"),
+            )
+        }
+    }
+
     private fun createClient(engine: MockEngine): ZetaHttpClient {
         return ZetaHttpClient(HttpClient(engine))
     }
@@ -278,6 +683,17 @@ class AuthenticationApiImplTests {
         audience = "audience",
     )
 
+    private fun createOidcTokenRequest() = OidcTokenIssuance.OidcTokenRequest(
+        grantType = "authorization_code",
+        clientId = "test-client",
+        requestedTokenType = "urn:ietf:params:oauth:token-type:refresh_token",
+        clientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        clientAssertion = "client-assertion-jwt",
+        scope = "openid",
+        code = "auth-code",
+        codeVerifier = "verifier",
+    )
+
     private val validTokenResponseBody = """
         {
             "access_token": "test-access-token",
@@ -289,6 +705,18 @@ class AuthenticationApiImplTests {
             "scope": "openid",
             "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
             "refresh_token": "test-refresh-token"
+        }
+    """.trimIndent()
+
+    private val validOidcTokenResponseBody = """
+        {
+            "access_token": "oidc-access-token",
+            "expires_in": 300,
+            "token_type": "DPoP",
+            "scope": "openid zeta:email-verify",
+            "refresh_token": "oidc-refresh-token",
+            "email_hint": "t*@e*.com",
+            "binding_mode": "verify_otp"
         }
     """.trimIndent()
 }

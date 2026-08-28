@@ -35,13 +35,15 @@ actual fun provideSdkStorage(config: StorageConfig.Default): SdkStorage {
     val preferences = Preferences.userRoot()
     val base = PreferencesSettings(preferences)
 
+    val chunkedBase = ChunkedSettings(base)
+
     val secureSettings = EncryptedSettings(
-        delegate = base,
+        delegate = chunkedBase,
         cipher = AesGcmCipherImpl(),
         cipherB64Key = config.aesB64Key,
     )
-
     val secretStore: SecretStore? = createOsSecretStore(service = "de.gematik.zeta.sdk")
+
     return SecureSdkStorage(settings = secureSettings, secrets = secretStore, namespace = config.namespace)
 }
 
@@ -71,7 +73,7 @@ class KeyringSecretStore(private val service: String, private val keyring: Keyri
             Log.d { "Retrieved secret found for: $name" }
             secret
         } catch (_: PasswordAccessException) {
-            Log.e { "No secret found for: $name" }
+            Log.d { "No secret found for: $name" }
             null
         } catch (ex: Exception) {
             Log.e(ex) { "Failed to get secret: $name" }

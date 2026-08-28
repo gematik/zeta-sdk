@@ -32,3 +32,6 @@ public data class ConfigureRequest(
     val resource: String,
     val disableTlsVerification: Boolean,
 )
+
+@Serializable
+public data class KvnrEmailRequest(val kvnr: String, val email: String)

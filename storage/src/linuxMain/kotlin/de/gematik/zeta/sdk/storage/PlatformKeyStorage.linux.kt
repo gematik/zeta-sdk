@@ -36,15 +36,22 @@ import okio.use
 import platform.posix.getenv
 
 @OptIn(ExperimentalForeignApi::class)
-actual fun provideSdkStorage(config: StorageConfig.Default): SdkStorage =
-    SecureSdkStorage(
+actual fun provideSdkStorage(config: StorageConfig.Default): SdkStorage {
+    val base = FileSettings(
+        config.linuxFilePath?.toPath()
+            ?: ((getenv("HOME")?.toKString() ?: "/tmp").toPath() / ".zeta_sdk_storage"),
+    )
+    val chunkedBase = ChunkedSettings(base)
+    return SecureSdkStorage(
         settings = EncryptedSettings(
-            FileSettings(config.linuxFilePath?.toPath() ?: ((getenv("HOME")?.toKString() ?: "/tmp").toPath() / ".zeta_sdk_storage")),
+            chunkedBase,
             AesGcmCipherImpl(),
             config.aesB64Key,
         ),
         secrets = null,
+        namespace = config.namespace,
     )
+}
 
 class FileSettings @OptIn(ExperimentalForeignApi::class) constructor(
     private val path: Path,

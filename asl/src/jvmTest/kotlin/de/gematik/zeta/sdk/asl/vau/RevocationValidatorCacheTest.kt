@@ -80,12 +80,8 @@ class RevocationValidatorCacheTest {
             issuerDer = issuerDer,
         )
 
-        verify(exactly = 1) {
-            handler.validate(
-                cachedResponseDer,
-                certDer,
-                issuerDer,
-            )
+        verify(exactly = 0) {
+            handler.validate(any(), any(), any())
         }
 
         coVerify(exactly = 0) {
@@ -258,6 +254,47 @@ class RevocationValidatorCacheTest {
 
         coVerify(exactly = 0) {
             storage.getCrl(any())
+        }
+    }
+
+    @Test
+    fun tryDirectCrl_passesCrlBytes_notCertBytes_toGetCrlNextUpdateEpochSeconds() = runTest {
+        val certDer = byteArrayOf(1, 2, 3)
+        val issuerDer = byteArrayOf(4, 5, 6)
+        val crlDer = byteArrayOf(9, 9, 9)
+
+        val storage = mockk<RevocationStorage>(relaxed = true)
+        coEvery { storage.getOcsp(any()) } returns null
+        coEvery { storage.getCrl(any()) } returns null
+
+        val handler = mockk<RevocationHandler>(relaxed = true)
+        every { handler.extractCrlUrl(certDer) } returns "http://crl.example.com/crl.crl"
+        every {
+            handler.getCrlNextUpdateEpochSeconds(any())
+        } returns Clock.System.now().epochSeconds + 3_600L
+
+        val checker = RevocationChecker(
+            storage = storage,
+            httpClient = mockHttpClient(crlDer),
+            handler = handler,
+        )
+
+        checker.validate(
+            stapledOcspResponse = null,
+            certDer = certDer,
+            issuerDer = issuerDer,
+        )
+
+        verify(exactly = 1) {
+            handler.getCrlNextUpdateEpochSeconds(
+                match { it.contentEquals(crlDer) },
+            )
+        }
+
+        verify(exactly = 0) {
+            handler.getCrlNextUpdateEpochSeconds(
+                match { it.contentEquals(certDer) },
+            )
         }
     }
 

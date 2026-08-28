@@ -26,6 +26,9 @@ package de.gematik.zeta.driver
 
 import de.gematik.zeta.driver.model.SdkInstanceConfig
 import de.gematik.zeta.driver.model.toKtorLogLevel
+import de.gematik.zeta.driver.oidc.MailCatcherOtpClient
+import de.gematik.zeta.driver.oidc.TestDriverAuthenticator
+import de.gematik.zeta.driver.oidc.TestDriverOtpCallback
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.platform.Platform
 import de.gematik.zeta.platform.platform
@@ -36,13 +39,19 @@ import de.gematik.zeta.sdk.ZetaSdk.forget
 import de.gematik.zeta.sdk.ZetaSdkClient
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
+import de.gematik.zeta.sdk.authentication.AuthMode
+import de.gematik.zeta.sdk.authentication.OidcTokenProvider
+import de.gematik.zeta.sdk.authentication.SubjectTokenProvider
+import de.gematik.zeta.sdk.authentication.oidc.OidcConfig
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
+import de.gematik.zeta.sdk.notifications.NotificationConfig
 import de.gematik.zeta.sdk.storage.SdkStorage
 import de.gematik.zeta.sdk.storage.StorageConfig
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.headers
 import io.ktor.client.request.setBody
 import io.ktor.content.ByteArrayContent
 import io.ktor.http.ContentType
@@ -53,7 +62,6 @@ import io.ktor.http.URLBuilder
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
 import io.ktor.http.encodedPath
-import io.ktor.http.headers
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
@@ -67,8 +75,12 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.readBytes
 import io.ktor.websocket.readReason
 import io.ktor.websocket.readText
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
 import kotlin.time.measureTimedValue
 
@@ -284,14 +296,23 @@ private suspend fun forwardFrames(
     }
 }
 
-public fun newSdk(storage: SdkStorage, config: SdkInstanceConfig): ZetaSdkClient {
+public fun newSdk(
+    storage: SdkStorage,
+    config: SdkInstanceConfig,
+    otpCallback: TestDriverOtpCallback = TestDriverOtpCallback(config.oidcBindingEmail),
+): ZetaSdkClient {
     val fachdienstUrl = requireNotNull(config.fachdienstUrl) { FACHDIENST_URL_REQUIRED_MESSAGE }
+
+    val tokenProvider = when (config.authMode) {
+        AuthMode.OIDC -> buildOidcTokenProvider(config, otpCallback)
+        AuthMode.SMB -> buildSmbTokenProvider(config)
+    }
 
     return ZetaSdk.build(
         resource = fachdienstUrl,
         BuildConfig(
             "test-proxy",
-            "0.5.0",
+            "1.3.0",
             "sdk-client",
             StorageConfig.Custom(storage),
             object : TpmConfig {},
@@ -299,27 +320,7 @@ public fun newSdk(storage: SdkStorage, config: SdkInstanceConfig): ZetaSdkClient
                 listOf("zero:audience"),
                 30,
                 aslProdEnvironment = config.aslProdEnv,
-                when {
-                    config.smbKeystoreB64.isNotEmpty() ->
-                        SmbTokenProvider(
-                            SmbTokenProvider.Credentials(
-                                keystoreB64 = config.smbKeystoreB64,
-                                alias = config.smbKeystoreAlias,
-                                password = config.smbKeystorePassword,
-                            ),
-                        )
-
-                    config.smbKeystoreFile.isNotEmpty() ->
-                        SmbTokenProvider(
-                            SmbTokenProvider.Credentials(
-                                config.smbKeystoreFile,
-                                config.smbKeystoreAlias,
-                                config.smbKeystorePassword,
-                            ),
-                        )
-                    else ->
-                        error("No SM-B or SMC-B configuration was provided")
-                },
+                subjectTokenProvider = tokenProvider,
                 requiredRoleOid = config.requiredOid,
             ),
             platformProductId = getPlatformProduct(),
@@ -333,8 +334,83 @@ public fun newSdk(storage: SdkStorage, config: SdkInstanceConfig): ZetaSdkClient
                         addCaPem(pem)
                     }
                 },
+            // Enable the Notification Service client so the driver can expose push endpoints.
+            // Lazy: the client and NS discovery only materialise on first notification call,
+            // so existing proxy/control flows are unaffected. Defaults target `/push/v1`.
+            notificationConfig = NotificationConfig(),
         ),
     )
+}
+
+private fun buildOidcTokenProvider(
+    config: SdkInstanceConfig,
+    otpCallback: TestDriverOtpCallback,
+): OidcTokenProvider {
+    val baseUri = requireNotNull(config.oidcBaseUri) { "oidcBaseUri is required for OIDC mode" }
+    val idpIss = requireNotNull(config.oidcIdpIss) { "oidcIdpIss is required for OIDC mode" }
+    val idpAlias = requireNotNull(config.oidcIdpAlias) { "oidcIdpAlias is required for OIDC mode" }
+    val testKvnr = requireNotNull(config.oidcTestKvnr) { "oidcTestKvnr is required for OIDC mode" }
+    val fachdienstUrl = requireNotNull(config.fachdienstUrl) { FACHDIENST_URL_REQUIRED_MESSAGE }
+
+    val mailCatcherOtpClient = MailCatcherOtpClient(mailCatcherUrlFrom(fachdienstUrl))
+    val mailCatcherHttpClient = ZetaHttpClientBuilder()
+        .disableServerValidation(config.disableTlsVerification)
+        .logging(Log.logLevel.toKtorLogLevel())
+        .build()
+
+    CoroutineScope(Dispatchers.Default).launch {
+        autoFulfillOtpFromMailCatcher(otpCallback, mailCatcherOtpClient, mailCatcherHttpClient)
+    }
+
+    return OidcTokenProvider(
+        OidcConfig(
+            requestUri = baseUri,
+            idpIss = idpIss,
+            idpAlias = idpAlias,
+            authenticationCallback = TestDriverAuthenticator(appBaseUri = baseUri, testKvnr = testKvnr),
+            otpCallback = otpCallback,
+        ),
+    )
+}
+
+private suspend fun autoFulfillOtpFromMailCatcher(
+    otpCallback: TestDriverOtpCallback,
+    mailCatcherOtpClient: MailCatcherOtpClient,
+    httpClient: ZetaHttpClient,
+) {
+    while (otpCallback.currentlyAwaiting() != "otp") {
+        delay(200.milliseconds)
+    }
+    val code = mailCatcherOtpClient.waitForOtp(httpClient)
+    otpCallback.provideOtp(code)
+}
+
+private fun mailCatcherUrlFrom(fachdienstUrl: String): String {
+    val url = Url(fachdienstUrl)
+    return "${url.protocol.name}://${url.host}/mailcatcher"
+}
+
+private fun buildSmbTokenProvider(config: SdkInstanceConfig): SubjectTokenProvider = when {
+    config.smbKeystoreB64.isNotEmpty() ->
+        SmbTokenProvider(
+            SmbTokenProvider.Credentials(
+                keystoreB64 = config.smbKeystoreB64,
+                alias = config.smbKeystoreAlias,
+                password = config.smbKeystorePassword,
+            ),
+        )
+
+    config.smbKeystoreFile.isNotEmpty() ->
+        SmbTokenProvider(
+            SmbTokenProvider.Credentials(
+                config.smbKeystoreFile,
+                config.smbKeystoreAlias,
+                config.smbKeystorePassword,
+            ),
+        )
+
+    else ->
+        error("No SM-B or SMC-B configuration was provided")
 }
 
 private fun getPlatformProduct(): PlatformProductId {

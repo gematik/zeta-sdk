@@ -35,7 +35,7 @@ var config = new ZetaClientConfig
 {
     Resource       = Env("FACHDIENST_URL"),
     ProductId      = "ZETA-Test-Client",
-    ProductVersion = "1.0.0",
+    ProductVersion = "1.3.0",
     ClientName     = "sdk-client",
     Storage = new ZetaStorageConfig
     {
@@ -83,6 +83,7 @@ var config = new ZetaClientConfig
           // AdditionalCaFile = "/path/to/ca.crt",
           DisableServerValidation = disableTls,
           SslVerbose = false,
+          RevocationCacheDurationSeconds = 3600,
       },
        Network = new NetworkConfig
        {

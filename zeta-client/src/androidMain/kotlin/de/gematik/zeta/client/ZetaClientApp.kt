@@ -25,5 +25,45 @@
 package de.gematik.zeta.client
 
 import android.app.Application
+import android.content.pm.ApplicationInfo
+import de.gematik.zeta.client.config.AndroidConfig
+import de.gematik.zeta.client.notification.ZetaNotifications
+import de.gematik.zeta.logging.Log
+import de.gematik.zeta.logging.ZetaLogger
+import de.gematik.zeta.sdk.ZetaInit
 
-public class ZetaClientApp : Application()
+public class ZetaClientApp : Application() {
+    private companion object {
+        private const val DEFAULT_TAG = "Zeta-SDK"
+        private fun tag(tag: String?): String = "[${tag ?: DEFAULT_TAG}]"
+    }
+    override fun onCreate() {
+        super.onCreate()
+
+        Log.setLogger(object : ZetaLogger {
+            override fun d(tag: String?, message: () -> String, throwable: Throwable?) {
+                android.util.Log.d(tag(tag), message(), throwable)
+            }
+            override fun i(tag: String?, message: () -> String, throwable: Throwable?) {
+                android.util.Log.i(tag(tag), message(), throwable)
+            }
+            override fun w(tag: String?, message: () -> String, throwable: Throwable?) {
+                android.util.Log.w(tag(tag), message(), throwable)
+            }
+            override fun e(tag: String?, message: () -> String, throwable: Throwable?) {
+                android.util.Log.e(tag(tag), message(), throwable)
+            }
+        })
+        // Demo app: verbose logging (incl. the FCM pushkey needed to register a
+        // device for test pushes) is enabled only on debuggable builds. A shipped
+        // release build keeps logLevel at ERROR, so the pushkey and push message
+        // content never reach logcat.
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            Log.initDebugLogger()
+        }
+        AndroidConfig.init(this)
+        ZetaInit.initAndroid(this)
+        // No-op unless the optional push-notification feature is enabled at build time.
+        ZetaNotifications.integration?.onApplicationCreate(this)
+    }
+}

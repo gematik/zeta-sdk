@@ -20,13 +20,22 @@ setupBuildLogic {
             implementation(project(":crypto"))
         }
 
+        // Wire `desktopMain` to `nativeMain` so it can see the shared native crypto provider.
+        sourceSets.named("desktopMain") {
+            dependsOn(sourceSets.named("nativeMain").get())
+        }
+
+        sourceSets.named("desktopTest") {
+            dependsOn(sourceSets.named("nativeTest").get())
+        }
+
         sourceSets.commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.coroutines.test)
         }
 
         if (project.isJvmEnabled) {
-            sourceSets.getByName("jvmCommonTest").dependencies {
+            sourceSets.jvmTest.dependencies {
                 implementation(libs.mockk)
             }
         }

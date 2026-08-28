@@ -334,7 +334,8 @@ private class ClearTrackingClientRegistrationStorage : ClientRegistrationStorage
     }
 }
 
-private class FakeTpmProvider(override val isHardwareBacked: Boolean) : TpmProvider {
+private class FakeTpmProvider(private val hardwareBacked: Boolean) : TpmProvider {
+    override suspend fun isHardwareBacked(): Boolean = hardwareBacked
     override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut {
         return PublicKeyOut(byteArrayOf(1), Jwk("", "", "", "", "", "", ""))
     }
@@ -439,12 +440,22 @@ private class FakeForwardingClient : de.gematik.zeta.sdk.flow.ForwardingClient {
 }
 
 class FakeConfigurationStorage : ConfigurationStorage {
-    override suspend fun getProtectedResource(): ProtectedResourceMetadata =
+    private val notInScope: String = "not in scope"
+    override suspend fun getProtectedResource(name: String): ProtectedResourceMetadata =
         getDummyProtectedResourceObject()
-    override suspend fun saveProtectedResource(protectedRes: String): ProtectedResourceMetadata =
-        error("not in scope")
+
+    override suspend fun getProtectedResourceETag(name: String): String? =
+        error(notInScope)
+
+    override suspend fun saveProtectedResource(protectedRes: String, name: String, maxAgeSeconds: Long?, eTag: String?): ProtectedResourceMetadata =
+        error(notInScope)
+
+    override suspend fun touchProtectedResource(name: String, maxAgeSeconds: Long?, eTag: String?) =
+        error(notInScope)
+
     override suspend fun getAuthServers(): List<AuthorizationServerMetadata> =
-        error("not in scope")
+        error(notInScope)
+
     override suspend fun getAuthServer(): AuthorizationServerMetadata =
         AuthorizationServerMetadata(
             issuer = "https://auth.example.com",
@@ -465,10 +476,24 @@ class FakeConfigurationStorage : ConfigurationStorage {
             registrationEndpoint = "",
 
         )
+
+    override suspend fun getAuthServerETag(authFqdn: String): String? =
+        error(notInScope)
+
+    override suspend fun saveAuthServer(metadata: AuthorizationServerMetadata, maxAgeSeconds: Long?, eTag: String?): AuthorizationServerMetadata {
+        error(notInScope)
+    }
+
+    override suspend fun touchAuthServer(authFqdn: String, maxAgeSeconds: Long?, eTag: String?) =
+        error(notInScope)
+
     override suspend fun linkResourceToAuthorizationServer(authServerMetadata: AuthorizationServerMetadata) =
-        error("not in scope")
-    override suspend fun aslUse(): ZetaAslUse = error("not in scope")
-    override suspend fun clear() = error("not in scope")
+        error(notInScope)
+
+    override suspend fun aslUse(): ZetaAslUse = error(notInScope)
+    override suspend fun clear() = error(notInScope)
+    override suspend fun invalidateDiscovery() =
+        error(notInScope)
 }
 
 class FakeClientRegistrationStorage : ClientRegistrationStorage {

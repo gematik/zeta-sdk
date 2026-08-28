@@ -38,6 +38,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.encodedPath
 import io.ktor.http.takeFrom
+import io.ktor.util.AttributeKey
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.cbor.Cbor
 import kotlin.io.encoding.Base64
@@ -46,6 +47,8 @@ public interface AslApi {
     public suspend fun encrypt(request: HttpRequestBuilder, passThrough: Boolean? = false): HttpRequestBuilder
     public suspend fun decrypt(extended: ByteArray): ByteArray
 }
+
+internal val AslInnerRequestKey: AttributeKey<ByteArray> = AttributeKey("asl-inner-request")
 
 public class AslApiImpl(
     internal val aslProdEnvironment: Boolean,
@@ -61,7 +64,9 @@ public class AslApiImpl(
     override suspend fun encrypt(request: HttpRequestBuilder, passThrough: Boolean?): HttpRequestBuilder {
         val session = ensureHandshake(request)
 
-        val innerHttp = InnerHttpCodecImpl().encodeRequest(request)
+        val innerHttp = request.attributes.getOrNull(AslInnerRequestKey)
+            ?: InnerHttpCodecImpl().encodeRequest(request)
+                .also { request.attributes.put(AslInnerRequestKey, it) }
         val extended = session.encryptRequest(innerHttp)
         val bearerHeader = request.headers[HttpHeaders.Authorization]
 
@@ -84,8 +89,8 @@ public class AslApiImpl(
             encodedPath = session.cid
         }
         request.headers {
-            append(HttpHeaders.ContentType, ContentType.Application.OctetStream.toString())
-            append(HttpHeaders.Accept, ContentType.Application.OctetStream.toString())
+            set(HttpHeaders.ContentType, ContentType.Application.OctetStream.toString())
+            set(HttpHeaders.Accept, ContentType.Application.OctetStream.toString())
             set(HttpAuthHeaders.Dpop, dpop)
             if (!aslProdEnvironment) setTracingHeaders(session)
         }
@@ -126,7 +131,7 @@ public fun HttpRequestBuilder.copyAuthHeadersFrom(request: HttpRequestBuilder) {
 private fun HeadersBuilder.setTracingHeaders(session: EstablishedSession) {
     val client2Server = Base64.encode(session.c2sAppDataKey)
     val server2Client = Base64.encode(session.s2cAppDataKey)
-    append(TRACING_HEADER, "$client2Server $server2Client")
+    set(TRACING_HEADER, "$client2Server $server2Client")
 }
 
 @OptIn(ExperimentalSerializationApi::class)

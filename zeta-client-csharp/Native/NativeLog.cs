@@ -35,6 +35,9 @@ internal struct NativeLogVTable
 internal sealed class CustomLogHandle
 {
     private readonly LogDelegate _log;
+
+    private readonly GCHandle _selfHandle;
+
     public IntPtr VTablePtr { get; }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -42,6 +45,8 @@ internal sealed class CustomLogHandle
 
     public CustomLogHandle(Action<string, string?, string> logger, int logLevel = 0)
     {
+        _selfHandle = GCHandle.Alloc(this);
+
         _log = (ctx, level, tag, message) =>
         {
             var lvl = Marshal.PtrToStringUTF8(level) ?? "";
@@ -61,5 +66,9 @@ internal sealed class CustomLogHandle
         Marshal.StructureToPtr(vtable, VTablePtr, false);
     }
 
-    public void Free() => Marshal.FreeHGlobal(VTablePtr);
+    public void Free()
+    {
+        Marshal.FreeHGlobal(VTablePtr);
+        if (_selfHandle.IsAllocated) _selfHandle.Free();
+    }
 }

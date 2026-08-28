@@ -35,7 +35,16 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 
+/**
+ * Dynamic Client Registration (RFC 7591) at the authorization server [A_27799].
+ * Registration is orchestrated by the flow-controller's `ClientRegistrationHandler`;
+ * consumers trigger it via `ZetaSdkClient.register()`.
+ */
 fun interface ClientRegistrationApi {
+    /**
+     * Sends the registration request to `POST [endpoint]`. Returns the parsed response on
+     * `201 Created`; any other status is thrown as [ClientRegistrationException].
+     */
     suspend fun register(endpoint: String, request: ClientRegistrationRequest): ClientRegistrationResponse
 }
 

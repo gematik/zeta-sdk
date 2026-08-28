@@ -28,12 +28,30 @@ import de.gematik.zeta.sdk.network.http.client.config.ClientConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.darwin.Darwin
+import platform.Foundation.NSURLAuthenticationMethodServerTrust
+import platform.Foundation.NSURLCredential
+import platform.Foundation.credentialForTrust
+import platform.Foundation.serverTrust
 import kotlin.Unit
 
 internal actual fun buildPlatformClient(cfg: ClientConfig, dependencies: HttpClientDependencies, commonSetup: HttpClientConfig<*>.() -> Unit): HttpClient {
     return HttpClient(Darwin) {
-        this.apply {
-            commonSetup(this)
+        commonSetup()
+        engine {
+            if (cfg.security.disableServerValidation) {
+                handleChallenge { _, _, challenge, completionHandler ->
+                    if (challenge.protectionSpace.authenticationMethod ==
+                        NSURLAuthenticationMethodServerTrust
+                    ) {
+                        val credential = NSURLCredential.credentialForTrust(
+                            challenge.protectionSpace.serverTrust!!,
+                        )
+                        completionHandler(0, credential)
+                    } else {
+                        completionHandler(1, null)
+                    }
+                }
+            }
         }
     }
 }

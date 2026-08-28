@@ -4,6 +4,7 @@ import de.gematik.zeta.sdk.buildlogic.isMacOSEnabled
 import de.gematik.zeta.sdk.buildlogic.isNativeEnabled
 import de.gematik.zeta.sdk.buildlogic.isWindowsEnabled
 import de.gematik.zeta.sdk.buildlogic.setupBuildLogic
+import de.gematik.zeta.sdk.buildlogic.withGeneratedBuildFile
 import org.jetbrains.kotlin.gradle.dsl.ExplicitApiMode
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 
@@ -16,11 +17,20 @@ plugins {
 }
 
 setupBuildLogic {
+    withGeneratedBuildFile("version", "de/gematik/zeta/sdk/ZetaSdkVersion.kt", "commonMain") {
+        """
+        package de.gematik.zeta.sdk
+
+        internal const val ZETA_SDK_VERSION: String = "${project.version}"
+        """
+    }
+
     kotlin {
         explicitApi = ExplicitApiMode.Disabled
 
         sourceSets.commonMain.dependencies {
             api(project(":flow-controller"))
+            api(project(":notifications"))
         }
 
         sourceSets.commonTest.dependencies {
@@ -50,8 +60,18 @@ setupBuildLogic {
 
         if (project.isNativeEnabled) {
             if (project.isMacOSEnabled) {
-                macosX64 { configureInterop() }
-                macosArm64 { configureInterop() }
+                macosX64 {
+                    configureInterop()
+                    binaries.filterIsInstance<org.jetbrains.kotlin.gradle.plugin.mpp.NativeBinary>()
+                        .forEach { it.linkerOpts("-framework", "Security", "-framework", "CoreFoundation") }
+
+                }
+                macosArm64 {
+                    configureInterop()
+                    binaries.filterIsInstance<org.jetbrains.kotlin.gradle.plugin.mpp.NativeBinary>()
+                        .forEach { it.linkerOpts("-framework", "Security", "-framework", "CoreFoundation") }
+
+                }
             }
             if (project.isLinuxEnabled) linuxX64 { configureInterop() }
             if (project.isWindowsEnabled) mingwX64 { configureInterop() }

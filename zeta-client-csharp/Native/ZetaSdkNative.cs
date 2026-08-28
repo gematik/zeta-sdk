@@ -145,6 +145,12 @@ internal static partial class ZetaSdkNative
     [LibraryImport(Lib)]
     internal static partial void ZetaSdk_freeLastError(IntPtr ptr);
 
+    [LibraryImport(Lib)]
+    internal static partial IntPtr ZetaSdk_getVersion();
+
+    [LibraryImport(Lib)]
+    internal static partial void ZetaSdk_freeVersion(IntPtr ptr);
+
     static ZetaSdkNative()
     {
       NativeLibrary.SetDllImportResolver(

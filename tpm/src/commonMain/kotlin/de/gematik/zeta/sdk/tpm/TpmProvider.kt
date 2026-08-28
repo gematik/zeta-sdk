@@ -33,7 +33,7 @@ import kotlin.uuid.Uuid
  */
 interface TpmProvider {
     /** True if backed by HW, otherwise false (software). */
-    val isHardwareBacked: Boolean
+    suspend fun isHardwareBacked(): Boolean
 
     /** Returns the client instance public key. */
     suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut
@@ -77,7 +77,7 @@ interface TpmProvider {
 }
 
 /** Platform chooses the best default provider (HW if available, otherwise software). */
-expect fun platformDefaultProvider(storage: TpmStorage): TpmProvider
+expect fun platformDefaultProvider(storage: TpmStorage, appAttestSupported: Boolean = false): TpmProvider
 
 /** Singleton facade */
 object Tpm {

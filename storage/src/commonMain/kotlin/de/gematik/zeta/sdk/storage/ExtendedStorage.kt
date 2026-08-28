@@ -30,7 +30,7 @@ import kotlinx.serialization.json.Json
 class ExtendedStorage(
     private val storage: SdkStorage,
     private val resourceScope: ResourceScope? = null,
-) {
+) : SdkStorage {
     companion object {
         private const val HASH_RADIX = 36
         private const val HASH_LENGTH = 8
@@ -64,30 +64,36 @@ class ExtendedStorage(
     }
 
     suspend fun putIndexed(indexKey: String, entryKey: String, entries: Map<String, String>) {
-        val keyHash = hash(entryKey)
+        val keyHash = hash(ns(entryKey))
         entries.forEach { (prefix, value) -> storage.put("$prefix:$keyHash", value) }
         upsertStringMap(indexKey) { it[keyHash] = keyHash }
     }
 
     suspend fun getIndexed(entryKey: String, prefix: String): String? =
-        storage.get("$prefix:${hash(entryKey)}")
+        storage.get("$prefix:${hash(ns(entryKey))}")
 
     suspend fun removeIndexed(indexKey: String, entryKey: String, prefixes: List<String>) {
-        val keyHash = hash(entryKey)
+        val keyHash = hash(ns(entryKey))
         prefixes.forEach { prefix -> storage.remove("$prefix:$keyHash") }
         upsertStringMap(indexKey) { it.remove(keyHash) }
     }
 
-    suspend fun clearIndexed(indexKey: String, prefixes: List<String>) {
+    suspend fun clearIndexed(indexKey: String, entryKey: String, prefixes: List<String>) {
+        val keyHash = hash(ns(entryKey))
+        prefixes.forEach { prefix -> storage.remove("$prefix:$keyHash") }
+        remove(indexKey)
+    }
+
+    suspend fun clearAllIndexed(indexKey: String, prefixes: List<String>) {
         getMap(indexKey)?.keys?.forEach { keyHash ->
             prefixes.forEach { prefix -> storage.remove("$prefix:$keyHash") }
         }
         remove(indexKey)
     }
 
-    suspend fun put(key: String, value: String) = storage.put(hash(ns(key)), value)
-    suspend fun get(key: String): String? = storage.get(hash(ns(key)))
-    suspend fun remove(key: String) = storage.remove(hash(ns(key)))
-    suspend fun clear() = storage.clear()
+    override suspend fun put(key: String, value: String) = storage.put(hash(ns(key)), value)
+    override suspend fun get(key: String): String? = storage.get(hash(ns(key)))
+    override suspend fun remove(key: String) = storage.remove(hash(ns(key)))
+    override suspend fun clear() = storage.clear()
     fun hash(key: String) = ExtendedStorage.hash(key)
 }

@@ -29,7 +29,7 @@ import de.gematik.zeta.logging.Log
 class SecureSdkStorage(
     private val settings: EncryptedSettings,
     private val secrets: SecretStore?,
-    private val namespace: String = "",
+    private val namespace: String,
     private val isSensitive: (String) -> Boolean = ::defaultSensitiveKeys,
 ) : SdkStorage {
     private fun ns(key: String) = if (namespace.isBlank()) key else "$namespace:$key"

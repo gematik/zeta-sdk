@@ -26,9 +26,24 @@ package de.gematik.zeta.client.data.repository
 
 import de.gematik.zeta.client.data.service.HelloZetaService
 import de.gematik.zeta.client.data.service.HelloZetaServiceImpl
+import de.gematik.zeta.client.di.DIContainer
+import de.gematik.zeta.sdk.SdkStatus
+import de.gematik.zeta.sdk.notifications.model.Channel
 
-public fun interface HelloZetaRepository {
+public interface HelloZetaRepository {
     public suspend fun helloZeta(): String
+    public suspend fun forgetAuthorization()
+    public suspend fun forgetRegistration()
+    public suspend fun logoutAuthorization()
+    public suspend fun status(): SdkStatus
+    public suspend fun doAuthentication()
+    public suspend fun doRegistration()
+    public suspend fun doDiscovery()
+    public suspend fun registerTestPusher(): String
+    public fun isPusherConfigured(): Boolean
+    public suspend fun subscribeAllChannels(): List<Channel>
+    public suspend fun unsubscribeAllChannels(): String
+    public suspend fun changeEmail(newEmail: String): String
 }
 
 public class HelloZetaRepositoryImpl(
@@ -36,4 +51,52 @@ public class HelloZetaRepositoryImpl(
 
 ) : HelloZetaRepository {
     override suspend fun helloZeta(): String = service.helloZeta()
+
+    override suspend fun doAuthentication() {
+        DIContainer.httpClientProvider.authenticate()
+    }
+
+    override suspend fun doRegistration() {
+        DIContainer.httpClientProvider.register()
+    }
+
+    override suspend fun doDiscovery() {
+        DIContainer.httpClientProvider.discover()
+    }
+
+    override suspend fun forgetAuthorization() {
+        DIContainer.httpClientProvider.forget()
+    }
+
+    override suspend fun forgetRegistration() {
+        DIContainer.httpClientProvider.clearRegistration()
+    }
+
+    override suspend fun logoutAuthorization() {
+        DIContainer.httpClientProvider.logout()
+    }
+
+    override suspend fun status(): SdkStatus {
+        return DIContainer.httpClientProvider.status()
+    }
+
+    override suspend fun registerTestPusher(): String {
+        return DIContainer.httpClientProvider.registerTestPusher()
+    }
+
+    override fun isPusherConfigured(): Boolean {
+        return DIContainer.httpClientProvider.isPusherConfigured()
+    }
+
+    override suspend fun subscribeAllChannels(): List<Channel> {
+        return DIContainer.httpClientProvider.subscribeAllChannels()
+    }
+
+    override suspend fun unsubscribeAllChannels(): String {
+        return DIContainer.httpClientProvider.unsubscribeAllChannels()
+    }
+
+    override suspend fun changeEmail(newEmail: String): String {
+        return DIContainer.httpClientProvider.changeEmail(newEmail)
+    }
 }

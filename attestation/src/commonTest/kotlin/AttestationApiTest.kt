@@ -62,7 +62,7 @@ class AttestationApiTest {
     private val fixedThumbprint = ByteArray(32) { (it + 1).toByte() }
     private val fixedKid = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(fixedThumbprint)
     private val defaultClientId = "client-id"
-    private val defaultTokenEndpoint = "https://token.example.com"
+    private val defaultaud = "https://token.example.com"
     private val defaultProductId = "demo-product"
     private val defaultProductVersion = "1.0.0"
     val platformProductIdAppleProductId = PlatformProductId.AppleProductId("apple", "macos", listOf("bundleX"))
@@ -75,7 +75,7 @@ class AttestationApiTest {
         val clientId = "client-sdk"
         val productId = "demo-product"
         val productVersion = "0.2.0"
-        val tokenEndpoint = "https://zeta-test.de/token"
+        val aud = "https://zeta-test.de/token"
 
         val api = AttestationApiImpl(Tpm.provider(TpmStorageImpl(InMemoryStorage(), ResourceScope("", emptyList()))), { fixedUuid })
         val jwt = api.createClientAssertion(
@@ -84,7 +84,7 @@ class AttestationApiTest {
             nonce = nonce,
             clientId = clientId,
             exp = exp,
-            tokenEndpoint = tokenEndpoint,
+            aud = aud,
             platformProductIdAppleProductId,
         )
 
@@ -100,7 +100,7 @@ class AttestationApiTest {
         val clientId = "client-sdk"
         val productId = "demo_product"
         val productVersion = "0.2.0"
-        val tokenEndpoint = "https://zeta-test.de/token"
+        val aud = "https://zeta-test.de/token"
 
         val api = AttestationApiImpl(Tpm.provider(TpmStorageImpl(InMemoryStorage(), ResourceScope("", emptyList()))), { fixedUuid })
         val jwt = api.createClientAssertion(
@@ -109,7 +109,7 @@ class AttestationApiTest {
             nonce = nonce,
             clientId = clientId,
             exp = exp,
-            tokenEndpoint = tokenEndpoint,
+            aud = aud,
             platformProductIdAppleProductId,
         )
         val parts = jwt.split('.')
@@ -128,7 +128,6 @@ class AttestationApiTest {
         val clientId = "client-sdk"
         val productId = "demo_product"
         val productVersion = "0.2.0"
-        val tokenEndpoint = "https://zeta-test.de/token"
 
         val api = AttestationApiImpl(Tpm.provider(TpmStorageImpl(InMemoryStorage(), ResourceScope("", emptyList()))), { fixedUuid })
         val jwt = api.createClientAssertion(
@@ -137,7 +136,7 @@ class AttestationApiTest {
             nonce = nonce,
             clientId = clientId,
             exp = exp,
-            tokenEndpoint = tokenEndpoint,
+            aud = "https://zeta-test.de/token",
             platformProductIdAppleProductId,
         )
         val parts = jwt.split('.')
@@ -147,7 +146,7 @@ class AttestationApiTest {
         assertEquals(clientId, payload["sub"]?.jsonPrimitive?.content)
         val aud = payload["aud"]?.jsonArray
         assertNotNull(aud)
-        assertTrue(aud.any { it.jsonPrimitive.content == tokenEndpoint })
+        assertTrue(aud.any { it.jsonPrimitive.content == "https://zeta-test.de/token" })
 
         assertEquals(exp, payload["exp"]?.jsonPrimitive?.long)
         assertNotNull(payload["jti"]?.jsonPrimitive)
@@ -213,7 +212,7 @@ class AttestationApiTest {
             nonce = fixedNonce,
             clientId = defaultClientId,
             exp = fixedExp,
-            tokenEndpoint = defaultTokenEndpoint,
+            aud = defaultaud,
             platformProductId = platformProductId(),
         )
         assertEquals(3, jwt.split(".").size)
@@ -224,7 +223,7 @@ class AttestationApiTest {
         val (headerB64, _, _) = jwtParts(
             buildImpl().createClientAssertion(
                 defaultProductId, defaultProductVersion, fixedNonce,
-                defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+                defaultClientId, fixedExp, defaultaud, platformProductId(),
             ),
         )
         assertEquals("ES256", decodeJson(headerB64)["alg"]?.jsonPrimitive?.content)
@@ -235,7 +234,7 @@ class AttestationApiTest {
         val (headerB64, _, _) = jwtParts(
             buildImpl().createClientAssertion(
                 defaultProductId, defaultProductVersion, fixedNonce,
-                defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+                defaultClientId, fixedExp, defaultaud, platformProductId(),
             ),
         )
         assertEquals("JWT", decodeJson(headerB64)["typ"]?.jsonPrimitive?.content)
@@ -246,7 +245,7 @@ class AttestationApiTest {
         val (headerB64, _, _) = jwtParts(
             buildImpl().createClientAssertion(
                 defaultProductId, defaultProductVersion, fixedNonce,
-                defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+                defaultClientId, fixedExp, defaultaud, platformProductId(),
             ),
         )
         val kid = decodeJson(headerB64)["jwk"]?.jsonObject?.get("kid")?.jsonPrimitive?.content
@@ -258,7 +257,7 @@ class AttestationApiTest {
         val (_, payloadB64, _) = jwtParts(
             buildImpl().createClientAssertion(
                 defaultProductId, defaultProductVersion, fixedNonce,
-                "my-client", fixedExp, defaultTokenEndpoint, platformProductId(),
+                "my-client", fixedExp, defaultaud, platformProductId(),
             ),
         )
         assertEquals("my-client", decodeJson(payloadB64)["iss"]?.jsonPrimitive?.content)
@@ -269,14 +268,14 @@ class AttestationApiTest {
         val (_, payloadB64, _) = jwtParts(
             buildImpl().createClientAssertion(
                 defaultProductId, defaultProductVersion, fixedNonce,
-                "my-client", fixedExp, defaultTokenEndpoint, platformProductId(),
+                "my-client", fixedExp, defaultaud, platformProductId(),
             ),
         )
         assertEquals("my-client", decodeJson(payloadB64)["sub"]?.jsonPrimitive?.content)
     }
 
     @Test
-    fun createClientAssertion_payloadAudContainsTokenEndpoint() = runTest {
+    fun createClientAssertion_payloadAudContainsaud() = runTest {
         val (_, payloadB64, _) = jwtParts(
             buildImpl().createClientAssertion(
                 defaultProductId, defaultProductVersion, fixedNonce,
@@ -292,7 +291,7 @@ class AttestationApiTest {
         val (_, payloadB64, _) = jwtParts(
             buildImpl().createClientAssertion(
                 defaultProductId, defaultProductVersion, fixedNonce,
-                defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+                defaultClientId, fixedExp, defaultaud, platformProductId(),
             ),
         )
         assertEquals(fixedExp.toString(), decodeJson(payloadB64)["exp"]?.jsonPrimitive?.content)
@@ -303,7 +302,7 @@ class AttestationApiTest {
         val (_, payloadB64, _) = jwtParts(
             buildImpl().createClientAssertion(
                 defaultProductId, defaultProductVersion, fixedNonce,
-                defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+                defaultClientId, fixedExp, defaultaud, platformProductId(),
             ),
         )
         assertTrue(decodeJson(payloadB64).containsKey("client_statement"))
@@ -335,7 +334,7 @@ class AttestationApiTest {
 
         val jwt = buildImpl(tpmProvider = tpm).createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp, defaultaud, platformProductId(),
         )
 
         val (headerB64, payloadB64, _) = jwtParts(jwt)
@@ -347,7 +346,7 @@ class AttestationApiTest {
         val (_, _, sigB64) = jwtParts(
             buildImpl().createClientAssertion(
                 defaultProductId, defaultProductVersion, fixedNonce,
-                defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+                defaultClientId, fixedExp, defaultaud, platformProductId(),
             ),
         )
         assertTrue(!sigB64.contains("+") && !sigB64.contains("/") && !sigB64.contains("="))
@@ -361,7 +360,7 @@ class AttestationApiTest {
         val (_, _, sigB64) = jwtParts(
             buildImpl().createClientAssertion(
                 defaultProductId, defaultProductVersion, fixedNonce,
-                defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+                defaultClientId, fixedExp, defaultaud, platformProductId(),
             ),
         )
         assertEquals(expected, sigB64)
@@ -372,11 +371,11 @@ class AttestationApiTest {
         val impl = buildImpl()
         val jwt1 = impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp, defaultaud, platformProductId(),
         )
         val jwt2 = impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp, defaultaud, platformProductId(),
         )
         assertEquals(jwt1, jwt2)
     }
@@ -386,17 +385,17 @@ class AttestationApiTest {
         val impl = buildImpl()
         val jwt1 = impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            "client-a", fixedExp, defaultTokenEndpoint, platformProductId(),
+            "client-a", fixedExp, defaultaud, platformProductId(),
         )
         val jwt2 = impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            "client-b", fixedExp, defaultTokenEndpoint, platformProductId(),
+            "client-b", fixedExp, defaultaud, platformProductId(),
         )
         assertNotEquals(jwt1, jwt2)
     }
 
     @Test
-    fun createClientAssertion_changesDifferentJwt_whenTokenEndpointChanges() = runTest {
+    fun createClientAssertion_changesDifferentJwt_whenaudChanges() = runTest {
         val impl = buildImpl()
         val jwt1 = impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
@@ -414,11 +413,11 @@ class AttestationApiTest {
         val impl = buildImpl()
         val jwt1 = impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp, defaultaud, platformProductId(),
         )
         val jwt2 = impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp + 999L, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp + 999L, defaultaud, platformProductId(),
         )
         assertNotEquals(jwt1, jwt2)
     }
@@ -428,11 +427,11 @@ class AttestationApiTest {
         val impl = buildImpl()
         val jwt1 = impl.createClientAssertion(
             "product-a", defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp, defaultaud, platformProductId(),
         )
         val jwt2 = impl.createClientAssertion(
             "product-b", defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp, defaultaud, platformProductId(),
         )
         assertNotEquals(jwt1, jwt2)
     }
@@ -444,11 +443,11 @@ class AttestationApiTest {
 
         impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp, defaultaud, platformProductId(),
         )
         impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp, defaultaud, platformProductId(),
         )
 
         assertEquals(2, callCount)
@@ -461,12 +460,12 @@ class AttestationApiTest {
 
         val jwt1 = impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp, defaultaud, platformProductId(),
         )
         fakeClock = 2_000_000L
         val jwt2 = impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp, defaultaud, platformProductId(),
         )
 
         assertNotEquals(jwt1, jwt2)
@@ -482,7 +481,7 @@ class AttestationApiTest {
         assertFailsWith<IllegalStateException> {
             impl.createClientAssertion(
                 defaultProductId, defaultProductVersion, fixedNonce,
-                defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+                defaultClientId, fixedExp, defaultaud, platformProductId(),
             )
         }
     }
@@ -496,7 +495,7 @@ class AttestationApiTest {
 
         val jwt = impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp, defaultaud, platformProductId(),
         )
 
         assertEquals(3, jwt.split(".").size)
@@ -513,7 +512,7 @@ class AttestationApiTest {
         assertFailsWith<IllegalStateException> {
             impl.createClientAssertion(
                 defaultProductId, defaultProductVersion, fixedNonce,
-                defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+                defaultClientId, fixedExp, defaultaud, platformProductId(),
             )
         }
     }
@@ -525,7 +524,7 @@ class AttestationApiTest {
 
         impl.createClientAssertion(
             defaultProductId, defaultProductVersion, fixedNonce,
-            defaultClientId, fixedExp, defaultTokenEndpoint, platformProductId(),
+            defaultClientId, fixedExp, defaultaud, platformProductId(),
         )
 
         val challenge = fakeService.lastChallenge
@@ -534,7 +533,7 @@ class AttestationApiTest {
     }
 
     open class FakeTpmProvider : TpmProvider {
-        override val isHardwareBacked = false
+        override suspend fun isHardwareBacked(): Boolean = false
 
         override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut = PublicKeyOut(
             encoded = ByteArray(32) { 0x01 },

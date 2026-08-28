@@ -181,6 +181,46 @@ class FlowOrchestratorTest {
         assertEquals(HttpStatusCode.OK.value, resp.response.status.value)
     }
 
+    @Test
+    fun run_performsDiscoveryRefresh_onlyOnce() = runTest {
+        // Arrange
+        val forwarding = getMockClient(HttpStatusCode.NotFound)
+        val dummyCtx = getDummyContextWithResource(forwarding)
+        val handler = RecordingDoneHandler(FlowNeed.ConfigurationFiles)
+
+        var evaluationCount = 0
+
+        val responseEvaluator = ResponseEvaluator { call, _, retryState ->
+            evaluationCount++
+
+            if (!retryState.hasAttemptedDiscoveryRefresh) {
+                retryState.hasAttemptedDiscoveryRefresh = true
+                FlowDirective.Perform(FlowNeed.ConfigurationFiles)
+            } else {
+                FlowDirective.Proceed(call.response)
+            }
+        }
+
+        val orchestrator = FlowOrchestrator(
+            requestEvaluator = requestEvaluatorWithNoNeeds,
+            responseEvaluator = responseEvaluator,
+            handlers = listOf(handler),
+        )
+
+        // Act
+        val response = orchestrator.run(
+            HttpRequestBuilder().apply {
+                url("https://test")
+            },
+            dummyCtx,
+        )
+
+        // Assert
+        assertTrue(handler.called)
+        assertEquals(2, evaluationCount)
+        assertEquals(HttpStatusCode.NotFound, response.response.status)
+    }
+
     private fun getMockClient(status: HttpStatusCode): ForwardingClient {
         val engine = MockEngine { respond("", status) }
         val ktor = ZetaHttpClient(HttpClient(engine))
@@ -197,15 +237,16 @@ class FlowOrchestratorTest {
             .contentNegotiation(true)
             .build(mockEngine)
 
-    private fun createHandler(mock: MockEngine, maxRetries: Int = 3): ClientRegistrationHandler {
+    private fun createHandler(mock: MockEngine): ClientRegistrationHandler {
         val client = createClient(mock)
         val api = ClientRegistrationApiImpl(client)
         val tpm = FakeTpmProvider(false)
 
-        return ClientRegistrationHandler("TestClientName", api, tpm, maxRetries)
+        return ClientRegistrationHandler("TestClientName", api, tpm)
     }
 
-    private class FakeTpmProvider(override val isHardwareBacked: Boolean) : TpmProvider {
+    private class FakeTpmProvider(private val hardwareBacked: Boolean) : TpmProvider {
+        override suspend fun isHardwareBacked(): Boolean = hardwareBacked
         override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut {
             return PublicKeyOut(byteArrayOf(1), Jwk("", "", "", "", "", "", ""))
         }

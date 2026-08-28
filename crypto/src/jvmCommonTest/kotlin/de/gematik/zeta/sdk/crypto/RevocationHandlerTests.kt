@@ -33,9 +33,11 @@ import org.bouncycastle.asn1.x509.CRLDistPoint
 import org.bouncycastle.asn1.x509.CRLReason
 import org.bouncycastle.asn1.x509.DistributionPoint
 import org.bouncycastle.asn1.x509.DistributionPointName
+import org.bouncycastle.asn1.x509.ExtendedKeyUsage
 import org.bouncycastle.asn1.x509.Extension
 import org.bouncycastle.asn1.x509.GeneralName
 import org.bouncycastle.asn1.x509.GeneralNames
+import org.bouncycastle.asn1.x509.KeyPurposeId
 import org.bouncycastle.cert.X509v2CRLBuilder
 import org.bouncycastle.cert.jcajce.JcaX509CRLConverter
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
@@ -64,7 +66,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @Suppress("FunctionNaming")
-class OcspHandlerTest {
+class RevocationHandlerTest {
 
     private val handler = RevocationHandlerImpl()
 
@@ -184,6 +186,37 @@ class OcspHandlerTest {
         basicGen.addResponse(certId, status, thisUpdate, nextUpdate)
         val basicResp = basicGen.build(caSigner, null, thisUpdate)
         return OCSPRespBuilder().build(OCSPRespBuilder.SUCCESSFUL, basicResp).encoded
+    }
+
+    private fun buildDelegatedSignerCert(
+        signingKeyPair: KeyPair = caKeyPair,
+        subjectName: X500Name = X500Name("CN=Delegated OCSP Responder"),
+        includeOcspSigningEku: Boolean = true,
+    ): Pair<X509Certificate, KeyPair> {
+        val signerKeyPair = KeyPairGenerator.getInstance("EC", "BC")
+            .apply { initialize(org.bouncycastle.jce.ECNamedCurveTable.getParameterSpec("brainpoolP256r1")) }
+            .generateKeyPair()
+
+        val builder = JcaX509v3CertificateBuilder(
+            X500Name("CN=Test CA"),
+            BigInteger.valueOf(100),
+            now,
+            oneYear,
+            subjectName,
+            signerKeyPair.public,
+        )
+
+        if (includeOcspSigningEku) {
+            builder.addExtension(
+                Extension.extendedKeyUsage,
+                false,
+                ExtendedKeyUsage(KeyPurposeId.id_kp_OCSPSigning),
+            )
+        }
+
+        val signer = JcaContentSignerBuilder("SHA256WithECDSA").setProvider("BC").build(signingKeyPair.private)
+        val cert = JcaX509CertificateConverter().setProvider("BC").getCertificate(builder.build(signer))
+        return cert to signerKeyPair
     }
 
     @Test
@@ -463,6 +496,90 @@ class OcspHandlerTest {
         val ocspDer = buildOcspResponseDer(leafCert, thisUpdate = Date(0L))
 
         assertEquals(0L, handler.getThisUpdateEpochSeconds(ocspDer))
+    }
+
+    @Test
+    fun validate_passes_whenSignerIsTheIssuerItself() {
+        // signerCert defaults to caCert in buildOcspResponseDer — this is the baseline "no delegation" case
+        val ocspDer = buildOcspResponseDer(leafCert, signerKey = caKeyPair.private, signerCert = caCert)
+        handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+    }
+
+    @Test
+    fun validate_passes_whenDelegatedSignerIsAuthorizedByIssuerAndHasOcspSigningEku() {
+        val (delegatedCert, delegatedKeyPair) = buildDelegatedSignerCert(
+            signingKeyPair = caKeyPair,
+            includeOcspSigningEku = true,
+        )
+        val ocspDer = buildOcspResponseDer(
+            leafCert,
+            signerKey = delegatedKeyPair.private,
+            signerCert = delegatedCert,
+        )
+
+        handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+    }
+
+    @Test
+    fun validate_throws_whenDelegatedSignerIsAuthorizedByIssuerButMissingOcspSigningEku() {
+        val (delegatedCert, delegatedKeyPair) = buildDelegatedSignerCert(
+            signingKeyPair = caKeyPair,
+            includeOcspSigningEku = false,
+        )
+        val ocspDer = buildOcspResponseDer(
+            leafCert,
+            signerKey = delegatedKeyPair.private,
+            signerCert = delegatedCert,
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+        }
+    }
+
+    @Test
+    fun validate_throws_whenEmbeddedSignerIsNotSignedByTheIssuerAtAll() {
+        val unrelatedCaKeyPair = KeyPairGenerator.getInstance("EC", "BC")
+            .apply { initialize(org.bouncycastle.jce.ECNamedCurveTable.getParameterSpec("brainpoolP256r1")) }
+            .generateKeyPair()
+
+        val (unauthorizedSignerCert, unauthorizedSignerKeyPair) = buildDelegatedSignerCert(
+            signingKeyPair = unrelatedCaKeyPair,
+            includeOcspSigningEku = true,
+        )
+
+        val ocspDer = buildOcspResponseDer(
+            leafCert,
+            signerKey = unauthorizedSignerKeyPair.private,
+            signerCert = unauthorizedSignerCert,
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+        }
+    }
+
+    @Test
+    fun validate_throws_whenEmbeddedSignerIsSelfSignedAndUnrelatedToIssuer() {
+        val attackerKeyPair = KeyPairGenerator.getInstance("EC", "BC")
+            .apply { initialize(org.bouncycastle.jce.ECNamedCurveTable.getParameterSpec("brainpoolP256r1")) }
+            .generateKeyPair()
+
+        val (selfSignedCert, _) = buildDelegatedSignerCert(
+            signingKeyPair = attackerKeyPair,
+            subjectName = X500Name("CN=Attacker Self-Signed Responder"),
+            includeOcspSigningEku = true,
+        )
+
+        val ocspDer = buildOcspResponseDer(
+            leafCert,
+            signerKey = attackerKeyPair.private,
+            signerCert = selfSignedCert,
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+        }
     }
 
     private companion object {

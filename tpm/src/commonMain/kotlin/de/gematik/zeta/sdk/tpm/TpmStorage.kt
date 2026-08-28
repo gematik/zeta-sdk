@@ -96,13 +96,14 @@ class TpmStorageImpl(
 
     override suspend fun deleteAllDpopKeys() {
         Log.d { "Deleting all DPoP keys" }
-        extended.clearIndexed(TPM_INDEX_KEY, listOf(PREFIX_DPOP_PUBLIC, PREFIX_DPOP_PRIVATE))
+        extended.clearIndexed(TPM_INDEX_KEY, ENTRY_KEY, listOf(PREFIX_DPOP_PUBLIC, PREFIX_DPOP_PRIVATE))
     }
 
     override suspend fun clear() {
         Log.d { "Clearing all TPM storage" }
         extended.clearIndexed(
             TPM_INDEX_KEY,
+            ENTRY_KEY,
             listOf(PREFIX_CLIENT_PUBLIC, PREFIX_CLIENT_PRIVATE, PREFIX_CLIENT_TS, PREFIX_DPOP_PUBLIC, PREFIX_DPOP_PRIVATE),
         )
     }

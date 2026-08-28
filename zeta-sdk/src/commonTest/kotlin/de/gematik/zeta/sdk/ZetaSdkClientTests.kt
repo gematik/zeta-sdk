@@ -34,6 +34,7 @@ import de.gematik.zeta.sdk.configuration.ConfigurationStorageImpl
 import de.gematik.zeta.sdk.configuration.models.AuthorizationServerMetadata
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
+import de.gematik.zeta.sdk.notifications.NotificationConfig
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.storage.SdkStorage
@@ -42,9 +43,11 @@ import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 private const val requiredRoleOid = "1.2.276.0.76.4.261"
@@ -214,79 +217,6 @@ class ZetaSdkClientTests {
     }
 
     @Test
-    fun authInfo_createsWithDefaults_noParameters() {
-        // Arrange & Act
-        val authInfo = AuthInfo()
-
-        // Assert
-        assertNull(authInfo.otp)
-    }
-
-    @Test
-    fun authInfo_createsWithOtp_whenProvided() {
-        // Arrange & Act
-        val authInfo = AuthInfo(otp = "123456")
-
-        // Assert
-        assertEquals("123456", authInfo.otp)
-    }
-
-    @Test
-    fun authInfo_equality_sameOtp() {
-        // Arrange
-        val info1 = AuthInfo(otp = "123456")
-        val info2 = AuthInfo(otp = "123456")
-
-        // Act & Assert
-        assertEquals(info1, info2)
-    }
-
-    @Test
-    fun authInfo_inequality_differentOtp() {
-        // Arrange
-        val info1 = AuthInfo(otp = "123456")
-        val info2 = AuthInfo(otp = "654321")
-
-        // Act & Assert
-        assertNotEquals(info1, info2)
-    }
-
-    @Test
-    fun authInfo_equality_bothNull() {
-        // Arrange
-        val info1 = AuthInfo(otp = null)
-        val info2 = AuthInfo(otp = null)
-
-        // Act & Assert
-        assertEquals(info1, info2)
-    }
-
-    @Test
-    fun authInfo_copy_createsNewInstance() {
-        // Arrange
-        val original = AuthInfo(otp = "original")
-
-        // Act
-        val copy = original.copy(otp = "copy")
-
-        // Assert
-        assertEquals("original", original.otp)
-        assertEquals("copy", copy.otp)
-    }
-
-    @Test
-    fun authInfo_component1_destructuring() {
-        // Arrange
-        val authInfo = AuthInfo(otp = "123456")
-
-        // Act
-        val (otp) = authInfo
-
-        // Assert
-        assertEquals("123456", otp)
-    }
-
-    @Test
     fun buildConfig_createsWithAllParameters_whenProvided() {
         // Arrange
         val storageConfig = StorageConfig.Default(aesB64Key = aesTestKey)
@@ -313,7 +243,6 @@ class ZetaSdkClientTests {
         assertEquals(platformProductId, buildConfig.platformProductId)
         assertNull(buildConfig.httpClientBuilder)
         assertNull(buildConfig.registrationCallback)
-        assertNull(buildConfig.authenticationCallback)
     }
 
     @Test
@@ -325,7 +254,6 @@ class ZetaSdkClientTests {
         val platformProductId = PlatformProductId.LinuxProductId("", "", "", "")
         val httpClientBuilder = ZetaHttpClientBuilder()
         val regCallback = RegistrationCallback { RegInfo("test") }
-        val authCallback = AuthenticationCallback { AuthInfo("123") }
 
         // Act
         val buildConfig = BuildConfig(
@@ -338,13 +266,11 @@ class ZetaSdkClientTests {
             platformProductId = platformProductId,
             httpClientBuilder = httpClientBuilder,
             registrationCallback = regCallback,
-            authenticationCallback = authCallback,
         )
 
         // Assert
         assertEquals(httpClientBuilder, buildConfig.httpClientBuilder)
         assertEquals(regCallback, buildConfig.registrationCallback)
-        assertEquals(authCallback, buildConfig.authenticationCallback)
     }
 
     @Test
@@ -437,52 +363,6 @@ class ZetaSdkClientTests {
     }
 
     @Test
-    fun authenticationCallback_invokesLambda_whenCalled() = runTest {
-        // Arrange
-        var invoked = false
-        val callback = AuthenticationCallback {
-            invoked = true
-            AuthInfo("123456")
-        }
-
-        // Act
-        val result = callback.authenticationCb()
-
-        // Assert
-        assertTrue(invoked)
-        assertEquals("123456", result.otp)
-    }
-
-    @Test
-    fun authenticationCallback_returnsCorrectValue_whenInvoked() = runTest {
-        // Arrange
-        val expectedOtp = "654321"
-        val callback = AuthenticationCallback {
-            AuthInfo(expectedOtp)
-        }
-
-        // Act
-        val result = callback.authenticationCb()
-
-        // Assert
-        assertEquals(expectedOtp, result.otp)
-    }
-
-    @Test
-    fun authenticationCallback_canReturnNull_whenOtpNotProvided() = runTest {
-        // Arrange
-        val callback = AuthenticationCallback {
-            AuthInfo(otp = null)
-        }
-
-        // Act
-        val result = callback.authenticationCb()
-
-        // Assert
-        assertNull(result.otp)
-    }
-
-    @Test
     fun zetaSdkClient_canBeImplemented_mockImplementation() = runTest {
         // Arrange
         val mockClient = object : ZetaSdkClient {
@@ -505,6 +385,7 @@ class ZetaSdkClientTests {
 
             override suspend fun logout(): Result<Unit> = Result.success(Unit)
             override suspend fun close(): Result<Unit> = Result.success(Unit)
+            override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
         }
 
         // Act
@@ -543,6 +424,7 @@ class ZetaSdkClientTests {
 
             override suspend fun logout(): Result<Unit> = Result.success(Unit)
             override suspend fun close(): Result<Unit> = Result.success(Unit)
+            override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
         }
 
         // Act
@@ -664,57 +546,6 @@ class ZetaSdkClientTests {
     }
 
     @Test
-    fun authInfo_toString_containsOtp() {
-        // Arrange
-        val authInfo = AuthInfo(otp = "987654")
-
-        // Act
-        val result = authInfo.toString()
-
-        // Assert
-        assertTrue(result.contains("987654"))
-        assertTrue(result.contains("AuthInfo"))
-    }
-
-    @Test
-    fun authInfo_hashCode_sameForEqualObjects() {
-        // Arrange
-        val info1 = AuthInfo(otp = "123456")
-        val info2 = AuthInfo(otp = "123456")
-
-        // Act & Assert
-        assertEquals(info1.hashCode(), info2.hashCode())
-    }
-
-    @Test
-    fun authInfo_hashCode_sameForBothNull() {
-        // Arrange
-        val info1 = AuthInfo(otp = null)
-        val info2 = AuthInfo(otp = null)
-
-        // Act & Assert
-        assertEquals(info1.hashCode(), info2.hashCode())
-    }
-
-    @Test
-    fun authInfo_withEmptyOtp_createsValidObject() {
-        // Arrange & Act
-        val authInfo = AuthInfo(otp = "")
-
-        // Assert
-        assertEquals("", authInfo.otp)
-    }
-
-    @Test
-    fun authInfo_withNumericOtp_createsValidObject() {
-        // Arrange & Act
-        val authInfo = AuthInfo(otp = "000000")
-
-        // Assert
-        assertEquals("000000", authInfo.otp)
-    }
-
-    @Test
     fun buildConfig_toString_containsMainFields() {
         // Arrange
         val config = createTestBuildConfig()
@@ -733,7 +564,6 @@ class ZetaSdkClientTests {
         // Arrange
         val httpClientBuilder = ZetaHttpClientBuilder()
         val regCallback = RegistrationCallback { RegInfo("test") }
-        val authCallback = AuthenticationCallback { AuthInfo("otp") }
 
         // Act
         val config = BuildConfig(
@@ -746,13 +576,11 @@ class ZetaSdkClientTests {
             platformProductId = createTestPlatformProductId(),
             httpClientBuilder = httpClientBuilder,
             registrationCallback = regCallback,
-            authenticationCallback = authCallback,
         )
 
         // Assert
         assertNotNull(config.httpClientBuilder)
         assertNotNull(config.registrationCallback)
-        assertNotNull(config.authenticationCallback)
     }
 
     @Test
@@ -840,25 +668,6 @@ class ZetaSdkClientTests {
     }
 
     @Test
-    fun authenticationCallback_canBeCalledMultipleTimes() = runTest {
-        // Arrange
-        var callCount = 0
-        val callback = AuthenticationCallback {
-            callCount++
-            AuthInfo("OTP-$callCount")
-        }
-
-        // Act
-        val result1 = callback.authenticationCb()
-        val result2 = callback.authenticationCb()
-
-        // Assert
-        assertEquals(2, callCount)
-        assertEquals("OTP-1", result1.otp)
-        assertEquals("OTP-2", result2.otp)
-    }
-
-    @Test
     fun registrationCallback_canAccessExternalState() = runTest {
         // Arrange
         var externalState = "Initial"
@@ -872,23 +681,6 @@ class ZetaSdkClientTests {
 
         // Assert
         assertEquals("Modified", externalState)
-    }
-
-    @Test
-    fun authenticationCallback_canAccessExternalState() = runTest {
-        // Arrange
-        var externalOtp = ""
-        val callback = AuthenticationCallback {
-            externalOtp = "123456"
-            AuthInfo(externalOtp)
-        }
-
-        // Act
-        val result = callback.authenticationCb()
-
-        // Assert
-        assertEquals("123456", externalOtp)
-        assertEquals("123456", result.otp)
     }
 
     @Test
@@ -914,6 +706,7 @@ class ZetaSdkClientTests {
 
             override suspend fun logout(): Result<Unit> = Result.success(Unit)
             override suspend fun close(): Result<Unit> = Result.success(Unit)
+            override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
         }
 
         // Act
@@ -947,6 +740,7 @@ class ZetaSdkClientTests {
 
             override suspend fun logout(): Result<Unit> = Result.success(Unit)
             override suspend fun close(): Result<Unit> = Result.success(Unit)
+            override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
         }
 
         // Act
@@ -980,6 +774,7 @@ class ZetaSdkClientTests {
 
             override suspend fun logout(): Result<Unit> = Result.success(Unit)
             override suspend fun close(): Result<Unit> = Result.success(Unit)
+            override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
         }
 
         // Act
@@ -1012,6 +807,7 @@ class ZetaSdkClientTests {
 
             override suspend fun logout(): Result<Unit> = Result.failure(Exception("Close failed"))
             override suspend fun close(): Result<Unit> = Result.success(Unit)
+            override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
         }
 
         // Act
@@ -1044,6 +840,7 @@ class ZetaSdkClientTests {
 
             override suspend fun logout(): Result<Unit> = Result.success(Unit)
             override suspend fun close(): Result<Unit> = Result.success(Unit)
+            override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
         }
 
         // Act
@@ -1231,6 +1028,146 @@ class ZetaSdkClientTests {
         assertEquals(SdkStatus.HAS_ACCESS_AND_REFRESH_TOKEN, result.getOrThrow())
     }
 
+    @Test
+    fun `notification client is memoized on the instance`() = runTest {
+        // Arrange
+        val client = buildClientWithStorage(InMemoryStorage()) as ZetaSdkClientImpl
+
+        // Act
+        val first = client.notificationClient
+        val second = client.notificationClient
+
+        // Assert
+        assertSame(first, second)
+        client.close()
+    }
+
+    @Test
+    fun `notification client creation performs no discovery`() = runTest {
+        // Arrange - empty storage: any discovery attempt at creation time would fail loudly
+        val client = buildClientWithStorage(InMemoryStorage()) as ZetaSdkClientImpl
+
+        // Act / Assert
+        assertNotNull(client.notificationClient)
+        client.close()
+    }
+
+    @Test
+    fun `close succeeds after notification client was created`() = runTest {
+        // Arrange
+        val client = buildClientWithStorage(InMemoryStorage()) as ZetaSdkClientImpl
+        client.notificationClient
+
+        // Act
+        val result = client.close()
+
+        // Assert
+        assertTrue(result.isSuccess)
+    }
+
+    @Test
+    fun `close succeeds after httpClient was created`() = runTest {
+        val client = buildClientWithStorage(InMemoryStorage())
+        client.httpClient()
+
+        val result = client.close()
+
+        assertTrue(result.isSuccess)
+    }
+
+    @Test
+    fun `status uses registrationEndpoint as lookup key when it is not blank`() = runTest {
+        val storage = InMemoryStorage()
+        val client = buildClientWithStorage(storage)
+        val authServer = getAuthServer(authServerIssuer).copy(
+            registrationEndpoint = "https://auth.example.com/register",
+        )
+        ConfigurationStorageImpl(storage, resourceScope).linkResourceToAuthorizationServer(authServer)
+        ClientRegistrationStorageImpl(storage, resourceScope).saveRegistration(
+            authServer = "https://auth.example.com/register",
+            registrationResponse = ClientRegistrationResponse(clientId = "client-123"),
+        )
+
+        val result = client.status()
+
+        assertTrue(result.isSuccess)
+        assertEquals(SdkStatus.REGISTERED_NO_VALID_TOKENS, result.getOrThrow())
+    }
+
+    @Test
+    fun `buildServiceAccessTokenParams fails when discovery did not run`() = runTest {
+        val client = buildClientWithStorage(InMemoryStorage()) as ZetaSdkClientImpl
+
+        val error = assertFailsWith<IllegalArgumentException> { client.buildServiceAccessTokenParams() }
+
+        assertTrue(error.message.orEmpty().contains("Authorization Server metadata unavailable"))
+    }
+
+    @Test
+    fun `buildServiceAccessTokenParams fails when client is not registered`() = runTest {
+        val storage = InMemoryStorage()
+        val client = buildClientWithStorage(storage) as ZetaSdkClientImpl
+        ConfigurationStorageImpl(storage, resourceScope).linkResourceToAuthorizationServer(getAuthServer(authServerIssuer))
+
+        val error = assertFailsWith<IllegalArgumentException> { client.buildServiceAccessTokenParams() }
+
+        assertTrue(error.message.orEmpty().contains("Client not registered"))
+    }
+
+    @Test
+    fun `buildServiceAccessTokenParams uses issuer when registrationEndpoint is blank`() = runTest {
+        val storage = InMemoryStorage()
+        val client = buildClientWithStorage(storage) as ZetaSdkClientImpl
+        setupRegistration(storage)
+
+        val params = client.buildServiceAccessTokenParams()
+
+        assertEquals("client-123", params.clientId)
+        assertEquals("product-123", params.productId)
+        assertEquals("1.0.0", params.productVersion)
+        assertEquals(emptyList(), params.scopes)
+        assertEquals("", params.audience)
+    }
+
+    @Test
+    fun `buildServiceAccessTokenParams uses registrationEndpoint when it is not blank`() = runTest {
+        val storage = InMemoryStorage()
+        val client = buildClientWithStorage(storage) as ZetaSdkClientImpl
+        val authServer = getAuthServer(authServerIssuer).copy(
+            registrationEndpoint = "https://auth.example.com/register",
+        )
+        ConfigurationStorageImpl(storage, resourceScope).linkResourceToAuthorizationServer(authServer)
+        ClientRegistrationStorageImpl(storage, resourceScope).saveRegistration(
+            authServer = "https://auth.example.com/register",
+            registrationResponse = ClientRegistrationResponse(clientId = "registered-client"),
+        )
+
+        val params = client.buildServiceAccessTokenParams()
+
+        assertEquals("registered-client", params.clientId)
+    }
+
+    @Test
+    fun `notification client getPushers starts token resolution`() = runTest {
+        val client = buildClientWithStorage(InMemoryStorage()) as ZetaSdkClientImpl
+
+        val error = kotlin.runCatching { client.notificationClient!!.getPushers() }.exceptionOrNull()
+
+        assertNotNull(error)
+        client.close()
+    }
+
+    @Test
+    fun `notification client is null when notifications are not configured`() = runTest {
+        // Arrange - notificationConfig omitted (null) disables notifications entirely
+        val config = createTestBuildConfig(InMemoryStorage()).copy(notificationConfig = null)
+        val client = ZetaSdk.build(resource, config) as ZetaSdkClientImpl
+
+        // Act / Assert
+        assertNull(client.notificationClient)
+        client.close()
+    }
+
     private val resourceScope = ResourceScope(resource, listOf(scope))
     private suspend fun setupRegistration(storage: SdkStorage) {
         ConfigurationStorageImpl(storage, resourceScope).linkResourceToAuthorizationServer(getAuthServer(authServerIssuer))
@@ -1304,6 +1241,7 @@ class ZetaSdkClientTests {
             tpmConfig = object : TpmConfig {},
             authConfig = createTestAuthConfig(),
             platformProductId = createTestPlatformProductId(),
+            notificationConfig = NotificationConfig(),
         )
     }
 }

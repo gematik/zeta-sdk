@@ -24,7 +24,7 @@
 
 package de.gematik.zeta.sdk.crypto
 
-expect class X509PemReader {
+expect class X509PemReader() {
     fun loadCertificate(p12File: String, alias: String, password: String): ByteArray
     fun loadCertificateFromBytes(data: ByteArray, alias: String, password: String): ByteArray
     fun loadPrivateKey(p12File: String, alias: String, password: String): ByteArray

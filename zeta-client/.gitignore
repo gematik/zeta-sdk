@@ -1,1 +1,3 @@
 /build
+# Firebase config for the optional push-notification feature — environment specific, do not commit.
+/google-services.json

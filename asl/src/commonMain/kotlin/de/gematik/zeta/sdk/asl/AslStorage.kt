@@ -55,7 +55,7 @@ public class AslStorageImpl(
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false },
 ) : AslStorage {
     public companion object {
-        public const val PREFIX: String = "asl_session_by_resource"
+        public const val SESSION_PREFIX: String = "asl_session_by_resource"
         public const val INDEX_KEY: String = "asl_session_index"
         public const val ENTRY_KEY: String = "asl_session"
         public const val CERT_CACHE_INDEX_KEY: String = "asl_cert_cache_index"
@@ -66,12 +66,12 @@ public class AslStorageImpl(
 
     override suspend fun saveSession(session: EstablishedSession) {
         Log.d { "Saving ASL session" }
-        extended.putIndexed(INDEX_KEY, ENTRY_KEY, mapOf(PREFIX to json.encodeToString(session)))
+        extended.putIndexed(INDEX_KEY, ENTRY_KEY, mapOf(SESSION_PREFIX to json.encodeToString(session)))
     }
 
     override suspend fun getCurrentSession(): EstablishedSession? {
         Log.d { "Getting ASL session" }
-        val value = extended.getIndexed(ENTRY_KEY, PREFIX) ?: return null
+        val value = extended.getIndexed(ENTRY_KEY, SESSION_PREFIX) ?: return null
         return runCatching { json.decodeFromString<EstablishedSession>(value) }.getOrElse {
             Log.e { "Error getting ASL session: ${it.message}" }
             throw it
@@ -125,8 +125,8 @@ public class AslStorageImpl(
     }
 
     override suspend fun clear() {
-        extended.clearIndexed(INDEX_KEY, listOf(PREFIX))
-        extended.clearIndexed(CERT_CACHE_INDEX_KEY, listOf(CERT_CACHE_PREFIX))
+        extended.clearIndexed(INDEX_KEY, ENTRY_KEY, listOf(SESSION_PREFIX))
+        extended.clearAllIndexed(CERT_CACHE_INDEX_KEY, listOf(CERT_CACHE_PREFIX))
     }
 
     private fun certCacheEntryKey(

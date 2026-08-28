@@ -24,7 +24,30 @@
 
 package de.gematik.zeta.platform
 
-public actual fun platform(): Platform = Platform.IOS
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.toKString
+import platform.UIKit.UIDevice
+import platform.posix.uname
+import platform.posix.utsname
+
+@OptIn(ExperimentalForeignApi::class)
 public actual fun getPlatformInfo(): PlatformInfo {
-    TODO("Missing impl.")
+    val device = UIDevice.currentDevice
+
+    val arch = memScoped {
+        val utsname = alloc<utsname>()
+        uname(utsname.ptr)
+        utsname.machine.toKString()
+    }
+
+    return PlatformInfo(
+        os = "iOS",
+        osVersion = device.systemVersion,
+        arch = arch,
+    )
 }
+
+public actual fun platform(): Platform = Platform.IOS

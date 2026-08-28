@@ -1,6 +1,6 @@
 FROM eclipse-temurin:21-jdk
-ARG ANDROID_COMPILE_SDK=34
-ARG ANDROID_BUILD_TOOLS=34.0.0
+ARG ANDROID_COMPILE_SDK=37
+ARG ANDROID_BUILD_TOOLS=37.0.0
 ARG ANDROID_SDK_TOOLS=11076708
 RUN apt-get update -qq && apt-get install -y wget tar unzip lib32stdc++6 lib32z1 git
 ENV ANDROID_SDK_ROOT="${PWD}/android-home"

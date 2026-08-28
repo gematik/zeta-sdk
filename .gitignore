@@ -14,6 +14,13 @@ local.properties
 .cxx
 kotlin-js-store
 build-cache
+
+## CS project
+zeta-client-csharp/**/bin
+zeta-client-csharp/**/obj
+zeta-client-csharp/runtimes
+
+
 # ------------
 # iOS projects
 # ------------
@@ -24,6 +31,27 @@ Pods
 # ------------
 
 azure-configs.properties
+
+# ------------
+# iOS/Xcode per-user state + local config/secrets
+# ------------
+xcuserdata/
+# Local runtime config (copy from *.template and fill in) - never commit
+iosApp/iosApp/iosApp/zeta.env
+zeta-client/src/androidMain/assets/zeta.env
+# Local keystores/certificates - never commit
+*.p12
+
+# ------------
+# .NET / Visual Studio
+# ------------
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.nupkg
+*.snupkg
 
 .jenkins
 .githubignore

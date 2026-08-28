@@ -28,14 +28,13 @@ import org.bouncycastle.asn1.isismtt.x509.AdmissionSyntax
 import org.bouncycastle.cert.X509CertificateHolder
 import org.bouncycastle.internal.asn1.isismtt.ISISMTTObjectIdentifiers
 import java.io.ByteArrayInputStream
-import java.io.FileInputStream
 import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.cert.X509Certificate
-actual class X509PemReader {
+actual class X509PemReader actual constructor() {
 
     actual fun loadCertificate(p12File: String, alias: String, password: String): ByteArray {
-        val keystoreBytes = FileInputStream(p12File).readBytes()
+        val keystoreBytes = readP12File(p12File)
         return loadCertificateFromBytes(keystoreBytes, alias, password)
     }
 
@@ -47,7 +46,7 @@ actual class X509PemReader {
     }
 
     actual fun loadPrivateKey(p12File: String, alias: String, password: String): ByteArray {
-        val data = FileInputStream(p12File).readBytes()
+        val data = readP12File(p12File)
         return loadPrivateKeyFromBytes(data, alias, password)
     }
 
@@ -70,3 +69,4 @@ actual class X509PemReader {
         return registrationNumber
     }
 }
+internal expect fun readP12File(path: String): ByteArray

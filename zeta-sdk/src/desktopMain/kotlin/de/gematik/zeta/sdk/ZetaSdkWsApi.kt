@@ -39,8 +39,6 @@ import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.url
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
-import io.ktor.websocket.readBytes
-import io.ktor.websocket.readText
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CFunction
 import kotlinx.cinterop.CPointer
@@ -57,6 +55,7 @@ import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.refTo
 import kotlinx.cinterop.set
 import kotlinx.cinterop.toKString
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.runBlocking
 import platform.posix.memcpy
 import kotlin.experimental.ExperimentalNativeApi
@@ -160,43 +159,27 @@ fun ZetaSdk_WSSession_receiveNext(
 ): CPointer<ZetaSdk_WSMessage>? = guardExportedFunction(errorValue = null) {
     val session = wsSession.pointed.zetaSdkWsSession!!.asStableRef<DefaultClientWebSocketSession>().get()
     runBlocking {
-        for (frame in session.incoming) {
-            when (frame) {
-                is Frame.Text -> {
-                    val text = frame.readText()
-                    return@runBlocking nativeHeap.alloc<ZetaSdk_WSMessage>().also { cWsMessage ->
-                        cWsMessage.type = ZetaSdk_WsMessageType.WS_TEXT
-                        val bytes = text.encodeToByteArray()
-                        val buf = nativeHeap.allocArray<ByteVar>(bytes.size + 1)
-                        bytes.forEachIndexed { i, b -> buf[i] = b }
-                        buf[bytes.size] = 0
-                        cWsMessage.data.text.size = bytes.size
-                        cWsMessage.data.text.text = buf
-                    }.ptr
-                }
-
-                is Frame.Binary -> {
-                    val bytes = frame.readBytes()
-                    return@runBlocking nativeHeap.alloc<ZetaSdk_WSMessage>().also { cWsMessage ->
-                        cWsMessage.type = ZetaSdk_WsMessageType.WS_BINARY
-                        cWsMessage.data.binary.bytes = nativeHeap.allocArray<ByteVar>(bytes.size)
-                        cWsMessage.data.binary.size = bytes.size
-                        memcpy(cWsMessage.data.binary.bytes, bytes.refTo(0), bytes.size.toULong())
-                    }.ptr
-                }
-
-                is Frame.Close -> {
-                    return@runBlocking nativeHeap.alloc<ZetaSdk_WSMessage>().also { cWsMessage ->
-                        cWsMessage.type = ZetaSdk_WsMessageType.WS_CLOSE
-                    }.ptr
-                }
-
-                else -> {
-                    // ignore other Frames
-                }
-            }
+        when (val assembled = receiveAssembledFrame(session.incoming)) {
+            is AssembledFrame.Text -> nativeHeap.alloc<ZetaSdk_WSMessage>().also { cWsMessage ->
+                cWsMessage.type = ZetaSdk_WsMessageType.WS_TEXT
+                val bytes = assembled.text.encodeToByteArray()
+                val buf = nativeHeap.allocArray<ByteVar>(bytes.size + 1)
+                bytes.forEachIndexed { i, b -> buf[i] = b }
+                buf[bytes.size] = 0
+                cWsMessage.data.text.size = bytes.size
+                cWsMessage.data.text.text = buf
+            }.ptr
+            is AssembledFrame.Binary -> nativeHeap.alloc<ZetaSdk_WSMessage>().also { cWsMessage ->
+                cWsMessage.type = ZetaSdk_WsMessageType.WS_BINARY
+                cWsMessage.data.binary.bytes = nativeHeap.allocArray<ByteVar>(assembled.bytes.size)
+                cWsMessage.data.binary.size = assembled.bytes.size
+                memcpy(cWsMessage.data.binary.bytes, assembled.bytes.refTo(0), assembled.bytes.size.toULong())
+            }.ptr
+            AssembledFrame.Close -> nativeHeap.alloc<ZetaSdk_WSMessage>().also { cWsMessage ->
+                cWsMessage.type = ZetaSdk_WsMessageType.WS_CLOSE
+            }.ptr
+            null -> null
         }
-        return@runBlocking null
     }
 }
 
@@ -243,4 +226,37 @@ fun ZetaSdk_WSMessage_destroy(
         }
     }
     nativeHeap.free(wsMessage.rawValue)
+}
+
+internal suspend fun receiveAssembledFrame(
+    incoming: ReceiveChannel<Frame>,
+): AssembledFrame? {
+    val textBytes = mutableListOf<Byte>()
+    val binaryBytes = mutableListOf<Byte>()
+
+    for (frame in incoming) {
+        when (frame) {
+            is Frame.Text -> {
+                textBytes.addAll(frame.data.toList())
+                if (frame.fin) {
+                    return AssembledFrame.Text(textBytes.toByteArray().decodeToString())
+                }
+            }
+            is Frame.Binary -> {
+                binaryBytes.addAll(frame.data.toList())
+                if (frame.fin) {
+                    return AssembledFrame.Binary(binaryBytes.toByteArray())
+                }
+            }
+            is Frame.Close -> return AssembledFrame.Close
+            else -> { /* ignore */ }
+        }
+    }
+    return null
+}
+
+internal sealed class AssembledFrame {
+    data class Text(val text: String) : AssembledFrame()
+    data class Binary(val bytes: ByteArray) : AssembledFrame()
+    object Close : AssembledFrame()
 }

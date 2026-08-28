@@ -16,7 +16,6 @@ setupBuildLogic {
                 implementation(libs.ktor.client.okhttp)
                 implementation(libs.ktor.server.core.jvm)
                 implementation(libs.ktor.server.netty.jvm)
-                implementation(libs.ktor.server.logging.jvm)
                 implementation(libs.ktor.server.cors.jvm)
                 implementation(libs.ktor.server.websockets.jvm)
                 implementation(libs.ktor.server.content.negotiation)
@@ -27,34 +26,40 @@ setupBuildLogic {
 
                 implementation(libs.netty.codec.http) {
                     version {
-                        // fixing CVE-2026-42587, CVE-2026-33870 and CVE-2026-3387
-                        strictly("4.2.15.Final")
+                        // fixing CVE-2026-42587, CVE-2026-33870 and CVE-2026-3387, CVE-2026-59901
+                        strictly("4.2.17.Final")
                     }
                 }
                 implementation(libs.netty.codec.http2) {
                     version {
-                        // fixing CVE-2026-42587, CVE-2026-33870 and CVE-2026-3387
+                        // fixing CVE-2026-42587, CVE-2026-33870 and CVE-2026-3387, CVE-2026-59901
                         // fixing CVE-2026-47244
-                        strictly("4.2.15.Final")
+                        strictly("4.2.17.Final")
+                    }
+                }
+                implementation(libs.netty.codec.compression) {
+                    version {
+                        // fixing CVE-2026-59901
+                        strictly("4.2.17.Final")
                     }
                 }
                 implementation(libs.netty.transport.native.epoll) {
                     version {
                         // fixing CVE-2026-42587
                         // fixing CVE-2026-45536
-                        strictly("4.2.15.Final")
+                        strictly("4.2.17.Final")
                     }
                 }
                 implementation(libs.netty.transport.native.kqueue) {
                     version {
                         // fixing CVE-2026-45536
-                        strictly("4.2.15.Final")
+                        strictly("4.2.17.Final")
                     }
                 }
                 implementation(libs.netty.handler) {
                     version {
                         // fixing CVE-2026-44249, CVE-2026-45416
-                        strictly("4.2.15.Final")
+                        strictly("4.2.17.Final")
                     }
                 }
             }

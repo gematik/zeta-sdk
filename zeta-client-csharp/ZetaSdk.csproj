@@ -17,6 +17,11 @@
 
   <ItemGroup>
     <Compile Remove="sample/**/*.cs" />
+    <Compile Remove="tests/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ZetaSdk.Tests" />
   </ItemGroup>
 
  <ItemGroup>

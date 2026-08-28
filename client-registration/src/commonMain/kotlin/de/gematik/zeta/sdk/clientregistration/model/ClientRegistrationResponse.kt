@@ -27,6 +27,7 @@ package de.gematik.zeta.sdk.clientregistration.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/** DCR response (RFC 7591); [clientId] is used by all later token requests. */
 @Serializable
 data class ClientRegistrationResponse(
     @SerialName("redirect_uris") val redirectUris: List<String> = emptyList(),

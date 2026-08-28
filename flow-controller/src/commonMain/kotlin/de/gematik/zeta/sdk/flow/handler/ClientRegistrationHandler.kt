@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.flow.handler
 
+import Jwk
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.clientregistration.ClientRegistrationApi
 import de.gematik.zeta.sdk.clientregistration.ClientRegistrationException
@@ -42,6 +43,7 @@ open class ClientRegistrationHandler(
     private val clientName: String,
     private val regApi: ClientRegistrationApi,
     private val tpmProvider: TpmProvider,
+    private val redirectUris: List<String> = emptyList(),
     private val maxRetries: Int = 3,
 ) : CapabilityHandler {
     companion object {
@@ -56,12 +58,15 @@ open class ClientRegistrationHandler(
         val authServer = ctx.configurationStorage.getAuthServer()
         checkNotNull(authServer) { "Failed to load authorization server metadata from storage" }
 
-        val clientId = ctx.clientRegistrationStorage.getClientId(authServer.registrationEndpoint ?: authServer.issuer)
-        if (!clientId.isNullOrBlank()) {
+        val registrationKey = authServer.registrationEndpoint ?: authServer.issuer
+        val clientKey = tpmProvider.getOrGenerateClientInstancePublicKey().jwk
+
+        val cached = ctx.clientRegistrationStorage.getRegistrationInfo(registrationKey)
+        if (!cached?.clientId.isNullOrBlank() && wasRegisteredWith(cached, clientKey.kid)) {
             return CapabilityResult.Done
         }
 
-        val registrationResponse = attemptRegister(authServer.effectiveRegistrationEndpoint)
+        val registrationResponse = attemptRegister(authServer.effectiveRegistrationEndpoint, clientKey)
 
         val response = registrationResponse.getOrElse { exception ->
             exception as ClientRegistrationException
@@ -75,22 +80,36 @@ open class ClientRegistrationHandler(
 
         ctx
             .clientRegistrationStorage
-            .saveRegistration(authServer.registrationEndpoint ?: authServer.issuer, response)
+            .saveRegistration(registrationKey, response.copy(jwks = Jwks(listOf(clientKey))))
 
         return CapabilityResult.Done
     }
 
-    private suspend fun attemptRegister(endpoint: String): Result<ClientRegistrationResponse> {
+    private fun wasRegisteredWith(registration: ClientRegistrationResponse?, currentKid: String): Boolean {
+        val registeredKids = registration?.jwks?.keys.orEmpty().map { it.kid }.filter { it.isNotBlank() }
+        if (registeredKids.isEmpty()) {
+            Log.d { "Cached client registration has no recorded client key, re-registering" }
+            return false
+        }
+        if (currentKid !in registeredKids) {
+            Log.w { "Client instance key changed since registration, re-registering" }
+            return false
+        }
+        return true
+    }
+
+    private suspend fun attemptRegister(endpoint: String, clientKey: Jwk): Result<ClientRegistrationResponse> {
         var lastException: ClientRegistrationException? = null
 
         repeat(maxRetries) { attempt ->
             try {
                 val request = ClientRegistrationRequest(
                     tokenEndpointAuthMethod = "private_key_jwt",
-                    grantTypes = listOf("urn:ietf:params:oauth:grant-type:token-exchange", "refresh_token"),
-                    responseTypes = listOf("token"),
+                    grantTypes = listOf("authorization_code", "urn:ietf:params:oauth:grant-type:token-exchange", "refresh_token"),
+                    responseTypes = listOf("token", "code"),
                     clientName = clientName,
-                    jwks = Jwks(listOf(tpmProvider.getOrGenerateClientInstancePublicKey().jwk)),
+                    jwks = Jwks(listOf(clientKey)),
+                    redirectUris = redirectUris,
                 )
 
                 val response = regApi.register(endpoint, request)

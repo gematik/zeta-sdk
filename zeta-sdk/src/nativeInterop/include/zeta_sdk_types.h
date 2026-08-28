@@ -285,6 +285,7 @@ typedef struct {
     char*  additionalCaFile;         /**< Path to a PEM file with additional trusted CAs. NULL = none. */
     bool   disableServerValidation;  /**< Disables all TLS validation. Dev/test only. */
     bool   sslVerbose;               /**< Enables verbose TLS handshake logging. Default: false. */
+    int64_t revocationCacheDurationSeconds; /**< Duration in seconds to cache OCSP/CRL responses. */
 } ZetaSdk_SecurityConfig;
 
 /**

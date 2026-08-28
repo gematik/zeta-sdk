@@ -40,7 +40,9 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.encodedPath
 import io.ktor.http.takeFrom
 import kotlinx.coroutines.test.runTest
+import kotlin.io.encoding.Base64
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
@@ -443,7 +445,166 @@ class AslApiImplTest {
         assertEquals("DPoP existing-token", target.headers[HttpHeaders.Authorization])
     }
 
-    private class FakeAslStorage(val session: EstablishedSession? = null) : AslStorage {
+    @Test
+    fun encrypt_replacesCallerAccept_sessionExists() = runTest {
+        // Arrange
+        val storage = FakeAslStorage(session = buildSession(cid = fakeSession))
+        val sut = AslApiImpl(
+            aslProdEnvironment = true,
+            aslStorage = storage,
+            zetaHttpClient = ZetaHttpClient(HttpClient {}),
+            accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
+            requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+        )
+        val request = HttpRequestBuilder().apply {
+            url { takeFrom(fakeTarget) }
+            method = HttpMethod.Get
+            header(HttpHeaders.Authorization, fakeToken)
+            header(HttpHeaders.Accept, "application/fhir+json")
+        }
+
+        // Act
+        val result = sut.encrypt(request)
+
+        // Assert
+        assertEquals(listOf("application/octet-stream"), result.headers.getAll(HttpHeaders.Accept))
+    }
+
+    @Test
+    fun encrypt_doesNotAccumulateHeaders_calledTwice() = runTest {
+        // Arrange
+        val storage = FakeAslStorage(session = buildSession(cid = "/ASL/aaa"))
+        val sut = AslApiImpl(
+            aslProdEnvironment = true,
+            aslStorage = storage,
+            zetaHttpClient = ZetaHttpClient(HttpClient {}),
+            accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
+            requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+        )
+        val request = HttpRequestBuilder().apply {
+            url { takeFrom(fakeTarget) }
+            method = HttpMethod.Get
+            header(HttpHeaders.Authorization, fakeToken)
+        }
+
+        // Act — first send, server answers 500, session is recreated, retry
+        sut.encrypt(request)
+        storage.session = buildSession(cid = "/ASL/bbb")
+        val result = sut.encrypt(request)
+
+        // Assert
+        assertEquals(listOf("application/octet-stream"), result.headers.getAll(HttpHeaders.Accept))
+        assertEquals(listOf("application/octet-stream"), result.headers.getAll(HttpHeaders.ContentType))
+    }
+
+    @Test
+    fun encrypt_keepsSingleTracingHeaderOfCurrentSession_calledTwice() = runTest {
+        // Arrange
+        val sessionB = buildSession(
+            cid = "/ASL/bbb",
+            prod = false,
+            c2sAppDataKey = ByteArray(32) { 0x04 },
+            s2cAppDataKey = ByteArray(32) { 0x05 },
+        )
+        val storage = FakeAslStorage(session = buildSession(cid = "/ASL/aaa", prod = false))
+        val sut = AslApiImpl(
+            aslProdEnvironment = false,
+            aslStorage = storage,
+            zetaHttpClient = ZetaHttpClient(HttpClient {}),
+            accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
+            requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+        )
+        val request = HttpRequestBuilder().apply {
+            url { takeFrom(fakeTarget) }
+            method = HttpMethod.Get
+            header(HttpHeaders.Authorization, fakeToken)
+        }
+
+        // Act
+        sut.encrypt(request)
+        storage.session = sessionB
+        val result = sut.encrypt(request)
+
+        // Assert
+        val expected = "${Base64.encode(sessionB.c2sAppDataKey)} ${Base64.encode(sessionB.s2cAppDataKey)}"
+        assertEquals(listOf(expected), result.headers.getAll(TRACING_HEADER))
+    }
+
+    @Test
+    fun encrypt_doesNotGrowBody_calledTwice() = runTest {
+        // Arrange
+        val storage = FakeAslStorage(session = buildSession(cid = "/ASL/aaa"))
+        val sut = AslApiImpl(
+            aslProdEnvironment = true,
+            aslStorage = storage,
+            zetaHttpClient = ZetaHttpClient(HttpClient {}),
+            accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
+            requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+        )
+        val request = HttpRequestBuilder().apply {
+            url { takeFrom("https://api.example.com/vsdservice/v1/vsdmbundle?profileVersion=1.1") }
+            method = HttpMethod.Get
+            header(HttpHeaders.Authorization, fakeToken)
+            header(HttpHeaders.Accept, "application/fhir+json")
+        }
+
+        // Act — first send, server answers 500, session is recreated, retry
+        sut.encrypt(request)
+        val sizeAfterFirst = (request.body as ByteArray).size
+        storage.session = buildSession(cid = "/ASL/bbb")
+        val result = sut.encrypt(request)
+
+        // Assert — same plaintext re-encrypted, not the previous ciphertext wrapped again
+        assertEquals(sizeAfterFirst, (result.body as ByteArray).size)
+        assertEquals("/ASL/bbb", result.url.encodedPath)
+    }
+
+    @Test
+    fun encrypt_keepsOriginalInnerRequest_calledTwice() = runTest {
+        // Arrange
+        val storage = FakeAslStorage(session = buildSession(cid = "/ASL/aaa"))
+        val sut = AslApiImpl(
+            aslProdEnvironment = true,
+            aslStorage = storage,
+            zetaHttpClient = ZetaHttpClient(HttpClient {}),
+            accessTokenProvider = FakeAccessTokenProvider(),
+            tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
+            requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+        )
+        val target = "https://api.example.com/vsdservice/v1/vsdmbundle?profileVersion=1.1"
+        val request = HttpRequestBuilder().apply {
+            url { takeFrom(target) }
+            method = HttpMethod.Get
+            header(HttpHeaders.Authorization, fakeToken)
+            header(HttpHeaders.Accept, "application/fhir+json")
+        }
+        // an identical builder that is never passed to encrypt, used as the expected value
+        val pristineCopy = HttpRequestBuilder().apply {
+            url { takeFrom(target) }
+            method = HttpMethod.Get
+            header(HttpHeaders.Authorization, fakeToken)
+            header(HttpHeaders.Accept, "application/fhir+json")
+        }
+        val expected = InnerHttpCodecImpl().encodeRequest(pristineCopy)
+
+        // Act
+        sut.encrypt(request)
+        storage.session = buildSession(cid = "/ASL/bbb")
+        sut.encrypt(request)
+
+        // Assert — the cached inner request is still the caller's original GET,
+        // not a POST to the previous CID carrying the previous ciphertext
+        assertContentEquals(expected, request.attributes[AslInnerRequestKey])
+        val decoded = expected.decodeToString()
+        assertTrue(decoded.startsWith("GET /vsdservice/v1/vsdmbundle?profileVersion=1.1"))
+        assertTrue(decoded.contains("application/fhir+json"))
+    }
+
+    private class FakeAslStorage(var session: EstablishedSession? = null) : AslStorage {
         var sessionWasSaved = false
         var savedSession: EstablishedSession? = null
 
@@ -492,11 +653,16 @@ class AslApiImplTest {
         }
     }
 
-    fun buildSession(cid: String? = fakeSession, prod: Boolean = true): EstablishedSession =
+    fun buildSession(
+        cid: String? = fakeSession,
+        prod: Boolean = true,
+        c2sAppDataKey: ByteArray = ByteArray(32) { 0x02 },
+        s2cAppDataKey: ByteArray = ByteArray(32) { 0x03 },
+    ): EstablishedSession =
         EstablishedSession(
             keyId = ByteArray(32) { 0x01 },
-            c2sAppDataKey = ByteArray(32) { 0x02 },
-            s2cAppDataKey = ByteArray(32) { 0x03 },
+            c2sAppDataKey = c2sAppDataKey,
+            s2cAppDataKey = s2cAppDataKey,
             cid = cid,
             pu = if (prod) Environment.Production else Environment.Testing,
         )

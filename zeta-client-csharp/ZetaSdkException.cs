@@ -24,8 +24,16 @@
 
 namespace ZetaSdk;
 
+/// <summary>
+/// Thrown when a ZETA SDK operation fails, either at the native interop layer
+/// or as a result of an error reported by the native SDK (see
+/// <see cref="ZetaClient.GetLastError"/>).
+/// </summary>
 public sealed class ZetaSdkException : Exception
 {
+    /// <summary>Initializes a new instance with the given error message.</summary>
     public ZetaSdkException(string message) : base(message) { }
+
+    /// <summary>Initializes a new instance with the given error message and inner exception.</summary>
     public ZetaSdkException(string message, Exception inner) : base(message, inner) { }
 }

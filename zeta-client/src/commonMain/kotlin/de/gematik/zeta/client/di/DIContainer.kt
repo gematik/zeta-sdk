@@ -34,7 +34,11 @@ import de.gematik.zeta.client.data.service.PrescriptionServiceImpl
 import de.gematik.zeta.client.data.service.fake.FakePrescriptionService
 import de.gematik.zeta.client.data.service.http.HttpClientProvider
 import de.gematik.zeta.client.data.service.http.HttpClientProviderImpl
+import de.gematik.zeta.client.ui.otp.GuiOtpCallback
 import de.gematik.zeta.logging.Log
+import de.gematik.zeta.platform.Platform
+import de.gematik.zeta.platform.platform
+import de.gematik.zeta.sdk.authentication.AuthMode
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
 
 private const val USE_FAKE_SERVICES = false
@@ -43,7 +47,22 @@ internal const val DEBUG_LOGGING = true
 public const val POPP_TOKEN_HEADER_NAME: String = "PoPP"
 
 public object DIContainer {
-    public val httpClientProvider: HttpClientProvider = HttpClientProviderImpl()
+    public const val CUSTOM_SMCB_ENABLED: Boolean = false
+    public val DISABLE_SERVER_VALIDATION: Boolean = "true".contentEquals((getConfig("DISABLE_SERVER_VALIDATION") ?: "").lowercase())
+    public val AUTH_MODE: AuthMode =
+        when (getConfig("AUTH_MODE")?.lowercase()) {
+            "oidc" -> AuthMode.OIDC
+            "smb" -> AuthMode.SMB
+            else -> defaultAuthModeForPlatform()
+        }
+
+    private fun defaultAuthModeForPlatform(): AuthMode = when (platform()) {
+        Platform.Android, Platform.IOS -> AuthMode.OIDC
+        else -> AuthMode.SMB
+    }
+
+    public val otpCallback: GuiOtpCallback = GuiOtpCallback()
+    public val httpClientProvider: HttpClientProvider = HttpClientProviderImpl(otpCallback)
     public val settingsRepository: SettingsRepository = SettingsRepositoryImpl()
 
     public val prescriptionService: PrescriptionService =
@@ -69,11 +88,12 @@ public object DIContainer {
         getConfig("SMB_KEYSTORE_PASSWORD") ?: "",
     )
 
-    public const val CUSTOM_SMCB_ENABLED: Boolean = false
-    public val DISABLE_SERVER_VALIDATION: Boolean = "true".contentEquals((getConfig("DISABLE_SERVER_VALIDATION") ?: "").lowercase())
+    public val PUSH_GATEWAY_URL: String = getConfig("PUSH_GATEWAY_URL") ?: ""
+    public val OIDC_BASE_URI: String = getConfig("OIDC_BASE_URI") ?: ""
+    public val OIDC_IDP_ISS: String = getConfig("OIDC_IDP_ISS") ?: ""
+    public val OIDC_IDP_ALIAS: String = getConfig("OIDC_IDP_ALIAS") ?: ""
     public val STORAGE_AES_KEY: String = getConfig("STORAGE_AES_KEY") ?: error("STORAGE_AES_KEY must be provided.")
     public val POPP_TOKEN: String? = getConfig("POPP_TOKEN")
-
     public val ASL_PROD: Boolean = "true".contentEquals((getConfig("ASL_PROD") ?: "true").lowercase())
     public val REQUIRED_OID: String? = getConfig("REQUIRED_ROLE_OID")
     private fun getUrlEnvironments(): List<String> {

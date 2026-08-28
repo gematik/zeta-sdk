@@ -22,10 +22,22 @@
  * #L%
  */
 
+/// <summary>
+/// Implement to back the SDK's persistence (tokens, keys, session data) with a
+/// custom store instead of the SDK's default platform storage. Configured via
+/// <see cref="ZetaSdk.Config.ZetaStorageConfig.CustomStorage"/>.
+/// </summary>
 public interface ICustomStorage
 {
+    /// <summary>Stores <paramref name="value"/> under <paramref name="key"/>, overwriting any existing value.</summary>
     void Put(string key, string value);
+
+    /// <summary>Returns the value stored under <paramref name="key"/>, or <c>null</c> if not present.</summary>
     string? Get(string key);
+
+    /// <summary>Removes the value stored under <paramref name="key"/>, if any.</summary>
     void Remove(string key);
+
+    /// <summary>Removes all values from this storage.</summary>
     void Clear();
 }

@@ -24,17 +24,40 @@
 
 package de.gematik.zeta.sdk.attestation.model
 
+import de.gematik.zeta.logging.Log
+import de.gematik.zeta.platform.getPlatformInfo
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.encodeToJsonElement
+import platform.UIKit.UIDevice
 
 actual suspend fun buildPosture(
-    platformProductId: PlatformProductId,
+    platformProductId: PlatformProductId?,
     productId: String,
     productVersion: String,
     attChallenge: String,
     publicKeyB64: String,
 ): JsonElement {
-    TODO()
+    Log.d { "Building posture. Getting platform information" }
+    val platformInfo = getPlatformInfo()
+    val json = Json {
+        encodeDefaults = true
+        explicitNulls = false
+    }
+
+    return json.encodeToJsonElement(
+        SoftwarePosture(
+            productId = productId,
+            productVersion = productVersion,
+            platformProductId = platformProductId,
+            os = platformInfo.os,
+            osVersion = platformInfo.osVersion,
+            arch = platformInfo.arch,
+            publicKey = publicKeyB64,
+            attestationChallenge = attChallenge,
+        ),
+    )
 }
 
 actual suspend fun getPlatform(): Platform = Platform.APPLE
-actual fun getPostureType(): PostureType = PostureType.APPLE
+actual fun getPostureType(): PostureType = PostureType.SOFTWARE

@@ -155,4 +155,5 @@ internal struct NativeSecurityConfig
     public IntPtr additionalCaFile;
     [MarshalAs(UnmanagedType.I1)] public bool disableServerValidation;
     [MarshalAs(UnmanagedType.I1)] public bool sslVerbose;
+    public long revocationCacheDurationSeconds;
 }

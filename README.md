@@ -54,7 +54,6 @@ Folders for core SDK functionality and clients.
 | zeta-client-java      | Code for the Java client                                                                                                    |
 | zeta-client-cpp       | Code for the C++ client (HTTP CRUD and WebSocket demo)                                                                      |
 | zeta-nativeclient-cpp | Standalone C++ client using the SDK shared library directly. Samples can be run using a Makefile for (macOS, Linux, Windows) |
-| zeta-client           | Code for the demo client                                                                                                    |
 | zeta-testdriver       | Code for the test proxy client and load test driver                                                                         |
 | attestation-service   | Code for the attestation service for Windows and Linux                                                                      |
 | docs                  | Further code-related documentation                                                                                          |
@@ -79,12 +78,13 @@ Here are the folders for the different modules:
 | attestation         | Attestation module                                         |
 | authentication      | authentication module                                      |
 | client-registration | Modul for the client registration                          |
-| configuration       | Runtime configuration                                      |
+| configuration       | Service discovery: reading the `.well-known` files         |
 | crypto              | Crypto functionality                                       |
 | flow-controller     | Core SDK controller logic                                  |
 | network             | Network module (e.g. HttpClient)                           |
 | storage             | Storage module                                             |
 | tpm                 | Access to the TPM or alternate implementations             |
+| notifications       | Push notification module                                   |
 
 ### Technical
 
@@ -211,6 +211,12 @@ de.gematik.zeta.sdk.build-logic.enableNative=true
 
 Here the "enableNative" switch enables the C++ build components.
 
+The optional Android push-notification feature is not configured in `gradle.properties`; it
+is enabled through a `ZETA_GOOGLE_SERVICES_JSON=` line in the runtime config file
+`zeta-client/src/androidMain/assets/zeta.env`. See
+[Push notifications (optional, Android)](#push-notifications-optional-android) for what
+this enables and the additional setup it requires.
+
 #### local.properties
 
 In the local.properties file the location of the Android Sdk can be set, for example
@@ -244,6 +250,10 @@ Here are the items you need to adapt:
 | ASL_PROD                  | Defines whether the client runs in Productive or Non Productive mode. If set to "false" exposes the ASL symmetric keys: K2_c2s_app_data and K2_s2c_app | by default is set to "true" (productive environment)       |
 | STORAGE_AES_KEY           | Base64-encoded AES-256 key used to encrypt session data at rest                                                                                        | 7aae7xXr8rnzVqjpYbosS0CFMrlprkD7jbVotm0fd                  |
 | REQUIRED_ROLE_OID         | Role-OID that the TI certificate must contain. Required for ASL handshake validation                                                                   | 1.2.276.0.76.4.156                                         |
+| OIDC_IDP_ISS              | Issuer identifier of the OIDC IDP used for the email-binding authentication flow                                                                       | https://fachdienst.host.example.com/sekidp                 |
+| OIDC_BASE_URI             | Base URI the client's system browser flow redirects back to (callback endpoint)                                                                        | http://localhost:8090/cb/demo                              |
+| OIDC_IDP_ALIAS            | Alias of the IDP as configured in the Keycloak broker chain                                                                                            | zeta-sekidp-oidc                                           |
+| AUTH_MODE                 | Selects the authentication mode the client uses to obtain the subject token: `SMB` for SM-B/SMC-B or `OIDC` for the OIDC                               | SMB                                                        |
 
 
 ## The demo client
@@ -259,6 +269,69 @@ It implements the functionality that is exposed by the Test-Fachdienst.
 * Installed Android Software Development Kit (SDK) with configured ANDROID_HOME environment variable (optional)
 
 Note: the SDK and the test client can be built without Android SDK.
+
+### Push notifications (optional, Android)
+
+The Android demo client can receive push notifications via Firebase Cloud Messaging (FCM).
+This feature is **optional and disabled by default** — the default build has no dependency on
+Firebase and needs no Firebase configuration. It is enabled by setting a
+`ZETA_GOOGLE_SERVICES_JSON=` line in `zeta-client/src/androidMain/assets/zeta.env` (the same
+runtime config file the app reads) that points at a valid `google-services.json`; enabling
+it applies the `com.google.gms.google-services` Gradle plugin.
+
+**What the feature adds when enabled**
+
+* the Firebase Cloud Messaging dependency and the `com.google.gms.google-services` plugin,
+* the `ZetaFirebaseMessagingService` (receives messages and posts a system notification),
+* the `POST_NOTIFICATIONS` runtime-permission prompt (Android 13+) and the notification
+  channel / resources.
+
+When the feature is disabled, none of the above is compiled in: the Firebase code lives in the
+separate `zeta-client/src/androidNotifications` source set, and the build script compiles in
+exactly one variant of the integration provider — the Firebase-backed one when enabled, a no-op
+one from `zeta-client/src/androidNoNotifications` otherwise. The selection happens entirely at
+compile time (no reflection), and `de.gematik.zeta.client.notification.ZetaNotifications`
+exposes the result.
+
+**How to enable it**
+
+1. Create a Firebase project and register an Android app with the applicationId
+   `de.gematik.zeta.client` (see the [Firebase console](https://console.firebase.google.com/)).
+
+2. Download the generated `google-services.json` and store it somewhere **outside** the
+   repository (it is environment specific and contains project credentials — do not commit
+   it).
+
+3. Add a `ZETA_GOOGLE_SERVICES_JSON=` line pointing at that file to
+   `zeta-client/src/androidMain/assets/zeta.env`:
+
+   ````
+   ZETA_GOOGLE_SERVICES_JSON=/path/to/google-services.json
+   ````
+
+   Android must also be enabled (`de.gematik.zeta.sdk.build-logic.enableAndroid=true`).
+   When the line is absent or empty (or the `zeta.env` file is missing entirely), the
+   feature is disabled and the build needs no Firebase configuration; when it points to a
+   non-existent file, the build prints a warning and keeps the feature disabled. The build
+   copies the file to `zeta-client/google-services.json` (where the
+   `com.google.gms.google-services` plugin expects it) — that copy is git-ignored.
+
+4. Build and install the Android app as usual. The FCM push key is deliberately not logged;
+   to obtain it during development, set a breakpoint in
+   `ZetaFirebaseMessagingService.onNewToken` (fires on first start after install and on token
+   rotation) or evaluate `FirebaseMessaging.getInstance().token` in the debugger. Use the key
+   as the target when sending a test message from the Firebase console or the notification
+   service.
+
+
+## Platform Requirements
+
+| Platform | Requirements           |
+|-----------|------------------------|
+| Android | API 28+ (Android 9.0+) |
+| JVM | JDK 17+                |
+| iOS | iOS 15+                |
+
 
 ### Building
 
@@ -354,16 +427,29 @@ setup is correct.
 The proxy client exposes a number of HTTP endpoints that allow on one side forwarding requests to
 the Fachdienst, but also control the client and extract information necessary for testing.
 
-| endpoint                     | access type      | purpose                                                                                                                                                                                                                             |
-|------------------------------|------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| /proxy/*                     | all HTTP methods | Forward any requests path after the "/proxy/" part to the Fachdienst. According to the SDK API, includes discovery, client registration and authentication if not already done.<br/>Note this also includes the websocket protocol. |
-| /testdriver-api/discover     | GET              | Just the discovery part of the protocol, i.e. reading the .well-known files                                                                                                                                                         |
-| /testdriver-api/register     | GET              | Perform client registration (includes discovery if not already done)                                                                                                                                                                |
-| /testdriver-api/authenticate | GET              | Retrieve and store an access token (includes client registration and discovery if not already done)                                                                                                                                 |
-| /testdriver-api/storage      | GET              | Retrieve the stored data (like client instance key, access token etc)                                                                                                                                                               |
-| /testdriver-api/reset        | GET              | Forget all the stored information, so any call will start triggering a discovery, client registration and authentication again                                                                                                      |
-| /testdriver-api/configure    | POST             | Configures the test driver with the provided settings, including TLS validation, resource URL, and custom CA certificate                                                                                                            |
-| /health                      | GET              | health API for kubernetes                                                                                                                                                                                                           |
+| endpoint                                     | access type      | purpose                                                                                                                                                                                                                             |
+|----------------------------------------------|------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| /proxy/*                                     | all HTTP methods | Forward any requests path after the "/proxy/" part to the Fachdienst. According to the SDK API, includes discovery, client registration and authentication if not already done.<br/>Note this also includes the websocket protocol. |
+| /testdriver-api/discover                     | GET              | Just the discovery part of the protocol, i.e. reading the .well-known files                                                                                                                                                         |
+| /testdriver-api/register                     | GET              | Perform client registration (includes discovery if not already done)                                                                                                                                                                |
+| /testdriver-api/authenticate                 | GET              | Retrieve and store an access token (includes client registration and discovery if not already done)                                                                                                                                 |
+| /testdriver-api/storage                      | GET              | Retrieve the stored data (like client instance key, access token etc)                                                                                                                                                               |
+| /testdriver-api/reset                        | GET              | Forget all the stored information, so any call will start triggering a discovery, client registration and authentication again                                                                                                      |
+| /testdriver-api/configure                    | POST             | Configures the test driver with the provided settings, including TLS validation, resource URL, and custom CA certificate                                                                                                            |
+| /testdriver-api/notifications/pushers        | GET              | List the pushers registered for the authenticated user                                                                                                                                                                              |
+| /testdriver-api/notifications/pushers        | POST             | Register a pusher (JSON `PusherConfigRequest` body); the ISS encryption key material is derived inside the SDK                                                                                                                      |
+| /testdriver-api/notifications/pushers        | PUT              | Update the pusher identified by appId/pushkey (JSON `PusherConfigRequest` body)                                                                                                                                                     |
+| /testdriver-api/notifications/pushers        | DELETE           | Deregister the pusher identified by the `pushkey` and `appId` query parameters                                                                                                                                                      |
+| /testdriver-api/notifications/channels       | GET              | List the channels available to the authenticated user and their default status                                                                                                                                                      |
+| /testdriver-api/notifications/channels/local | GET              | Get the channel configuration of the locally registered pusher                                                                                                                                                                      |
+| /testdriver-api/notifications/channels/local | POST             | Set channels for the locally registered pusher (JSON `SetChannelsRequest` body)                                                                                                                                                     |
+| /oidc/collect-email                          | POST             | Submit the email address for the email-binding OIDC flow                                                                                                                                                                            |
+| /oidc/resend-otp                             | POST             | Trigger a resend of the OTP code for email-binding verification                                                                                                                                                                     |
+| /oidc/verify-otp                             | POST             | Submit the OTP code to complete email-binding verification                                                                                                                                                                          |
+| /oidc/change-email                           | GET              | Change the email address used for the email-binding flow                                                                                                                                                                            |
+| /oidc/status                                 | GET              | Check the current status of the OIDC email-binding flow                                                                                                                                                                             |
+| /oidc/kvnr-email                             | POST             | Sets the test KVNR and binding email for the next OIDC login (kvnr, email in body)                                                                                                                                                  |
+| /health                                      | GET              | health API for kubernetes                                                                                                                                                                                                           |
 
 *Note: in coming project milestones the paths may change or be extended to accomodate for multiple client instance running in parallel*
 
@@ -872,6 +958,7 @@ The ZETA API offers the following public API:
 
 | Operation                    | Description                                                                                                                                                                            | Return value   | Errors      |
 |------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------|-------------|
+| getVersion()                 | static method that returns the ZETA SDK version string                                                                                                                                  | String         |             |
 | build(resource, BuildConfig) | static method to create a new SDK client instance                                                                                                                                      |                |             |
 | forget()                     | static method to clear all cached information for the FQDN, like instance key, well-known files, or access tokens. This method is mostly used for testing and unregistration scenarios |                |             |
 | discover()                   | Perform discovery and configuration, i.e. mainly reading the well-known files                                                                                                          |                |             |
@@ -880,6 +967,7 @@ The ZETA API offers the following public API:
 | httpClient()                 | Returns an HttpClient with overloaded method that implement the ZETA specific protocol; this includes authentication etc if not already done                                           |                |             |
 | status()                     | Returns the current state of the client instance                                                                                                                                       | SdkStatus enum |             |
 | logout()                     | Clears the stored authentication tokens and deletes the DPoP keys                                                                                                                      |                |             |
+| changeEmail(newEmail)        | Changes the email address bound to this client (OIDC email-binding flow); includes discovery and registration if not already done                                                      | ChangeEmailResponse |        |
 | clearRegistration()          | Clear the client registration without clearing the client instance key                                                                                                                 |                |             |
 | close()                      | Closing the ZETA SDK client without forgetting the cached information and cookies                                                                                                      | -              | error codes |
 
@@ -914,6 +1002,7 @@ This object contains the following attributes and sub-objects.
 | http_config            | Konfigurationsparameter für den HTTP Client wie timeouts, retries etc.                   |
 | registrationCallback   | a function that is called when a user interaction is required during client registration |
 | authenticationCallback | a function that is called when a user interaction is required during authentication      |
+| notificationConfig     | Optional `NotificationConfig` enabling the Notification Service integration; `null` (default) disables it (see [Notifications](#notifications)) |
 
 Note: in implementation phase 1 callbacks are not expected. In implementation phase 2
 callbacks may be added e.g. for pushed authentication requests to the IDP.
@@ -928,8 +1017,8 @@ The AuthConfig object configures the authentication process:
 | scopes               | Scope-values for the Access Tokens                                                                                |
 | exp                  | The expiration time of the JWT as lifetime duration in seconds                                                    |
 | aslProdEnvironment   | Determines if the client runs non/production environment. The ASL keys can be accessed if it is set to false      |
-| subjectTokenProvider | a class that provides a subject token, either SM-B or SMC-B depending on the implementation                       |
-| attestation          | Configures the attestation mode and connection to the attestation service. Defaults to AttestationConfig.software |
+| subjectTokenProvider | An `AuthTokenProvider` that supplies the subject token. Either a `SubjectTokenProvider` (functional interface for SM-B/SMC-B), or an `OidcTokenProvider` configured with an `OidcConfig` for the OIDC email-binding authentication flow |
+| attestation          | Configures the attestation mode and connection to the attestation service. Defaults to `AttestationConfig.software` |
 | requiredRoleOid      | Role-OID the TI certificate must contain (e.g. `1.2.276.0.76.4.156` for `oid_epa_vau`)                            |
 
 
@@ -1044,6 +1133,77 @@ val sdk = ZetaSdk.build(
 > **Note:** The SDK converts the DER-encoded ECDSA signature to compact JOSE format internally.
 > Do not perform this conversion in your implementation.
 
+### OIDC Authentication
+
+> **Preview:** OIDC authentication (including email binding) is part of the ZETA 2.0 specification and still in preview — APIs and flows may change.
+
+You can authenticate via the OIDC Authorization Code Flow by providing an `OidcTokenProvider` as the `subjectTokenProvider` in `AuthConfig`.
+This is used when the subject token is obtained through an OIDC broker flow rather than an SMC-B/SM-B connector, and requires a browser-based authentication step plus OTP email verification.
+
+**Interface (`OidcConfig`):**
+
+| Attribute                | Description                                                                                           |
+|--------------------------|-------------------------------------------------------------------------------------------------------|
+| `requestUri`             | Base URI the browser flow redirects back to (callback endpoint); the two redirect URIs `{requestUri}/app` and `{requestUri}/oidc` are derived from it |
+| `idpIss`                 | Issuer identifier of the OIDC IDP, sent as `idp_iss` in the PAR request                               |
+| `idpAlias`               | Alias of the IDP as configured in the Keycloak broker chain                                           |
+| `authenticationCallback` | Callback invoked to perform the browser-based authentication step (e.g. `SystemBrowserAuthenticator`) |
+| `otpCallback`            | Callback used to collect the email address and OTP code for email-binding                             |
+
+**Email binding and OTP verification**
+
+On the first authentication the email address is bound to the client (trust on first use).
+The SDK drives the interaction through the `otpCallback`:
+
+| Method                          | Description                                                                                                     |
+|---------------------------------|------------------------------------------------------------------------------------------------------------------|
+| `awaitEmail()`                  | Return the user's email address (only called when the server requests email collection)                          |
+| `awaitOtp(emailHint, rejected)` | Return `OtpSubmission.Otp(code)` with the OTP the user received, or `OtpSubmission.Resend` to request a new one. `rejected = true` means the previous OTP was wrong |
+
+**Changing the email address**
+
+```kotlin
+val result: Result<ChangeEmailResponse> = sdk.changeEmail("new@example.com")
+```
+
+`changeEmail` submits the new address to the guard (`202 Accepted` on success); failures are
+thrown as `ChangeEmailException` carrying the HTTP status and RFC 7807 problem details.
+
+See [authentication/README.md](authentication/README.md) for the full OIDC and email-binding flow.
+
+### Notifications
+
+> **Preview:** push notifications are part of the ZETA 2.0 specification and still in preview — APIs and flows may change.
+
+The SDK can manage push registrations (pushers) and notification channels at the guard's
+Notification Service. The feature is opt-in via `BuildConfig.notificationConfig`:
+
+```kotlin
+val sdk = ZetaSdk.build(
+    resource,
+    BuildConfig(
+        // ...
+        notificationConfig = NotificationConfig(),
+    ),
+)
+
+val notifications = sdk.notifications() // Android/iOS only
+notifications.registerPusher(PusherConfig(pushkey = fcmToken, appId = "de.example.app"))
+```
+
+**Interface (`NotificationConfig`):**
+
+| Attribute              | Default                  | Description                                                                |
+|------------------------|--------------------------|-----------------------------------------------------------------------------|
+| `wellKnownSubpath`     | `notification-service`   | Subpath of the Notification Service well-known metadata on the resource host, resulting in `https://{resource-host}/.well-known/oauth-protected-resource/{wellKnownSubpath}` |
+| `apiBasePath`          | `/push/v1`               | API prefix of the Notification Service at the PEP                           |
+| `rateLimitRetryPolicy` | `RateLimitRetryPolicy()` | Retry behaviour for rate-limited (429) responses                            |
+
+The `notifications()` accessor exists on Android and iOS only. Receiving the actual push
+messages (FCM/APNs) is the responsibility of the embedding app — see
+[Push notifications (optional, Android)](#push-notifications-optional-android) for the demo
+client's FCM setup and [notifications/README.md](notifications/README.md) for details.
+
 ### Custom Log Provider
 
 By default, the SDK logs to stdout. You can redirect log output to your own logging system.
@@ -1120,6 +1280,8 @@ Note: A mismatched order silently misreads fields instead of failing.
 | `ZetaSdk_status`          | `-1`               | Returns status code                 |
 | `ZetaSdk_getLastError`    | `NULL`             | Gets last error message (must free) |
 | `ZetaSdk_freeLastError`   | no-op              | Frees error string                  |
+| `ZetaSdk_getVersion`      | `NULL`             | Gets the SDK version (must free)    |
+| `ZetaSdk_freeVersion`     | no-op              | Frees version string                |
 
 Status codes: `0` NOT_REGISTERED · `1` REGISTERED_NO_VALID_TOKENS · `2` HAS_REFRESH_TOKEN · `3` HAS_ACCESS_AND_REFRESH_TOKEN · `-1` boundary error (check ZetaSdk_getLastError) · `-2` status undetermined
 

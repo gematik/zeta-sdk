@@ -30,6 +30,8 @@ import de.gematik.zeta.client.ui.ZetaClientApp
 import platform.UIKit.UIViewController
 
 @Suppress("unused", "FunctionName")
-public fun MainViewController(): UIViewController = ComposeUIViewController {
-    ZetaClientApp()
+public fun MainViewController(): UIViewController {
+    return ComposeUIViewController(configure = { enforceStrictPlistSanityCheck = false }) {
+        ZetaClientApp()
+    }
 }

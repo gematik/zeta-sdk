@@ -24,7 +24,6 @@
 
 package de.gematik.zeta.sdk.authentication.model
 
-import io.ktor.http.Parameters
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -40,22 +39,3 @@ data class AccessTokenResponse(
     @SerialName("issued_token_type") val issuedTokenType: String,
     @SerialName("refresh_token") val refreshToken: String,
 )
-
-fun AccessTokenRequest.toParameters() = Parameters.build {
-    append("grant_type", grantType)
-    append("client_id", clientId)
-    if (!subjectToken.isNullOrBlank()) {
-        append("subject_token", subjectToken)
-    }
-    if (!subjectTokenType.isNullOrBlank()) {
-        append("subject_token_type", subjectTokenType)
-    }
-    append("requested_token_type", requestedTokenType)
-    append("client_assertion_type", clientAssertionType)
-    append("client_assertion", clientAssertion)
-    append("scope", scope)
-    append("audience", audience)
-    if (!refreshToken.isNullOrBlank()) {
-        append("refresh_token", refreshToken)
-    }
-}

@@ -27,8 +27,10 @@ package de.gematik.zeta.sdk
 import de.gematik.zeta.logging.ZetaLogger
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
+import de.gematik.zeta.sdk.authentication.identity.ChangeEmailResponse
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
+import de.gematik.zeta.sdk.notifications.NotificationConfig
 import de.gematik.zeta.sdk.storage.ExtendedStorage
 import de.gematik.zeta.sdk.storage.StorageConfig
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
@@ -47,6 +49,7 @@ interface ZetaSdkClient {
     suspend fun status(): Result<SdkStatus>
     suspend fun logout(): Result<Unit>
     suspend fun close(): Result<Unit>
+    suspend fun changeEmail(newEmail: String): Result<ChangeEmailResponse>
 }
 
 interface TpmConfig
@@ -61,8 +64,9 @@ data class BuildConfig(
     val platformProductId: PlatformProductId,
     val httpClientBuilder: ZetaHttpClientBuilder? = null,
     val registrationCallback: RegistrationCallback? = null,
-    val authenticationCallback: AuthenticationCallback? = null,
     val logger: ZetaLogger? = null,
+    /** Notification Service integration; `null` (the default) disables notifications entirely. */
+    val notificationConfig: NotificationConfig? = null,
 )
 
 fun BuildConfig.withNamespace(namespace: String): BuildConfig {
@@ -75,6 +79,4 @@ fun BuildConfig.withNamespace(namespace: String): BuildConfig {
 }
 
 data class RegInfo(val clientName: String)
-data class AuthInfo(val otp: String? = null)
 fun interface RegistrationCallback { suspend fun registrationCb(): RegInfo }
-fun interface AuthenticationCallback { suspend fun authenticationCb(): AuthInfo }

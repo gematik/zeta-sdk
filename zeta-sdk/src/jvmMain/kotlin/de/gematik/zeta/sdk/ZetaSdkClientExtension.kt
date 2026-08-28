@@ -26,6 +26,7 @@ package de.gematik.zeta.sdk
 
 import de.gematik.zeta.sdk.ZetaSdk.clearRegistration
 import de.gematik.zeta.sdk.ZetaSdk.forget
+import de.gematik.zeta.sdk.authentication.identity.ChangeEmailResponse
 import kotlinx.coroutines.runBlocking
 
 object ZetaSdkClientExtension {
@@ -82,6 +83,13 @@ object ZetaSdkClientExtension {
     fun discover(client: ZetaSdkClient): Boolean {
         return runBlocking {
             client.discover().isSuccess
+        }
+    }
+
+    @JvmStatic
+    fun changeEmail(client: ZetaSdkClient, newEmail: String): ChangeEmailResponse {
+        return runBlocking {
+            client.changeEmail(newEmail).getOrThrow()
         }
     }
 }

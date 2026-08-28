@@ -31,12 +31,20 @@ import de.gematik.zeta.sdk.attestation.model.AttestationConfig
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.model.AccessTokenRequest
 import de.gematik.zeta.sdk.authentication.model.AccessTokenResponse
+import de.gematik.zeta.sdk.authentication.oidc.BindEmailRequest
+import de.gematik.zeta.sdk.authentication.oidc.BindEmailResponse
+import de.gematik.zeta.sdk.authentication.oidc.OidcAccessTokenResponse
+import de.gematik.zeta.sdk.authentication.oidc.OidcTokenIssuance
+import de.gematik.zeta.sdk.authentication.oidc.OtpVerifyRequest
+import de.gematik.zeta.sdk.authentication.oidc.ParResponse
+import de.gematik.zeta.sdk.authentication.oidc.VerifyOtpResponse
 import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.client.call.HttpClientCall
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.Headers
 import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Parameters
 import io.ktor.util.date.GMTDate
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.InternalAPI
@@ -143,6 +151,7 @@ class AccessTokenProviderImplTest {
 
     @Test
     fun getValidToken_fallsBackToNewToken_whenRefreshFails() = runTest {
+        val notRequired = "Not required for the test"
         // Arrange
         val fakeStorage = FakeAuthStorage(
             accessToken = "old_token",
@@ -160,6 +169,26 @@ class AccessTokenProviderImplTest {
                 callCount++
                 if (callCount == 1) throw AuthenticationException(fakeHttpResponse(), "refresh failed")
                 return buildTokenResponse("fallback_token")
+            }
+
+            override suspend fun requestOidcToken(fromEndpoint: String, accessTokenRequest: OidcTokenIssuance.OidcTokenRequest, dpopToken: String): OidcAccessTokenResponse {
+                error(notRequired)
+            }
+
+            override suspend fun postBindEmail(endpoint: String, accessToken: String, dpop: String, body: BindEmailRequest): BindEmailResponse {
+                error(notRequired)
+            }
+
+            override suspend fun postResendOtp(endpoint: String, accessToken: String, dpop: String): BindEmailResponse {
+                error(notRequired)
+            }
+
+            override suspend fun postVerifyOtp(endpoint: String, accessToken: String, dpop: String, body: OtpVerifyRequest): VerifyOtpResponse {
+                error(notRequired)
+            }
+
+            override suspend fun requestPar(endpoint: String, parameters: Parameters): ParResponse {
+                error(notRequired)
             }
         }
         val (sut, storage) = buildSut(clock = { 1000L }, fakeAuthStorage = fakeStorage, fakeAuthApi = fakeApi)
@@ -259,8 +288,62 @@ class AccessTokenProviderImplTest {
         assertNotEquals(result1, result2)
     }
 
+    @Test
+    fun values_shallContainExactlySmbAndOidc() {
+        val values = AuthMode.entries
+
+        assertEquals(listOf(AuthMode.SMB, AuthMode.OIDC), values)
+    }
+
+    @Test
+    fun valueOf_shallResolveSmb() {
+        assertEquals(AuthMode.SMB, AuthMode.valueOf("SMB"))
+    }
+
+    @Test
+    fun valueOf_shallResolveOidc() {
+        assertEquals(AuthMode.OIDC, AuthMode.valueOf("OIDC"))
+    }
+
+    @Test
+    fun valueOf_shallThrow_forUnknownName() {
+        assertFailsWith<IllegalArgumentException> {
+            AuthMode.valueOf("SMC_B")
+        }
+    }
+
+    @Test
+    fun valueOf_shallBeCaseSensitive() {
+        assertFailsWith<IllegalArgumentException> {
+            AuthMode.valueOf("smb")
+        }
+    }
+
+    @Test
+    fun ordinal_shallMatchDeclarationOrder() {
+        assertEquals(0, AuthMode.SMB.ordinal)
+        assertEquals(1, AuthMode.OIDC.ordinal)
+    }
+
+    @Test
+    fun name_shallMatchEnumConstantName() {
+        assertEquals("SMB", AuthMode.SMB.name)
+        assertEquals("OIDC", AuthMode.OIDC.name)
+    }
+
+    @Test
+    fun whenExpression_shallBeExhaustiveOverBothValues() {
+        fun describe(mode: AuthMode): String = when (mode) {
+            AuthMode.SMB -> "smb"
+            AuthMode.OIDC -> "oidc"
+        }
+
+        assertEquals("smb", describe(AuthMode.SMB))
+        assertEquals("oidc", describe(AuthMode.OIDC))
+    }
+
     class FakeTpmProvider : TpmProvider {
-        override val isHardwareBacked: Boolean = false
+        override suspend fun isHardwareBacked(): Boolean = false
         override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut = PublicKeyOut(
             encoded = ByteArray(32) { 0x01 },
             jwk = Jwk(
@@ -306,7 +389,7 @@ class AccessTokenProviderImplTest {
             nonce: ByteArray,
             clientId: String,
             exp: Long,
-            tokenEndpoint: String,
+            aud: String,
             platformProductId: PlatformProductId,
         ): String = "fake_client_assertion"
     }
@@ -342,6 +425,7 @@ class AccessTokenProviderImplTest {
         ),
         private val throwOnToken: Exception? = null,
     ) : AuthenticationApi {
+        val notRequired = "Not yet implemented"
         var requestAccessTokenCallCount = 0
 
         override suspend fun fetchNonce(nonceEndpoint: String): ByteArray = nonce
@@ -353,6 +437,26 @@ class AccessTokenProviderImplTest {
             requestAccessTokenCallCount++
             throwOnToken?.let { throw it }
             return tokenResponse
+        }
+
+        override suspend fun requestOidcToken(fromEndpoint: String, accessTokenRequest: OidcTokenIssuance.OidcTokenRequest, dpopToken: String): OidcAccessTokenResponse {
+            error(notRequired)
+        }
+
+        override suspend fun postBindEmail(endpoint: String, accessToken: String, dpop: String, body: BindEmailRequest): BindEmailResponse {
+            error(notRequired)
+        }
+
+        override suspend fun postResendOtp(endpoint: String, accessToken: String, dpop: String): BindEmailResponse {
+            error(notRequired)
+        }
+
+        override suspend fun postVerifyOtp(endpoint: String, accessToken: String, dpop: String, body: OtpVerifyRequest): VerifyOtpResponse {
+            error(notRequired)
+        }
+
+        override suspend fun requestPar(endpoint: String, parameters: Parameters): ParResponse {
+            error(notRequired)
         }
     }
 
@@ -373,6 +477,10 @@ class AccessTokenProviderImplTest {
         ) {
             savedTokens.add(Triple(accessToken, refreshToken, expiresAt))
             this.accessToken = accessToken
+        }
+        override suspend fun clearAccessToken() {
+            accessToken = null
+            expiration = null
         }
         override suspend fun clear() {}
     }

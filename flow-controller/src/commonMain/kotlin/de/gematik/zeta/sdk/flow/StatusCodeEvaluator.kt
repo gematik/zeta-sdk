@@ -32,18 +32,21 @@ class StatusCodeEvaluator : ResponseEvaluator {
         const val DEFAULT_RETRY_DELAY_MS = 5000L
     }
     override suspend fun evaluate(call: HttpClientCall, ctx: FlowContext, retryState: FlowOrchestrator.RetryState): FlowDirective {
-        return when (val status = call.response.status.value) {
+        val status = call.response.status
+        val errorOrigin = call.response.headers[ResponseEvaluator.ZETA_ERROR_ORIGIN]
+        return when (status.value) {
             in 200..299 -> FlowDirective.Proceed(call.response)
-            401, 403 -> {
-                if (!retryState.hasAttemptedStepUp) {
-                    retryState.hasAttemptedStepUp = true
-                    ctx.authenticationStorage.clear()
-                    FlowDirective.Perform(FlowNeed.Authentication)
-                } else {
-                    FlowDirective.Abort(call.response, ZetaClientError.StepUpFailed())
-                }
-            }
-            400, 404, 405, 409 -> FlowDirective.Proceed(call.response)
+
+            401, 403, 404 -> handle(
+                call = call,
+                ctx = ctx,
+                retryState = retryState,
+                statusCode = status,
+                errorOrigin = errorOrigin,
+            )
+
+            400, 405, 409 -> FlowDirective.Proceed(call.response)
+
             429 -> {
                 val retryAfterMs = call.response.headers["retry-after"]
                     ?.toLongOrNull()
@@ -63,10 +66,10 @@ class StatusCodeEvaluator : ResponseEvaluator {
                 Log.w { "Proxy error ${call.response.status.value}: retrying after ${DEFAULT_RETRY_DELAY_MS}ms" }
                 FlowDirective.Perform(FlowNeed.Retry(DEFAULT_RETRY_DELAY_MS))
             }
-            in 500..599 -> FlowDirective.Abort(call.response, ZetaClientError.ServerError(status))
+            in 500..599 -> FlowDirective.Abort(call.response, ZetaClientError.ServerError(status.value))
             else -> {
                 Log.e { "Unhandled status $status for ${call.request.url}" }
-                FlowDirective.Abort(call.response, ZetaClientError.Unknown(status))
+                FlowDirective.Abort(call.response, ZetaClientError.Unknown(status.value))
             }
         }
     }

@@ -28,8 +28,12 @@ import com.russhwolf.settings.NSUserDefaultsSettings
 import de.gematik.zeta.sdk.crypto.AesGcmCipherImpl
 import platform.Foundation.NSUserDefaults
 
-actual fun provideSdkStorage(config: StorageConfig.Default): SdkStorage =
-    SecureSdkStorage(
-        settings = EncryptedSettings(NSUserDefaultsSettings(NSUserDefaults.standardUserDefaults), AesGcmCipherImpl(), config.aesB64Key),
+actual fun provideSdkStorage(config: StorageConfig.Default): SdkStorage {
+    val base = NSUserDefaultsSettings(NSUserDefaults.standardUserDefaults)
+    val chunkedBase = ChunkedSettings(base)
+    return SecureSdkStorage(
+        settings = EncryptedSettings(chunkedBase, AesGcmCipherImpl(), config.aesB64Key),
         secrets = null,
+        namespace = config.namespace,
     )
+}

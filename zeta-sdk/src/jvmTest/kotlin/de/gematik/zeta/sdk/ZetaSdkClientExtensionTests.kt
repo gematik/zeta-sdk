@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk
 
+import de.gematik.zeta.sdk.authentication.identity.ChangeEmailResponse
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
@@ -324,6 +325,30 @@ class ZetaSdkClientExtensionTest {
         }
     }
 
+    @Test
+    fun changeEmail_returnsResponse_whenClientChangeEmailSucceeds() {
+        val client = FakeZetaSdkClient().apply {
+            changeEmailResult = Result.success(ChangeEmailResponse("verified"))
+        }
+
+        val result = ZetaSdkClientExtension.changeEmail(client, "new@example.de")
+
+        assertEquals("verified", result.status)
+        assertTrue(client.changeEmailCalled)
+    }
+
+    @Test
+    fun changeEmail_throws_whenClientChangeEmailFails() {
+        val client = FakeZetaSdkClient().apply {
+            changeEmailResult = Result.failure(Exception("Email change failed"))
+        }
+
+        assertFailsWith<Exception> {
+            ZetaSdkClientExtension.changeEmail(client, "new@example.de")
+        }
+        assertTrue(client.changeEmailCalled)
+    }
+
     private class FakeZetaSdkClient : ZetaSdkClient {
         var discoverCalled = false
         var registerCalled = false
@@ -337,6 +362,8 @@ class ZetaSdkClientExtensionTest {
         var logoutCalled = false
         var logoutResult: Result<Unit> = Result.success(Unit)
         var statusResult: Result<SdkStatus> = Result.success(SdkStatus.NOT_REGISTERED)
+        var changeEmailCalled = false
+        var changeEmailResult: Result<ChangeEmailResponse> = Result.success(ChangeEmailResponse("verified"))
 
         override suspend fun discover(): Result<Unit> {
             discoverCalled = true
@@ -356,6 +383,11 @@ class ZetaSdkClientExtensionTest {
         override suspend fun close(): Result<Unit> {
             closeCalled = true
             return closeResult
+        }
+
+        override suspend fun changeEmail(newEmail: String): Result<ChangeEmailResponse> {
+            changeEmailCalled = true
+            return changeEmailResult
         }
 
         override fun httpClient(builder: ZetaHttpClientBuilder.() -> Unit): ZetaHttpClient {

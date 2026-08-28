@@ -54,40 +54,6 @@ public class PrescriptionListViewModel(
         state.update { PrescriptionListState.Result(list) }
     }
 
-    internal fun doAuthentication() = launch(ioDispatcher) {
-        repository.doAuthentication()
-        state.update { PrescriptionListState.Result(list) }
-    }
-
-    internal fun doRegistration() = launch(ioDispatcher) {
-        repository.doRegistration()
-        state.update { PrescriptionListState.Result(list) }
-    }
-
-    internal fun doDiscovery() = launch(ioDispatcher) {
-        repository.doDiscovery()
-        state.update { PrescriptionListState.Result(list) }
-    }
-
-    internal fun forgetAuthorization() = launch(ioDispatcher) {
-        repository.forgetAuthorization()
-        state.update { PrescriptionListState.Result(list) }
-    }
-
-    internal fun forgetRegistration() = launch(ioDispatcher) {
-        repository.forgetRegistration()
-        state.update { PrescriptionListState.Result(list) }
-    }
-
-    internal fun statusSdk() = launch(ioDispatcher) {
-        val status = repository.status()
-        state.update { PrescriptionListState.StatusResult(status) }
-    }
-
-    internal fun logoutAuthorization() = launch(ioDispatcher) {
-        repository.logoutAuthorization()
-        state.update { PrescriptionListState.Result(list) }
-    }
     internal fun deletePrescription(model: PrescriptionModel) = launch(ioDispatcher) {
         repository.deletePrescription(model.id ?: -1)
         list = repository.prescriptionList()

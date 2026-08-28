@@ -29,7 +29,9 @@ import de.gematik.zeta.sdk.configuration.models.AUTHORIZATION_SERVER_SCHEMA_JSON
 import de.gematik.zeta.sdk.configuration.models.PROTECTED_RESOURCE_SCHEMA_JSON
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
+import io.ktor.client.request.header
 import io.ktor.client.statement.HttpResponse
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Url
 
@@ -37,8 +39,13 @@ import io.ktor.http.Url
  * Contract for retrieving the well-known configuration documents and schemas.
  */
 interface ConfigurationApi {
-    suspend fun fetchResourceMetadata(resourceUrl: String): String
-    suspend fun fetchAuthorizationMetadata(authFqdns: String): String
+    /**
+     * Fetches a *Protected Resource* well-known document. A non-null [subpath] selects the
+     * metadata of a co-deployed resource published under a well-known subpath (RFC 9728 /
+     * A_28436), e.g. `/.well-known/oauth-protected-resource/notification-service`.
+     */
+    suspend fun fetchResourceMetadata(resourceUrl: String, subpath: String? = null, eTag: String? = null): DiscoveryFetchResult
+    suspend fun fetchAuthorizationMetadata(authFqdns: String, eTag: String? = null): DiscoveryFetchResult
     suspend fun getResourceSchema(): String
     suspend fun getAuthorizationSchema(): String
 }
@@ -63,19 +70,28 @@ class ConfigurationApiImpl(
     /**
      * Fetches the *Protected Resource* well-known document.
      *
-     * GET `/.well-known/oauth-protected-resource`
+     * GET `/.well-known/oauth-protected-resource[/subpath]`
      *
      * @return The raw JSON payload as a UTF-8 text [String].
      */
-    override suspend fun fetchResourceMetadata(resourceUrl: String): String {
+    override suspend fun fetchResourceMetadata(resourceUrl: String, subpath: String?, eTag: String?): DiscoveryFetchResult {
         return try {
             Log.i { "[ZETA-SDK] fetchResourceMetadata get base Url for: $resourceUrl" }
             val baseUrl = protectedBaseUrl(resourceUrl)
-            Log.i { "[ZETA-SDK] fetchResourceMetadata http get base Url for: $PROTECTED_RESOURCE_PATH" }
+            val path = if (subpath.isNullOrBlank()) {
+                PROTECTED_RESOURCE_PATH
+            } else {
+                "$PROTECTED_RESOURCE_PATH/${subpath.trim('/')}"
+            }
+            Log.i { "[ZETA-SDK] fetchResourceMetadata http get base Url for: $path" }
             val client = httpClientBuilder.build(baseUrl)
             try {
-                val response = client.get(PROTECTED_RESOURCE_PATH)
-                handleResponse(baseUrl + PROTECTED_RESOURCE_PATH, response)
+                val response = client.get(path) {
+                    eTag?.let {
+                        header(HttpHeaders.IfNoneMatch, it)
+                    }
+                }
+                handleResponse(baseUrl + path, response)
             } finally {
                 client.close()
             }
@@ -92,13 +108,18 @@ class ConfigurationApiImpl(
      *
      * @return The raw JSON payload as a [String].
      */
-    override suspend fun fetchAuthorizationMetadata(authFqdns: String): String {
+    override suspend fun fetchAuthorizationMetadata(authFqdns: String, eTag: String?): DiscoveryFetchResult {
         val baseUrl = protectedBaseUrl(authFqdns)
         Log.i { "[ZETA-SDK] fetchAuthorizationMetadata http get base Url for: $AUTH_SERVER_PATH" }
         return try {
             val client = httpClientBuilder.build(baseUrl)
             try {
-                val response = client.get(AUTH_SERVER_PATH)
+                val response = client.get(AUTH_SERVER_PATH) {
+                    eTag?.let {
+                        header(HttpHeaders.IfNoneMatch, it)
+                    }
+                }
+
                 handleResponse(baseUrl + AUTH_SERVER_PATH, response)
             } finally {
                 client.close()
@@ -139,21 +160,52 @@ private fun protectedBaseUrl(resourceUrl: String): String {
     return "https://$hostPart$portPart/.well-known/"
 }
 
-private suspend fun handleResponse(resourceUrl: String, response: ZetaHttpResponse): String {
+private suspend fun handleResponse(resourceUrl: String, response: ZetaHttpResponse): DiscoveryFetchResult {
     return when (response.status) {
         HttpStatusCode.OK -> {
             Log.i { "[ZETA-SDK] handleResponse OK: ${response.status}" }
-            response.bodyAsText()
+            DiscoveryFetchResult(
+                body = response.bodyAsText(),
+                maxAgeSeconds = parseMaxAge(response.raw.headers[HttpHeaders.CacheControl.lowercase()]),
+                eTag = response.raw.headers[HttpHeaders.ETag.lowercase()],
+                notModified = false,
+            )
+        }
+
+        HttpStatusCode.NotModified -> {
+            DiscoveryFetchResult(
+                body = null,
+                maxAgeSeconds = parseMaxAge(
+                    response.raw.headers[HttpHeaders.CacheControl],
+                ),
+                eTag = response.raw.headers[HttpHeaders.ETag.lowercase()],
+                notModified = true,
+            )
         }
 
         else -> {
-            Log.i { "[ZETA-SDK] handleResponse failed: ${response.raw}" }
             throw ServiceDiscoveryException(response.raw, "Service discovery failed to load resource: $resourceUrl")
         }
     }
 }
 
+private fun parseMaxAge(cacheControl: String?): Long? =
+    cacheControl
+        ?.split(',')
+        ?.map(String::trim)
+        ?.firstOrNull { it.startsWith("max-age=", ignoreCase = true) }
+        ?.substringAfter('=')
+        ?.trim()
+        ?.toLongOrNull()
+
 class ServiceDiscoveryException(
     val response: HttpResponse,
     message: String,
 ) : Exception(message)
+
+data class DiscoveryFetchResult(
+    val body: String?,
+    val maxAgeSeconds: Long?,
+    val eTag: String?,
+    val notModified: Boolean,
+)

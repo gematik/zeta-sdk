@@ -41,7 +41,7 @@ sealed interface CapabilityResult {
      * The need was not satisfied; no flow continuation.
      * The orchestrator shall abort the current flow and inform accordingly.
      */
-    data class Error(val internalCode: String, val internalMessage: String, val httpResponse: HttpResponse) : CapabilityResult
+    data class Error(val internalCode: String, val internalMessage: String, val httpResponse: HttpResponse?) : CapabilityResult
 
     /**
      * Ask the orchestrator to retry the same request, after applying [mutate].

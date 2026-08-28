@@ -7,7 +7,7 @@ plugins {
     id("de.gematik.zeta.sdk.build-logic.dokka")
     id("com.github.ben-manes.versions") version "0.54.0"
     id("org.jetbrains.kotlinx.kover") version "0.9.2"
-    id("org.sonarqube") version "7.2.3.7755"
+    id("org.sonarqube") version "7.4.0.8496"
     id("org.cyclonedx.bom") version "3.0.1"
 
     alias(libs.plugins.dependencyCheck)
@@ -23,6 +23,7 @@ dependencies {
     kover(project(":configuration"))
     kover(project(":flow-controller"))
     kover(project(":network"))
+    kover(project(":notifications"))
     kover(project(":storage"))
     kover(project(":tpm"))
     kover(project(":zeta-sdk"))
@@ -44,6 +45,7 @@ sonar {
         property(
             "sonar.coverage.exclusions",
             listOf(
+                "**/nativeMain/**",
                 "**/desktopMain/**",
                 "**/linuxMain/**",
                 "**/mingwMain/**",
@@ -51,6 +53,7 @@ sonar {
                 "**/macosMain/**",
                 "**/androidMain/**",
                 "**/iosMain/**",
+                "**/appleMain/**",
                 "attestation-service/**",
                 "zeta-client/**",
                 "zeta-client-java/**",
@@ -92,7 +95,7 @@ tasks.named<DependencyUpdatesTask>("dependencyUpdates") {
     }
 }
 
-version = providers.environmentVariable("RELEASE_VERSION").orElse("latest").get()
+version = providers.environmentVariable("RELEASE_VERSION").orElse(version.toString()).get()
 
 
 initBuildLogic()

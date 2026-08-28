@@ -83,6 +83,7 @@ public data class CachedCrlResponse(
 public class RevocationStorage(
     storage: SdkStorage,
     private val resourceScope: ResourceScope,
+    private val clock: Clock = Clock.System,
 ) {
     private val extendedStorage = ExtendedStorage(storage)
     private val mutex = Mutex()
@@ -125,7 +126,7 @@ public class RevocationStorage(
 
         if (
             cached.expiresAtEpochSeconds <=
-            Clock.System.now().epochSeconds
+            clock.now().epochSeconds
         ) {
             Log.d {
                 "[OCSP-CACHE] Cached response expired; removing it"
@@ -206,7 +207,7 @@ public class RevocationStorage(
 
         if (
             cached.expiresAtEpochSeconds <=
-            Clock.System.now().epochSeconds
+            clock.now().epochSeconds
         ) {
             Log.d {
                 "[CRL-CACHE] Cached response expired; removing it"
@@ -258,20 +259,9 @@ public class RevocationStorage(
     }
 
     public suspend fun clear(): Unit = mutex.withLock {
-        extendedStorage.clearIndexed(
-            indexKey = ocspIndexKey,
-            prefixes = listOf(OCSP_PREFIX),
-        )
-
-        extendedStorage.clearIndexed(
-            indexKey = crlIndexKey,
-            prefixes = listOf(CRL_PREFIX),
-        )
-
-        Log.d {
-            "[REVOCATION-CACHE] cleared entries for " +
-                resourceScope.storageKey
-        }
+        extendedStorage.clearAllIndexed(indexKey = ocspIndexKey, prefixes = listOf(OCSP_PREFIX))
+        extendedStorage.clearAllIndexed(indexKey = crlIndexKey, prefixes = listOf(CRL_PREFIX))
+        Log.d { "[REVOCATION-CACHE] cleared entries for ${resourceScope.storageKey}" }
     }
 
     private companion object {

@@ -26,4 +26,5 @@ package de.gematik.zeta.sdk.authentication
 
 object HttpAuthHeaders {
     const val Dpop: String = "dpop"
+    const val CLIENT_ASSERTION: String = "Client-Assertion"
 }

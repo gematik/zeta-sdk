@@ -21,9 +21,5 @@ application {
 }
 
 dependencies {
-    if (isRunningOnCi) {
-        implementation(project(":zeta-sdk"))
-    } else {
-        implementation("de.gematik.zeta:zeta-sdk-jvm:" + version)
-    }
+    implementation(project(":zeta-sdk"))
 }
