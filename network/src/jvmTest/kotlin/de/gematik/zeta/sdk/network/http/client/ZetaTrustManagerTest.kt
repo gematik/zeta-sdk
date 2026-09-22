@@ -25,9 +25,11 @@
 package de.gematik.zeta.sdk.network.http.client
 
 import de.gematik.zeta.sdk.crypto.OcspRequestData
+import de.gematik.zeta.sdk.crypto.OcspValidity
 import de.gematik.zeta.sdk.crypto.RevocationHandler
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -87,7 +89,7 @@ class ZetaTrustManagerTest {
     private val mockDelegate = mockk<X509TrustManager>(relaxed = true)
 
     private fun buildManager(revocationChecker: RevocationChecker? = null) =
-        ZetaTrustManager(delegate = mockDelegate, revocationChecker = revocationChecker)
+        ZetaTrustManager(delegate = mockDelegate, revocationChecker = revocationChecker, SystemZetaClock)
 
     private val now = Date()
     private val caKeyPair by lazy {
@@ -199,7 +201,11 @@ class ZetaTrustManagerTest {
             every { engine.handshakeSession } returns buildExtendedSession(peerHost, staple)
         }
 
-    private fun buildRevocationChecker(handler: RevocationHandler, httpClient: HttpClient = HttpClient(MockEngine.Companion { error("unexpected network call: ${it.url}") })): RevocationChecker =
+    private fun buildRevocationChecker(
+        handler: RevocationHandler,
+        httpClient: ZetaHttpClient =
+            ZetaHttpClient(HttpClient(MockEngine.Companion { error("unexpected network call: ${it.url}") })),
+    ): RevocationChecker =
         RevocationChecker(
             storage = RevocationStorage(
                 InMemoryStorage(),
@@ -207,11 +213,15 @@ class ZetaTrustManagerTest {
             ),
             httpClient = httpClient,
             handler = handler,
+            clock = SystemZetaClock,
         )
 
-    private fun passingHandlerForStaple(): RevocationHandler = mockk<RevocationHandler>().also { handler ->
-        every { handler.getNextUpdateEpochSeconds(any(), any(), any()) } returns Clock.System.now().epochSeconds + 3600
-        every { handler.validate(any(), any(), any()) } returns Unit
+    private fun passingHandlerForStaple(): RevocationHandler = mockk<RevocationHandler>(relaxed = true).also { handler ->
+        every { handler.getOcspValidity(any(), any(), any()) } returns OcspValidity(
+            thisUpdateEpochSeconds = Clock.System.now().epochSeconds,
+            nextUpdateEpochSeconds = Clock.System.now().epochSeconds + 3600,
+        )
+        every { handler.validate(any(), any(), any(), any()) } returns Unit
     }
 
     @Test
@@ -317,7 +327,7 @@ class ZetaTrustManagerTest {
     @Test
     fun checkServerTrusted_socket_delegatesToExtendedTrustManager_whenDelegateIsExtended() {
         val extendedDelegate = mockk<X509ExtendedTrustManager>(relaxed = true)
-        val manager = ZetaTrustManager(delegate = extendedDelegate)
+        val manager = ZetaTrustManager(delegate = extendedDelegate, clock = SystemZetaClock)
         val chain = arrayOf(buildValidCert())
         val socket = buildSocket(peerHost = "valid.example.com")
 
@@ -358,7 +368,7 @@ class ZetaTrustManagerTest {
 
         buildManager(revocationChecker = checker).checkServerTrusted(chain, "RSA", socket)
 
-        coVerify(exactly = 1) { handler.validate(stapleBytes, chain[0].encoded, any()) }
+        coVerify(exactly = 1) { handler.validate(stapleBytes, chain[0].encoded, any(), any()) }
     }
 
     @Test
@@ -372,33 +382,32 @@ class ZetaTrustManagerTest {
 
         buildManager(revocationChecker = checker).checkServerTrusted(chain, "RSA", engine)
 
-        coVerify(exactly = 1) { handler.validate(stapleBytes, chain[0].encoded, any()) }
+        coVerify(exactly = 1) { handler.validate(stapleBytes, chain[0].encoded, any(), any()) }
     }
 
     @Test
     fun checkServerTrusted_socket_attemptsDirectOcsp_whenNoStapleIsPresent() = runTest {
-        val handler = mockk<RevocationHandler>()
+        val handler = mockk<RevocationHandler>(relaxed = true)
         coEvery { handler.prepareOcspRequest(any(), any()) } returns OcspRequestData(
             "https://ocsp.example.com", byteArrayOf(1),
         )
-        every {
-            handler.getNextUpdateEpochSeconds(
-                any(),
-                any(),
-                any(),
-            )
-        } returns Clock.System.now().epochSeconds + 3600
-        every { handler.validate(any(), any(), any()) } returns Unit
+        every { handler.getOcspValidity(any(), any(), any()) } returns OcspValidity(
+            thisUpdateEpochSeconds = Clock.System.now().epochSeconds,
+            nextUpdateEpochSeconds = Clock.System.now().epochSeconds + 3600,
+        )
+        every { handler.validate(any(), any(), any(), any()) } returns Unit
 
         val ocspResponseBytes = ByteArray(64) { it.toByte() }
-        val httpClient = HttpClient(
-            MockEngine.Companion { _ ->
-                respond(
-                    content = ocspResponseBytes,
-                    status = HttpStatusCode.OK,
-                    headers = headersOf("Content-Type", "application/ocsp-response"),
-                )
-            },
+        val httpClient = ZetaHttpClient(
+            HttpClient(
+                MockEngine.Companion { _ ->
+                    respond(
+                        content = ocspResponseBytes,
+                        status = HttpStatusCode.OK,
+                        headers = headersOf("Content-Type", "application/ocsp-response"),
+                    )
+                },
+            ),
         )
         val checker = buildRevocationChecker(handler, httpClient = httpClient)
 
@@ -412,9 +421,12 @@ class ZetaTrustManagerTest {
 
     @Test
     fun checkServerTrusted_socket_throwsCertificateException_whenRevocationCheckFails() {
-        val handler = mockk<RevocationHandler>()
-        every { handler.getNextUpdateEpochSeconds(any(), any(), any()) } returns Clock.System.now().epochSeconds + 3600
-        every { handler.validate(any(), any(), any()) } throws IllegalStateException("Certificate is revoked")
+        val handler = mockk<RevocationHandler>(relaxed = true)
+        every { handler.getOcspValidity(any(), any(), any()) } returns OcspValidity(
+            thisUpdateEpochSeconds = Clock.System.now().epochSeconds,
+            nextUpdateEpochSeconds = Clock.System.now().epochSeconds + 3600,
+        )
+        every { handler.validate(any(), any(), any(), any()) } throws IllegalStateException("Certificate is revoked")
         val checker = buildRevocationChecker(handler)
 
         val chain = arrayOf(buildValidCert(), buildCaCert())
@@ -429,15 +441,12 @@ class ZetaTrustManagerTest {
     @Ignore // only for local tests
     fun checkServerTrusted_socket_throwsCertificateException_whenRevocationCheckExceedsTimeout() =
         runTest {
-            val handler = mockk<RevocationHandler>()
-            every {
-                handler.getNextUpdateEpochSeconds(
-                    any(),
-                    any(),
-                    any(),
-                )
-            } returns Clock.System.now().epochSeconds + 3600
-            coEvery { handler.validate(any(), any(), any()) } coAnswers {
+            val handler = mockk<RevocationHandler>(relaxed = true)
+            every { handler.getOcspValidity(any(), any(), any()) } returns OcspValidity(
+                thisUpdateEpochSeconds = Clock.System.now().epochSeconds,
+                nextUpdateEpochSeconds = Clock.System.now().epochSeconds + 3600,
+            )
+            coEvery { handler.validate(any(), any(), any(), any()) } coAnswers {
                 delay(10_000.milliseconds)
                 error("should never resolve")
             }
@@ -471,7 +480,7 @@ class ZetaTrustManagerTest {
     @Test
     fun checkClientTrusted_socket_delegatesToExtendedTrustManager_whenDelegateIsExtended() {
         val extendedDelegate = mockk<X509ExtendedTrustManager>(relaxed = true)
-        val manager = ZetaTrustManager(delegate = extendedDelegate)
+        val manager = ZetaTrustManager(delegate = extendedDelegate, clock = SystemZetaClock)
         val chain = arrayOf(buildValidCert())
         val socket = mockk<SSLSocket>(relaxed = true)
 
@@ -493,7 +502,7 @@ class ZetaTrustManagerTest {
     @Test
     fun checkClientTrusted_engine_delegatesToExtendedTrustManager_whenDelegateIsExtended() {
         val extendedDelegate = mockk<X509ExtendedTrustManager>(relaxed = true)
-        val manager = ZetaTrustManager(delegate = extendedDelegate)
+        val manager = ZetaTrustManager(delegate = extendedDelegate, clock = SystemZetaClock)
         val chain = arrayOf(buildValidCert())
         val engine = mockk<SSLEngine>(relaxed = true)
 
@@ -597,5 +606,25 @@ class ZetaTrustManagerTest {
         }
 
         assertEquals(false, result)
+    }
+
+    @Test
+    fun checkServerTrusted_socket_acceptsStaple_whenNoNextUpdate_withinTwentyFourHours() = runTest {
+        val stapleBytes = byteArrayOf(1, 2, 3, 4)
+        val handler = mockk<RevocationHandler>().also {
+            every { it.getOcspValidity(any(), any(), any()) } returns OcspValidity(
+                thisUpdateEpochSeconds = Clock.System.now().epochSeconds - 3600 * 10,
+                nextUpdateEpochSeconds = null,
+            )
+            every { it.validate(any(), any(), any(), any()) } returns Unit
+        }
+        val checker = buildRevocationChecker(handler)
+
+        val chain = arrayOf(buildValidCert(), buildCaCert())
+        val socket = buildSocket(peerHost = "valid.example.com", staple = stapleBytes)
+
+        buildManager(revocationChecker = checker).checkServerTrusted(chain, "RSA", socket)
+
+        coVerify(exactly = 1) { handler.validate(stapleBytes, chain[0].encoded, any(), any()) }
     }
 }

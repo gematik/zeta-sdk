@@ -50,6 +50,7 @@ import java.security.cert.CertificateFactory
 import java.security.cert.X509CRL
 import java.security.cert.X509Certificate
 import java.util.Date
+import kotlin.time.Instant
 
 actual class RevocationHandlerImpl actual constructor() : RevocationHandler {
     init {
@@ -61,33 +62,29 @@ actual class RevocationHandlerImpl actual constructor() : RevocationHandler {
     private fun parse(der: ByteArray): X509Certificate =
         cf.generateCertificate(der.inputStream()) as X509Certificate
 
-    actual override fun getThisUpdateEpochSeconds(ocspResponseDer: ByteArray): Long {
-        val basicResp = OCSPResp(ocspResponseDer).responseObject as BasicOCSPResp
-        val single = basicResp.responses.firstOrNull()
-            ?: error("No single response in OCSP response")
-        return single.thisUpdate.toInstant().epochSecond
-    }
-
-    actual override fun getNextUpdateEpochSeconds(
+    actual override fun getOcspValidity(
         ocspResponseDer: ByteArray,
         certDer: ByteArray,
         issuerDer: ByteArray,
-    ): Long? {
-        val ocspResp = OCSPResp(ocspResponseDer)
-        val basicResp = ocspResp.responseObject as BasicOCSPResp
+    ): OcspValidity {
+        val basicResp = OCSPResp(ocspResponseDer).responseObject as BasicOCSPResp
         val cert = parse(certDer)
 
         val singleResp = basicResp.responses
             .firstOrNull { it.certID.serialNumber == cert.serialNumber }
-            ?: return null
+            ?: error("No OCSP single response for certificate serial ${cert.serialNumber}")
 
-        return singleResp.nextUpdate?.toInstant()?.epochSecond
+        return OcspValidity(
+            thisUpdateEpochSeconds = singleResp.thisUpdate.toInstant().epochSecond,
+            nextUpdateEpochSeconds = singleResp.nextUpdate?.toInstant()?.epochSecond,
+        )
     }
 
     actual override fun validate(
         ocspResponseDer: ByteArray,
         certDer: ByteArray,
         issuerDer: ByteArray,
+        now: Instant,
     ) {
         val ocspResp = OCSPResp(ocspResponseDer)
         Log.d { "OCSP: response status: ${ocspResp.status}" }
@@ -136,16 +133,19 @@ actual class RevocationHandlerImpl actual constructor() : RevocationHandler {
             ?: error("OCSP response does not match certificate serial")
         Log.d { "Matched OCSP response for serial: ${cert.serialNumber}" }
 
-        val now = Date()
-        Log.i { "Current update: ${singleResp.thisUpdate}, Next update : ${singleResp.nextUpdate}, now=$now" }
-        require(!now.before(singleResp.thisUpdate)) { "OCSP response not yet valid" }
+        val nowDate = Date(now.toEpochMilliseconds())
+        Log.i { "Current update: ${singleResp.thisUpdate}, " + "Next update: ${singleResp.nextUpdate}, now=$nowDate" }
+        require(!nowDate.before(singleResp.thisUpdate)) { "OCSP response not yet valid" }
         singleResp.nextUpdate?.let {
-            require(!now.after(it)) { "OCSP response expired (nextUpdate=$it)" }
+            require(!nowDate.after(it)) { "OCSP response expired (nextUpdate=$it)" }
         }
 
+        val revokedStatus = singleResp.certStatus as? RevokedStatus
+        if (revokedStatus != null) {
+            throw CertificateRevokedException("Certificate is REVOKED since ${revokedStatus.revocationTime}")
+        }
         require(singleResp.certStatus == null) {
-            val revoked = singleResp.certStatus as? RevokedStatus
-            "Certificate is REVOKED since ${revoked?.revocationTime}"
+            "OCSP status for this certificate is not GOOD: ${singleResp.certStatus}"
         }
         Log.i { "OCSP: Certificate status: OK" }
     }
@@ -224,6 +224,7 @@ actual class RevocationHandlerImpl actual constructor() : RevocationHandler {
         crlDer: ByteArray,
         certDer: ByteArray,
         issuerDer: ByteArray,
+        now: Instant,
     ) {
         val cf = CertificateFactory.getInstance("X.509", "BC")
         val cert = cf.generateCertificate(certDer.inputStream()) as X509Certificate
@@ -236,23 +237,26 @@ actual class RevocationHandlerImpl actual constructor() : RevocationHandler {
         crl.verify(issuer.publicKey)
         Log.i { "CRL signature valid" }
 
-        val now = Date()
-        require(!now.before(crl.thisUpdate)) { "CRL not yet valid" }
+        val nowDate = Date(now.toEpochMilliseconds())
+        require(!nowDate.before(crl.thisUpdate)) { "CRL not yet valid" }
         crl.nextUpdate?.let {
-            require(!now.after(it)) { "CRL expired (nextUpdate=$it)" }
+            require(!nowDate.after(it)) { "CRL expired (nextUpdate=$it)" }
         }
 
         val revokedCert = crl.getRevokedCertificate(cert)
         if (revokedCert != null) {
-            error("Certificate is REVOKED since ${revokedCert.revocationDate}")
+            throw CertificateRevokedException("Certificate is REVOKED since ${revokedCert.revocationDate}")
         }
 
         Log.i { "Certificate not found in CRL - status OK" }
     }
 
-    actual override fun getCrlNextUpdateEpochSeconds(crlDer: ByteArray): Long? {
+    actual override fun getCrlValidity(crlDer: ByteArray): CrlValidity {
         val crl = cf.generateCRL(crlDer.inputStream()) as X509CRL
-        return crl.nextUpdate?.toInstant()?.epochSecond
+        return CrlValidity(
+            thisUpdateEpochSeconds = crl.thisUpdate.toInstant().epochSecond,
+            nextUpdateEpochSeconds = crl.nextUpdate?.toInstant()?.epochSecond,
+        )
     }
 
     private fun extractOcspUrl(cert: X509Certificate): String? {

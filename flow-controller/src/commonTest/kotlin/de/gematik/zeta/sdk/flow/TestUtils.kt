@@ -37,6 +37,7 @@ import de.gematik.zeta.sdk.flow.RequestEvaluatorImplTest.FakeForwardingClient
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.storage.SdkStorage
+import de.gematik.zeta.time.SystemZetaClock
 import kotlinx.serialization.json.Json
 import kotlin.collections.Map
 
@@ -83,6 +84,7 @@ fun getDummyFlowContext(scope: String = "https://auth.example.com"): FlowContext
         ResourceScope("https://api.example.com", listOf(scope)),
         { TODO("Not need for test") },
         InMemoryStorage(),
+        clock = SystemZetaClock,
     )
 
 /**
@@ -179,7 +181,7 @@ fun getDummyProtectedResourceObject(
 
 suspend fun getDummyContextWithResource(fwdClient: ForwardingClient = FakeForwardingClient(), storage: SdkStorage = InMemoryStorage()): FlowContext {
     val resourceScope = ResourceScope("test", emptyList())
-    val ctx = FlowContextImpl(resourceScope, fwdClient, storage)
+    val ctx = FlowContextImpl(resourceScope, fwdClient, storage, clock = SystemZetaClock)
 
     val good = getDummyProtectedResourceObject("test", listOf("https://auth.example.com"))
     ctx.configurationStorage.saveProtectedResource(Json.encodeToString(good), maxAgeSeconds = 0)

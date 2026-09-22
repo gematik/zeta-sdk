@@ -28,6 +28,7 @@ import de.gematik.zeta.sdk.network.http.client.InnerHeadersKey
 import de.gematik.zeta.sdk.network.http.client.InnerStatusKey
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -64,6 +65,7 @@ class AslResponseEvaluatorTest {
         ResourceScope("", emptyList()),
         FakeForwardingClient(),
         storage,
+        clock = SystemZetaClock,
     )
 
     @Test

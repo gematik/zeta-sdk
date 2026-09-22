@@ -23,8 +23,6 @@
  */
 package de.gematik.zeta.sdk.network.http.client.config.tls
 
-import kotlin.time.Clock
-
 public data class TlsValidationResult(
     val isCompliant: Boolean,
     val errors: List<String>,
@@ -83,7 +81,7 @@ public object ZetaTlsValidator {
         negotiatedProtocol: String?,
         enabledCiphers: List<String>,
         leafCert: ZetaCertInfo? = null,
-        nowEpochSeconds: Long = Clock.System.now().epochSeconds,
+        nowEpochSeconds: Long,
     ): TlsValidationResult {
         val results = buildList {
             if (negotiatedCipher != null) add(validateNegotiatedCipherSuite(negotiatedCipher))

@@ -39,6 +39,8 @@ import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.tpm.TpmProvider
+import de.gematik.zeta.time.SystemZetaClock
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -61,8 +63,9 @@ import kotlin.uuid.Uuid
 
 class AslHandshakeStateTest {
     private val oid = "1.2.276.0.76.4.261"
+    private val clock: ZetaClock = SystemZetaClock
     private val revStorage =
-        RevocationChecker(RevocationStorage(InMemoryStorage(), ResourceScope("", listOf())), HttpClient {})
+        RevocationChecker(RevocationStorage(InMemoryStorage(), ResourceScope("", listOf())), ZetaHttpClient(HttpClient {}), clock = clock)
 
     @Test
     fun create_initializesState_validParameters() {
@@ -72,7 +75,10 @@ class AslHandshakeStateTest {
         val tokenProvider = FakeAccessTokenProvider()
         val fakeTpm = FakeTpmProvider(false)
         // Act
-        val result = AslHandshakeState.create(httpClient, request, tokenProvider, fakeTpm, false, AslStorageImpl(InMemoryStorage(), ResourceScope("", emptyList())), revStorage)
+        val result = AslHandshakeState.create(
+            httpClient, request, tokenProvider, fakeTpm, false,
+            AslDependencies(AslStorageImpl(InMemoryStorage(), ResourceScope("", emptyList())), revStorage, clock = clock),
+        )
 
         // Assert
         assertEquals(request, result.request)
@@ -114,6 +120,41 @@ class AslHandshakeStateTest {
         // Act & Assert
         assertFailsWith<IllegalArgumentException> {
             state.processMessage2AndBuildMessage3(false, oid)
+        }
+    }
+
+    @Test
+    fun processMessage2AndBuildMessage3_usesSystemClock_byDefault() = runTest {
+        val message1 = Message1Bundle(
+            encoded = ByteArray(0),
+            keys = VauPairKeys(
+                ecdhKey = KeyPair(
+                    skpi = ByteArray(65),
+                    sec1 = null,
+                    privateKey = ByteArray(32),
+                ),
+                ml768Key = KeyPair(
+                    skpi = ByteArray(1184),
+                    sec1 = null,
+                    privateKey = ByteArray(32),
+                ),
+            ),
+        )
+
+        val state = buildState(
+            message1 = message1,
+            message1Result = Message1Result(
+                cid = "test-cid",
+                response = ByteArray(0),
+                transcript = ByteArray(0),
+            ),
+        )
+
+        assertFailsWith<Exception> {
+            state.processMessage2AndBuildMessage3(
+                aslProdEnvironment = false,
+                requiredRoleOid = oid,
+            )
         }
     }
 
@@ -348,7 +389,10 @@ class AslHandshakeStateTest {
         val tokenProvider = FakeAccessTokenProvider()
         val fakeTpm = FakeTpmProvider(false)
 
-        val result = AslHandshakeState.create(httpClient, request, tokenProvider, fakeTpm, tlsValidation = true, AslStorageImpl(InMemoryStorage(), ResourceScope("", emptyList())), revStorage)
+        val result = AslHandshakeState.create(
+            httpClient, request, tokenProvider, fakeTpm, tlsValidation = true,
+            AslDependencies(AslStorageImpl(InMemoryStorage(), ResourceScope("", emptyList())), revStorage, clock = clock),
+        )
 
         assertEquals(true, result.tlsValidation)
     }
@@ -358,7 +402,10 @@ class AslHandshakeStateTest {
         val httpClient = ZetaHttpClient(HttpClient())
         val request = buildRequest()
 
-        val result = AslHandshakeState.create(httpClient, request, FakeAccessTokenProvider(), FakeTpmProvider(false), tlsValidation = false, AslStorageImpl(InMemoryStorage(), ResourceScope("", emptyList())), revStorage)
+        val result = AslHandshakeState.create(
+            httpClient, request, FakeAccessTokenProvider(), FakeTpmProvider(false), tlsValidation = false,
+            AslDependencies(AslStorageImpl(InMemoryStorage(), ResourceScope("", emptyList())), revStorage, clock = clock),
+        )
 
         assertEquals(false, result.tlsValidation)
     }
@@ -632,7 +679,9 @@ class AslHandshakeStateTest {
             message4 = message4,
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = FakeTpmProvider(false),
-            storage = AslStorageImpl(InMemoryStorage(), ResourceScope("", emptyList())), revocationChecker = revStorage,
+            storage = AslStorageImpl(InMemoryStorage(), ResourceScope("", emptyList())),
+            revocationChecker = revStorage,
+            clock = clock,
         )
     }
 }

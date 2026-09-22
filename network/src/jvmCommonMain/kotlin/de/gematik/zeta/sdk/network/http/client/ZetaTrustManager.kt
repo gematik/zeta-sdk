@@ -27,6 +27,7 @@ package de.gematik.zeta.sdk.network.http.client
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaCertificateValidator
 import de.gematik.zeta.sdk.network.http.client.config.tls.sanMatchesHost
+import de.gematik.zeta.time.ZetaClock
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.bouncycastle.asn1.x509.GeneralName
@@ -43,6 +44,7 @@ import kotlin.time.Duration.Companion.milliseconds
 internal class ZetaTrustManager(
     private val delegate: X509TrustManager,
     private val revocationChecker: RevocationChecker? = null,
+    private val clock: ZetaClock,
 ) : X509ExtendedTrustManager() {
 
     override fun checkServerTrusted(
@@ -120,7 +122,7 @@ internal class ZetaTrustManager(
     ) {
         val result = ZetaCertificateValidator.validateChain(
             chain = chain.map { it.toZetaCertInfo() },
-            nowEpochSeconds = System.currentTimeMillis() / 1_000,
+            nowEpochSeconds = clock.now().epochSeconds,
         )
 
         if (!result.isValid) {
@@ -141,7 +143,7 @@ internal class ZetaTrustManager(
         val revocationChain = resolveRevocationChain(chain)
         try {
             runBlocking {
-                withTimeout(5_000.milliseconds) {
+                withTimeout(15_000.milliseconds) {
                     checker.validateChain(
                         chain = revocationChain,
                         stapledOcspResponse = staple,

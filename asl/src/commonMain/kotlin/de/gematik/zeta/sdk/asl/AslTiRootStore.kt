@@ -26,12 +26,12 @@ package de.gematik.zeta.sdk.asl
 
 import de.gematik.zeta.sdk.crypto.X509CertValidator
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.request.accept
 import io.ktor.http.ContentType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.io.encoding.Base64
-import kotlin.time.Clock
 
 public class AslTiRootStore(
     private val httpClient: ZetaHttpClient,
@@ -45,7 +45,7 @@ public class AslTiRootStore(
     private var lastFetch: Long = 0L
     private val refreshIntervalSeconds = 24 * 3600L
 
-    public suspend fun getTrustAnchors(clock: Clock = Clock.System): List<ByteArray> {
+    public suspend fun getTrustAnchors(clock: ZetaClock): List<ByteArray> {
         val now = clock.now().epochSeconds
         if (trustAnchorsDer.isEmpty() || now - lastFetch > refreshIntervalSeconds) {
             refresh(clock)
@@ -53,7 +53,7 @@ public class AslTiRootStore(
         return trustAnchorsDer
     }
 
-    private suspend fun refresh(clock: Clock) {
+    private suspend fun refresh(clock: ZetaClock) {
         val response = httpClient.get(environment.url) {
             accept(ContentType.Application.Json)
         }

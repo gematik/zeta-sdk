@@ -19,14 +19,17 @@ import io.ktor.client.engine.curl.tls.TlsValidationConfig
 import io.ktor.client.engine.curl.tls.validateTlsSession
 import io.ktor.client.engine.curl.zeta_install_callbacks
 import io.ktor.client.plugins.*
+import io.ktor.client.plugins.websocket.WEBSOCKETS_KEY
 import io.ktor.utils.io.*
 import io.ktor.utils.io.core.*
 import io.ktor.utils.io.locks.*
 import kotlinx.cinterop.*
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CompletableJob
 import kotlinx.io.readByteArray
 import libcurl.*
 import platform.posix.getenv
+import platform.posix.size_tVar
 
 public var globalRevocationFn: ((staple: ByteArray?, certDer: ByteArray, issuerDer: ByteArray) -> Boolean)? = null
 
@@ -192,9 +195,14 @@ internal class CurlMultiApiHandler : Closeable {
 
         val bodyStartedReceiving = CompletableDeferred<Unit>()
         val responseBody = if (request.isUpgradeRequest) {
-            CurlWebSocketResponseBody(easyHandle)
+            val wsConfig = request.attributes[WEBSOCKETS_KEY]
+            CurlWebSocketResponseBody(
+                easyHandle,
+                wsConfig.channelsConfig.incoming,
+                wsConfig.maxFrameSize,
+            )
         } else {
-            CurlHttpResponseBody(request.executionContext) {
+            CurlHttpResponseBody(request.callContext) {
                 unpauseEasyHandle(easyHandle)
             }
         }
@@ -315,13 +323,27 @@ internal class CurlMultiApiHandler : Closeable {
         cancelledHandles += Pair(easyHandle, cause)
     }
 
-    internal fun perform(transfersRunning: IntVarOf<Int>) {
+    fun cancelWebSocket(websocket: CurlWebSocketResponseBody, cause: Throwable) {
+        val easyHandle = websocket.easyHandle
+        val handler = activeHandles[easyHandle] ?: return
+        if (handler.responseWrapper.get() !== websocket) return
+        removeEasyHandle(easyHandle, cause)
+    }
+
+    fun perform(transfersRunning: IntVarOf<Int>) {
+        if (activeHandles.isEmpty()) return
+
+        // Process cancelled handles before performing to prevent them from blocking curl_multi_poll.
+        if (cancelledHandles.isNotEmpty()) {
+            handleCompleted()
+        }
+
         if (activeHandles.isEmpty()) return
 
         synchronized(easyHandlesToUnpauseLock) {
             var handle = easyHandlesToUnpause.removeFirstOrNull()
             while (handle != null) {
-                curl_easy_pause(handle, CURLPAUSE_CONT)
+                if (handle in activeHandles) curl_easy_pause(handle, CURLPAUSE_CONT)
                 handle = easyHandlesToUnpause.removeFirstOrNull()
             }
         }
@@ -371,7 +393,7 @@ internal class CurlMultiApiHandler : Closeable {
     private fun setupUploadContent(easyHandle: EasyHandle, request: CurlRequestData): COpaquePointer {
         val requestPointer = CurlRequestBodyData(
             body = request.content,
-            callContext = request.executionContext,
+            callContext = request.callContext,
             onUnpause = {
                 unpauseEasyHandle(easyHandle)
             },
@@ -417,6 +439,16 @@ internal class CurlMultiApiHandler : Closeable {
                     activeHandles.remove(easyHandle)!!.dispose()
                 }
             } while (messagesLeft.value != 0)
+        }
+    }
+
+    private fun removeEasyHandle(easyHandle: EasyHandle, cause: Throwable) {
+        val handler = activeHandles.remove(easyHandle) ?: return
+        try {
+            processCancelledEasyHandle(easyHandle, cause)
+        } finally {
+            handler.responseCompletable.completeExceptionally(cause)
+            handler.dispose()
         }
     }
 
@@ -532,6 +564,54 @@ internal class CurlMultiApiHandler : Closeable {
                 headers,
                 responseBody,
             )
+        }
+    }
+
+    fun sendWebSocketFrame(
+        websocket: CurlWebSocketResponseBody,
+        flags: Int,
+        data: ByteArray,
+        completionHandler: CompletableJob
+    ) {
+        try {
+            trySendWebSocketFrame(websocket.easyHandle, flags, data)
+            completionHandler.complete()
+        } catch (cause: Throwable) {
+            completionHandler.completeExceptionally(cause)
+        }
+    }
+
+    private fun trySendWebSocketFrame(
+        easyHandle: EasyHandle,
+        flags: Int,
+        data: ByteArray,
+    ) = memScoped {
+        var offset = 0
+        val sent = alloc<size_tVar>()
+        data.usePinned { pinned ->
+            while (true) {
+                val bufferStart = if (data.isNotEmpty()) pinned.addressOf(offset) else null
+                val remaining = if (data.isNotEmpty()) data.size - offset else 0
+
+                val status = curl_ws_send(
+                    curl = easyHandle,
+                    buffer_arg = bufferStart,
+                    buflen = remaining.convert(),
+                    sent = sent.ptr,
+                    fragsize = 0,
+                    flags = flags.convert(),
+                )
+
+                when (status) {
+                    CURLE_OK -> {
+                        offset += sent.value.toInt()
+                        if (data.isEmpty() || offset == data.size) break
+                    }
+
+                    // TODO: Handle CURLE_AGAIN
+                    else -> status.verify()
+                }
+            }
         }
     }
 

@@ -143,7 +143,7 @@ public class Main {
             getFirstResourceUrl(props),
             new BuildConfig(
                 "ZETA-Test-Client",
-                "1.3.0",
+                "1.3.2",
                 "sdk-client",
                 new StorageConfig.Custom(new InMemoryStorage()),
                 new TpmConfig() {

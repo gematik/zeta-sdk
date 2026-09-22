@@ -26,6 +26,7 @@ package de.gematik.zeta.sdk.flow
 
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -352,7 +353,7 @@ class StatusCodeEvaluatorTest {
 
     private fun dummyCtx(): FlowContext {
         val storage = InMemoryStorage()
-        return FlowContextImpl(ResourceScope("", emptyList()), RequestEvaluatorImplTest.FakeForwardingClient(), storage)
+        return FlowContextImpl(ResourceScope("", emptyList()), RequestEvaluatorImplTest.FakeForwardingClient(), storage, clock = SystemZetaClock)
     }
 
     private fun pepHeaders() = headersOf(ResponseEvaluator.ZETA_ERROR_ORIGIN, ResponseEvaluator.PEP)

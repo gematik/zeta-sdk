@@ -26,6 +26,7 @@ package de.gematik.zeta.sdk.flow
 
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -51,6 +52,7 @@ class FlowPluginSuccessTest {
             ResourceScope("", emptyList()),
             { error("not in scope of the test") },
             storage = storage,
+            clock = SystemZetaClock,
         )
 
         // Arrange

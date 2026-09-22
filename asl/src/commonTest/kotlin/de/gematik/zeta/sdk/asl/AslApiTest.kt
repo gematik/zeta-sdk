@@ -32,6 +32,8 @@ import de.gematik.zeta.sdk.network.http.client.RevocationStorage
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
@@ -55,8 +57,10 @@ class AslApiImplTest {
     val fakeSession = "/session/abc123"
     val requiredOid = "1.2.276.0.76.4.261"
 
+    val clock: ZetaClock = SystemZetaClock
+
     private fun testrevocationChecker(): RevocationChecker =
-        RevocationChecker(RevocationStorage(InMemoryStorage(), ResourceScope("", listOf())), HttpClient {})
+        RevocationChecker(RevocationStorage(InMemoryStorage(), ResourceScope("", listOf())), ZetaHttpClient(HttpClient()), clock = clock)
 
     @Test
     fun decrypt_throwsException_sessionIsNull() = runTest {
@@ -69,6 +73,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val encrypted = byteArrayOf(0x01, 0x02)
 
@@ -90,6 +95,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val tooShortPayload = byteArrayOf(0x00)
 
@@ -111,6 +117,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -138,6 +145,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -165,6 +173,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -191,6 +200,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -217,6 +227,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -244,6 +255,7 @@ class AslApiImplTest {
             accessTokenProvider = tokenProvider,
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -271,6 +283,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -297,6 +310,7 @@ class AslApiImplTest {
             accessTokenProvider = tokenProvider,
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -323,6 +337,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -350,6 +365,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -376,6 +392,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -402,6 +419,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -456,6 +474,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -482,6 +501,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -516,6 +536,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom(fakeTarget) }
@@ -544,6 +565,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val request = HttpRequestBuilder().apply {
             url { takeFrom("https://api.example.com/vsdservice/v1/vsdmbundle?profileVersion=1.1") }
@@ -574,6 +596,7 @@ class AslApiImplTest {
             accessTokenProvider = FakeAccessTokenProvider(),
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
             requiredRoleOid = requiredOid, revocationChecker = testrevocationChecker(),
+            clock = clock,
         )
         val target = "https://api.example.com/vsdservice/v1/vsdmbundle?profileVersion=1.1"
         val request = HttpRequestBuilder().apply {

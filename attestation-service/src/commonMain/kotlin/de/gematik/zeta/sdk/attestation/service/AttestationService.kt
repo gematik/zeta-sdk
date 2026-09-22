@@ -38,9 +38,9 @@ import de.gematik.zeta.sdk.attestation.service.ErrorCode
 import de.gematik.zeta.sdk.attestation.service.ServiceError
 import de.gematik.zeta.sdk.attestation.service.TpmException
 import de.gematik.zeta.sdk.attestation.tpm.TpmAccessOperations
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.http.RequestConnectionPoint
 import kotlin.io.encoding.Base64
-import kotlin.time.Clock
 
 class AttestationService(
     private val monitor: ProcessMonitorOperations,
@@ -48,8 +48,9 @@ class AttestationService(
     private val fileIntegrity: FileIntegrityOperations,
     private val tpm: TpmAccessOperations,
     private val config: ServiceConfig,
+    private val clock: ZetaClock,
 ) {
-    private val startTime = Clock.System.now()
+    private val startTime = clock.now()
 
     fun initialize() {
         if (config.enableQuote) {
@@ -184,7 +185,7 @@ class AttestationService(
     }
 
     fun health(): HealthCheck {
-        val uptime = (Clock.System.now() - startTime).inWholeSeconds
+        val uptime = (clock.now() - startTime).inWholeSeconds
 
         return HealthCheck(
             status = "OK",

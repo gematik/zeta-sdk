@@ -28,6 +28,7 @@ import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.network.http.client.RevocationChecker
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.tpm.TpmProvider
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
 import io.ktor.client.request.headers
@@ -59,6 +60,7 @@ public class AslApiImpl(
     private val accessTokenProvider: AccessTokenProvider,
     private val tpmProvider: TpmProvider,
     private val tlsValidationEnabled: Boolean = true,
+    private val clock: ZetaClock,
 ) : AslApi {
     @OptIn(ExperimentalSerializationApi::class)
     override suspend fun encrypt(request: HttpRequestBuilder, passThrough: Boolean?): HttpRequestBuilder {
@@ -110,7 +112,7 @@ public class AslApiImpl(
     private suspend fun ensureHandshake(request: HttpRequestBuilder): EstablishedSession {
         aslStorage.getCurrentSession()?.let { return it }
 
-        var state = AslHandshakeState.create(zetaHttpClient, request, accessTokenProvider, tpmProvider, tlsValidationEnabled, aslStorage, revocationChecker)
+        var state = AslHandshakeState.create(zetaHttpClient, request, accessTokenProvider, tpmProvider, tlsValidationEnabled, AslDependencies(aslStorage, revocationChecker, clock = clock))
         state = state
             .performMessage1AndReceiveMessage2()
             .processMessage2AndBuildMessage3(aslProdEnvironment, requiredRoleOid)

@@ -24,27 +24,39 @@
 
 package de.gematik.zeta.sdk.crypto
 
+import kotlin.time.Instant
+
 interface RevocationHandler {
-    fun getThisUpdateEpochSeconds(ocspResponseDer: ByteArray): Long
-    fun getNextUpdateEpochSeconds(ocspResponseDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray): Long?
-    fun validate(ocspResponseDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray)
+    fun getOcspValidity(ocspResponseDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray): OcspValidity
+    fun validate(ocspResponseDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray, now: Instant)
     suspend fun prepareOcspRequest(certDer: ByteArray, issuerDer: ByteArray): OcspRequestData
     fun extractCrlUrl(certDer: ByteArray): String?
-    fun validateCrl(crlDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray)
-    fun getCrlNextUpdateEpochSeconds(crlDer: ByteArray): Long?
+    fun validateCrl(crlDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray, now: Instant)
+
+    /** Reads thisUpdate and nextUpdate of [crlDer] in one pass over the DER. */
+    fun getCrlValidity(crlDer: ByteArray): CrlValidity
 }
 
 expect class RevocationHandlerImpl() : RevocationHandler {
-    override fun getThisUpdateEpochSeconds(ocspResponseDer: ByteArray): Long
-    override fun getNextUpdateEpochSeconds(ocspResponseDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray): Long?
-    override fun validate(ocspResponseDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray)
+    override fun getOcspValidity(ocspResponseDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray): OcspValidity
+    override fun validate(ocspResponseDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray, now: Instant)
     override suspend fun prepareOcspRequest(certDer: ByteArray, issuerDer: ByteArray): OcspRequestData
     override fun extractCrlUrl(certDer: ByteArray): String?
-    override fun validateCrl(crlDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray)
-    override fun getCrlNextUpdateEpochSeconds(crlDer: ByteArray): Long?
+    override fun validateCrl(crlDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray, now: Instant)
+    override fun getCrlValidity(crlDer: ByteArray): CrlValidity
 }
 
 data class OcspRequestData(
     val url: String,
     val requestDer: ByteArray,
+)
+
+data class OcspValidity(
+    val thisUpdateEpochSeconds: Long,
+    val nextUpdateEpochSeconds: Long?,
+)
+
+data class CrlValidity(
+    val thisUpdateEpochSeconds: Long,
+    val nextUpdateEpochSeconds: Long?,
 )

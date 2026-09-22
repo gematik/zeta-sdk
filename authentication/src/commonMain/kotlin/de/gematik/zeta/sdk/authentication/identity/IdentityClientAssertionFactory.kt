@@ -28,8 +28,8 @@ import AsymAlg
 import de.gematik.zeta.sdk.authentication.AccessTokenProviderImpl.Companion.applyHtuRules
 import de.gematik.zeta.sdk.authentication.AccessTokenUtility
 import de.gematik.zeta.sdk.tpm.TpmProvider
+import de.gematik.zeta.time.SystemZetaClock
 import kotlin.io.encoding.Base64
-import kotlin.time.Clock
 
 internal const val IDENTITY_CLIENT_ASSERTION_LIFETIME_SECONDS = 30L
 internal const val IDENTITY_CLIENT_ASSERTION_MAX_LIFETIME_SECONDS = 60L
@@ -37,7 +37,7 @@ internal const val IDENTITY_CLIENT_ASSERTION_TYP = "JWT"
 
 internal class IdentityClientAssertionFactory(
     private val tpmProvider: TpmProvider,
-    private val clock: () -> Long = { Clock.System.now().epochSeconds },
+    private val clock: () -> Long = { SystemZetaClock.now().epochSeconds },
     private val lifetimeSeconds: Long = IDENTITY_CLIENT_ASSERTION_LIFETIME_SECONDS,
 ) {
     init {

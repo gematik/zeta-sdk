@@ -24,6 +24,8 @@
 
 package de.gematik.zeta.sdk.network.http.client.config
 
+import de.gematik.zeta.sdk.network.http.client.DEFAULT_REVOCATION_CACHE_SECONDS
+
 /**
  * TLS / trust configuration.
  *
@@ -32,18 +34,20 @@ package de.gematik.zeta.sdk.network.http.client.config
  * @property disableServerValidation Disables server certificate and hostname validation.
  *                                   Must only be used in test environments. Defaults to false.
  * @property sslVerbose Enables verbose SSL/TLS logging for debugging. Defaults to false.
- * @property revocationCacheDurationSeconds Duration in seconds to cache OCSP/CRL responses
- *                                             when no [nextUpdate] field is present.
+ * @property revocationCacheDurationSeconds Maximum duration in seconds a cached OCSP/CRL response
+ *                                          is used, counted from the moment it was stored. A
+ *                                          response is used while now() is before
+ *                                          min(nextUpdate, validatedAt + this duration).
  */
 public data class SecurityConfig(
     val additionalCaPem: List<String> = emptyList(),
     val additionalCaFile: String? = null,
     val disableServerValidation: Boolean = false,
     val sslVerbose: Boolean = false,
-    val revocationCacheDurationSeconds: Long = 3_600L,
+    val revocationCacheDurationSeconds: Long = DEFAULT_REVOCATION_CACHE_SECONDS,
 ) {
     init {
-        require(revocationCacheDurationSeconds >= 3_600L) {
+        require(revocationCacheDurationSeconds >= DEFAULT_REVOCATION_CACHE_SECONDS) {
             "revocationCacheDurationSeconds must be at least 3600s (1h), was $revocationCacheDurationSeconds"
         }
     }

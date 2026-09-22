@@ -25,16 +25,13 @@
 package de.gematik.zeta.sdk.network.http.client
 
 import de.gematik.zeta.logging.Log
-import io.ktor.client.HttpClient
 import io.ktor.client.request.header
-import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsBytes
 
 public suspend fun fetchOcspDirect(
     url: String,
     requestDer: ByteArray,
-    httpClient: HttpClient,
+    httpClient: ZetaHttpClient,
 ): ByteArray {
     Log.i { "Fetching OCSP from: $url (${requestDer.size} bytes)" }
 

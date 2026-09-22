@@ -53,9 +53,9 @@ import de.gematik.zeta.sdk.network.http.client.RevocationChecker
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.config.tls.sanMatchesHost
 import de.gematik.zeta.sdk.network.http.client.hostOf
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.request.HttpRequestBuilder
 import kotlinx.serialization.ExperimentalSerializationApi
-import kotlin.time.Clock
 
 @Suppress("UnsafeCallOnNullableType")
 @OptIn(ExperimentalSerializationApi::class)
@@ -65,6 +65,7 @@ internal suspend fun processMessage2AndDeriveMessage3(
     kem: KemBundle,
     http: HttpContext,
     asl: AslContext,
+    clock: ZetaClock,
 ): Message3Result {
     val message2 = parseMessage2(resultMessage1.response)
     val ssE = deriveSharedSecret(kem.mlKem, kem.ecdhKem, message1.keys, message2)
@@ -80,10 +81,11 @@ internal suspend fun processMessage2AndDeriveMessage3(
                 http = http,
                 certDataFetcher = HttpCertDataFetcher(http.client, http.request),
                 certDataCache = asl.storage,
-                tiTrustAnchors = AslTiRootStore(http.client, tiEnvironment).getTrustAnchors(Clock.System),
+                tiTrustAnchors = AslTiRootStore(http.client, tiEnvironment).getTrustAnchors(clock),
                 revocationChecker = asl.revocationChecker,
             ),
             requiredRoleOid = asl.requiredRoleOid,
+            clock = clock,
         )
     } else {
         Log.i { "Certificate / OCSP validation disabled" }
@@ -213,7 +215,7 @@ public fun encryptKeyConfirmation(clientToServerConfirmationKey: ByteArray, tran
 internal suspend fun validateSignedVauPublicKeys(
     signed: SignedVauPublicKeys,
     validation: CertValidationBundle,
-    clock: Clock = Clock.System,
+    clock: ZetaClock,
     requiredRoleOid: String,
 ) {
     decodeAndValidateVauKeys(signed, clock)
@@ -242,7 +244,7 @@ internal suspend fun validateSignedVauPublicKeys(
 @OptIn(ExperimentalSerializationApi::class)
 internal fun decodeAndValidateVauKeys(
     signed: SignedVauPublicKeys,
-    clock: Clock = Clock.System,
+    clock: ZetaClock,
 ): VauKeys {
     val vauKeys = cbor.decodeFromByteArray(VauKeys.serializer(), signed.signedPublicKeys)
     validateVauKeyLifetime(vauKeys.expiresAt, vauKeys.issuedAt, clock.now().epochSeconds)

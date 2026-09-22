@@ -41,6 +41,7 @@ import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -402,7 +403,7 @@ class Message1Test {
         accessTokenProvider: AccessTokenProvider,
     ): AslHandshakeState {
         val storage =
-            RevocationChecker(RevocationStorage(InMemoryStorage(), ResourceScope("", listOf())), HttpClient {})
+            RevocationChecker(RevocationStorage(InMemoryStorage(), ResourceScope("", listOf())), ZetaHttpClient(HttpClient {}), clock = SystemZetaClock)
 
         return AslHandshakeState(
             request = request,
@@ -417,7 +418,9 @@ class Message1Test {
             message4 = null,
             accessTokenProvider = accessTokenProvider,
             tpmProvider = AslHandshakeStateTest.FakeTpmProvider(false),
-            storage = AslStorageImpl(InMemoryStorage(), ResourceScope("", emptyList())), revocationChecker = storage,
+            storage = AslStorageImpl(InMemoryStorage(), ResourceScope("", emptyList())),
+            revocationChecker = storage,
+            clock = SystemZetaClock,
         )
     }
 

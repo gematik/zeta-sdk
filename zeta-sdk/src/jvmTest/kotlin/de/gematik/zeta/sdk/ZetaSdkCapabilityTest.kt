@@ -41,6 +41,7 @@ import de.gematik.zeta.sdk.flow.handler.EnsureAccessTokenHandler
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.storage.StorageConfig
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.statement.HttpResponse
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -321,7 +322,7 @@ class ZetaSdkClientImplCapabilityTest {
         storage: InMemoryStorage = InMemoryStorage(),
         changeEmailClient: ChangeEmailClient? = null,
     ): ZetaSdkClientImpl {
-        val client = ZetaSdkClientImpl(resourceScope, buildTestConfig(storage))
+        val client = ZetaSdkClientImpl(resourceScope, buildTestConfig(storage), SystemZetaClock)
         client.injectLazyDelegate("configHandler", configHandler)
         client.injectLazyDelegate("clientRegistrationHandler", clientRegistrationHandler)
         client.injectLazyDelegate("authHandler", authHandler)
@@ -335,7 +336,7 @@ class ZetaSdkClientImplCapabilityTest {
         storage: InMemoryStorage,
         authServer: AuthorizationServerMetadata = authServer(),
     ) {
-        ConfigurationStorageImpl(storage, resourceScope).linkResourceToAuthorizationServer(authServer)
+        ConfigurationStorageImpl(storage, resourceScope, clock = SystemZetaClock).linkResourceToAuthorizationServer(authServer)
     }
 
     private suspend fun saveClientId(storage: InMemoryStorage, authServerKey: String, clientId: String) {

@@ -30,9 +30,9 @@ import de.gematik.zeta.sdk.notifications.model.HistoricNotifications
 import de.gematik.zeta.sdk.notifications.model.Pusher
 import de.gematik.zeta.sdk.notifications.model.PusherConfig
 import de.gematik.zeta.sdk.notifications.model.PusherEncryption
+import de.gematik.zeta.time.SystemZetaClock
 import randomUUID
 import secureRandom
-import kotlin.time.Clock
 
 class NotificationClientImpl internal constructor(
     private val api: NotificationApiClient,
@@ -98,7 +98,7 @@ internal fun defaultPusherEncryption(): PusherEncryption {
     val iss = ByteArray(ISS_BYTE_SIZE).also { secureRandom(it) }.toHexString()
     return PusherEncryption(
         method = ENCRYPTION_METHOD,
-        timeIssCreated = Clock.System.now().toString().take(YEAR_MONTH_LENGTH),
+        timeIssCreated = SystemZetaClock.now().toString().take(YEAR_MONTH_LENGTH),
         iss = iss,
         keyIdentifier = randomUUID(),
     )

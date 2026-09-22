@@ -5,10 +5,10 @@ import de.gematik.zeta.sdk.buildlogic.initBuildLogic
 plugins {
     id("de.gematik.zeta.sdk.build-logic.base")
     id("de.gematik.zeta.sdk.build-logic.dokka")
-    id("com.github.ben-manes.versions") version "0.54.0"
-    id("org.jetbrains.kotlinx.kover") version "0.9.2"
-    id("org.sonarqube") version "7.4.0.8496"
-    id("org.cyclonedx.bom") version "3.0.1"
+    id("com.github.ben-manes.versions") version "0.61.0"
+    id("org.jetbrains.kotlinx.kover") version "0.9.9"
+    id("org.sonarqube") version "7.5.0.8588"
+    id("org.cyclonedx.bom") version "3.4.1"
 
     alias(libs.plugins.dependencyCheck)
 }

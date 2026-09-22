@@ -1,17 +1,19 @@
 /*
- * Copyright 2014-2019 JetBrains s.r.o and contributors. Use of this source code is governed by the Apache 2.0 license.
+ * Copyright 2014-2026 JetBrains s.r.o and contributors. Use of this source code is governed by the Apache 2.0 license.
  */
 
 package io.ktor.client.engine.curl.internal
 
+import io.ktor.client.engine.curl.internal.Libcurl.READFUNC_ABORT
+import io.ktor.client.engine.curl.internal.Libcurl.READFUNC_PAUSE
 import io.ktor.utils.io.*
 import io.ktor.utils.io.core.*
 import kotlinx.cinterop.*
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
-import libcurl.*
-import platform.posix.*
-import kotlin.coroutines.*
+import platform.posix.size_t
+import kotlin.coroutines.CoroutineContext
 
 /**
  *  The callback is getting called on each completely parser header line.
@@ -21,8 +23,8 @@ internal fun onHeadersReceived(
     buffer: CPointer<ByteVar>,
     size: size_t,
     count: size_t,
-    userdata: COpaquePointer,
-): Long {
+    userdata: COpaquePointer
+): size_t {
     val response = userdata.fromCPointer<CurlResponseBuilder>()
     val packet = response.headersBytes
     val chunkSize = (size * count).toLong()
@@ -32,7 +34,7 @@ internal fun onHeadersReceived(
         response.bodyStartedReceiving.complete(Unit)
     }
 
-    return chunkSize
+    return chunkSize.convert()
 }
 
 /**
@@ -49,8 +51,8 @@ internal fun onBodyChunkReceived(
     buffer: CPointer<ByteVar>,
     size: size_t,
     count: size_t,
-    userdata: COpaquePointer,
-): Int {
+    userdata: COpaquePointer
+): size_t {
     val wrapper = userdata.fromCPointer<CurlResponseBodyData>()
     return wrapper.onBodyChunkReceived(buffer, size, count)
 }
@@ -61,23 +63,23 @@ internal fun onBodyChunkRequested(
     size: size_t,
     count: size_t,
     dataRef: COpaquePointer,
-): Int {
+): size_t {
     val wrapper: CurlRequestBodyData = dataRef.fromCPointer()
     val body = wrapper.body
     val requested = (size * count).toInt()
 
     if (body.isClosedForRead) {
-        return if (body.closedCause != null) -1 else 0
+        return if (body.closedCause != null) READFUNC_ABORT else 0.convert()
     }
     val readCount = try {
         body.readAvailable(1) { source: Buffer ->
             source.readAvailable(buffer, 0, requested)
         }
-    } catch (cause: Throwable) {
-        return -1
+    } catch (_: Throwable) {
+        return READFUNC_ABORT
     }
     if (readCount > 0) {
-        return readCount
+        return readCount.convert()
     }
 
     CoroutineScope(wrapper.callContext).launch {
@@ -89,17 +91,17 @@ internal fun onBodyChunkRequested(
             wrapper.onUnpause()
         }
     }
-    return CURL_READFUNC_PAUSE
+    return READFUNC_PAUSE
 }
 
 internal class CurlRequestBodyData(
     val body: ByteReadChannel,
     val callContext: CoroutineContext,
-    val onUnpause: () -> Unit,
+    val onUnpause: () -> Unit
 )
 
 internal interface CurlResponseBodyData {
     @OptIn(ExperimentalForeignApi::class)
-    fun onBodyChunkReceived(buffer: CPointer<ByteVar>, size: size_t, count: size_t): Int
+    fun onBodyChunkReceived(buffer: CPointer<ByteVar>, size: size_t, count: size_t): size_t
     fun close(cause: Throwable? = null)
 }

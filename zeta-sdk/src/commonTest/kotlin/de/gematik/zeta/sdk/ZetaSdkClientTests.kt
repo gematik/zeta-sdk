@@ -39,6 +39,7 @@ import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.storage.SdkStorage
 import de.gematik.zeta.sdk.storage.StorageConfig
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -891,7 +892,7 @@ class ZetaSdkClientTests {
         // Arrange
         val storage = InMemoryStorage()
         val client = buildClientWithStorage(storage)
-        ConfigurationStorageImpl(storage, resourceScope).linkResourceToAuthorizationServer(
+        ConfigurationStorageImpl(storage, resourceScope, clock = SystemZetaClock).linkResourceToAuthorizationServer(
             getAuthServer(authServerIssuer),
         )
 
@@ -1082,7 +1083,7 @@ class ZetaSdkClientTests {
         val authServer = getAuthServer(authServerIssuer).copy(
             registrationEndpoint = "https://auth.example.com/register",
         )
-        ConfigurationStorageImpl(storage, resourceScope).linkResourceToAuthorizationServer(authServer)
+        ConfigurationStorageImpl(storage, resourceScope, clock = SystemZetaClock).linkResourceToAuthorizationServer(authServer)
         ClientRegistrationStorageImpl(storage, resourceScope).saveRegistration(
             authServer = "https://auth.example.com/register",
             registrationResponse = ClientRegistrationResponse(clientId = "client-123"),
@@ -1107,7 +1108,7 @@ class ZetaSdkClientTests {
     fun `buildServiceAccessTokenParams fails when client is not registered`() = runTest {
         val storage = InMemoryStorage()
         val client = buildClientWithStorage(storage) as ZetaSdkClientImpl
-        ConfigurationStorageImpl(storage, resourceScope).linkResourceToAuthorizationServer(getAuthServer(authServerIssuer))
+        ConfigurationStorageImpl(storage, resourceScope, clock = SystemZetaClock).linkResourceToAuthorizationServer(getAuthServer(authServerIssuer))
 
         val error = assertFailsWith<IllegalArgumentException> { client.buildServiceAccessTokenParams() }
 
@@ -1136,7 +1137,7 @@ class ZetaSdkClientTests {
         val authServer = getAuthServer(authServerIssuer).copy(
             registrationEndpoint = "https://auth.example.com/register",
         )
-        ConfigurationStorageImpl(storage, resourceScope).linkResourceToAuthorizationServer(authServer)
+        ConfigurationStorageImpl(storage, resourceScope, clock = SystemZetaClock).linkResourceToAuthorizationServer(authServer)
         ClientRegistrationStorageImpl(storage, resourceScope).saveRegistration(
             authServer = "https://auth.example.com/register",
             registrationResponse = ClientRegistrationResponse(clientId = "registered-client"),
@@ -1170,7 +1171,7 @@ class ZetaSdkClientTests {
 
     private val resourceScope = ResourceScope(resource, listOf(scope))
     private suspend fun setupRegistration(storage: SdkStorage) {
-        ConfigurationStorageImpl(storage, resourceScope).linkResourceToAuthorizationServer(getAuthServer(authServerIssuer))
+        ConfigurationStorageImpl(storage, resourceScope, clock = SystemZetaClock).linkResourceToAuthorizationServer(getAuthServer(authServerIssuer))
         ClientRegistrationStorageImpl(storage, resourceScope).saveRegistration(
             authServer = authServerIssuer,
             registrationResponse = ClientRegistrationResponse(clientId = "client-123"),

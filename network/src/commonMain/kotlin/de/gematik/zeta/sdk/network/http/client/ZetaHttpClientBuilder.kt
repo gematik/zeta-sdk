@@ -30,6 +30,8 @@ import de.gematik.zeta.sdk.network.http.client.config.MonitoringConfig
 import de.gematik.zeta.sdk.network.http.client.config.NetworkConfig
 import de.gematik.zeta.sdk.network.http.client.config.ProxyConfig
 import de.gematik.zeta.sdk.network.http.client.config.SecurityConfig
+import de.gematik.zeta.time.SystemZetaClock
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngine
@@ -76,6 +78,7 @@ public open class ZetaHttpClientBuilder(
     private var monitoring: MonitoringConfig = MonitoringConfig()
     private var contentNegotiationEnabled: Boolean = false
     private var revocationChecker: RevocationChecker? = null
+    private var clock: ZetaClock = SystemZetaClock
 
     /**
      * Configure connection and/or overall request timeouts (milliseconds).
@@ -168,9 +171,11 @@ public open class ZetaHttpClientBuilder(
     }
 
     /**
-     * Configure the minimum duration for caching OCSP/CRL revocation responses.
+     * Configure the maximum duration for caching OCSP/CRL revocation responses.
      *
-     * @param seconds Minimum cache duration in seconds. Defaults to 3600s (1h).
+     * A cached response is used while now() is before min(nextUpdate, validatedAt + seconds).
+     *
+     * @param seconds Maximum cache duration in seconds. Defaults to 3600s (1h).
      * @return This builder for chaining.
      */
     public fun revocationCacheDuration(seconds: Long): ZetaHttpClientBuilder = apply {
@@ -219,6 +224,12 @@ public open class ZetaHttpClientBuilder(
         checker: RevocationChecker,
     ): ZetaHttpClientBuilder = apply {
         revocationChecker = checker
+    }
+
+    public fun clock(
+        zetaClock: ZetaClock,
+    ): ZetaHttpClientBuilder = apply {
+        clock = zetaClock
     }
 
     /**
@@ -285,6 +296,7 @@ public open class ZetaHttpClientBuilder(
     private fun runtimeDependencies(): HttpClientDependencies =
         HttpClientDependencies(
             revocationChecker = revocationChecker,
+            clock = clock,
         )
 
     private fun baseConfig(urlOverride: String = baseUrl): ClientConfig.() -> Unit = {
@@ -306,12 +318,13 @@ public open class ZetaHttpClientBuilder(
                 copy.security = this.security
                 copy.monitoring = this.monitoring
                 copy.contentNegotiationEnabled = this.contentNegotiationEnabled
-                copy.revocationChecker = revocationChecker
+                copy.revocationChecker = this.revocationChecker
+                copy.clock = this.clock
             }
 
     public val isServerValidationDisabled: Boolean
         get() = security.disableServerValidation
 
-    public val revocationCacheMinDurationSeconds: Long
+    public val revocationCacheDurationSeconds: Long
         get() = security.revocationCacheDurationSeconds
 }

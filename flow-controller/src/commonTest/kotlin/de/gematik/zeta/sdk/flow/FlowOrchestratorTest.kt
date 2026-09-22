@@ -33,6 +33,7 @@ import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.tpm.TpmProvider
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -121,7 +122,7 @@ class FlowOrchestratorTest {
             // Act
             orchestrator.run(
                 HttpRequestBuilder().apply { url("https://test") },
-                FlowContextImpl(ResourceScope("", emptyList()), forwarding, InMemoryStorage()),
+                FlowContextImpl(ResourceScope("", emptyList()), forwarding, InMemoryStorage(), clock = SystemZetaClock),
             )
         }
     }

@@ -24,12 +24,14 @@
 
 package de.gematik.zeta.sdk.network.http.client
 
+import de.gematik.zeta.sdk.crypto.OcspValidity
 import de.gematik.zeta.sdk.crypto.RevocationHandler
 import de.gematik.zeta.sdk.network.http.client.config.ClientConfig
 import de.gematik.zeta.sdk.network.http.client.config.ProxyConfig
 import de.gematik.zeta.sdk.network.http.client.config.ProxyType
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -78,6 +80,7 @@ import kotlin.time.Duration.Companion.milliseconds
 class ZetaHttpClientJvmTest {
     private val noDependencies = HttpClientDependencies(
         revocationChecker = null,
+        SystemZetaClock,
     )
     private fun startTlsServerWithCustomRoot(
         host: String = "localhost",
@@ -695,13 +698,17 @@ class ZetaHttpClientJvmTest {
         val (server, root) = startTlsServerWithCustomRoot()
         try {
             val handler = mockk<RevocationHandler>()
-            every { handler.getNextUpdateEpochSeconds(any(), any(), any()) } returns Clock.System.now().epochSeconds + 3600
-            every { handler.validate(any(), any(), any()) } throws IllegalStateException("Certificate is revoked")
+            every { handler.getOcspValidity(any(), any(), any()) } returns OcspValidity(
+                thisUpdateEpochSeconds = Clock.System.now().epochSeconds,
+                nextUpdateEpochSeconds = Clock.System.now().epochSeconds + 3600,
+            )
+            every { handler.validate(any(), any(), any(), any()) } throws IllegalStateException("Certificate is revoked")
 
             val revocationChecker = RevocationChecker(
                 storage = RevocationStorage(InMemoryStorage(), ResourceScope("https://localhost", emptyList())),
-                httpClient = HttpClient(MockEngine { error("unexpected network call: ${it.url}") }),
+                httpClient = ZetaHttpClient(HttpClient(MockEngine { error("unexpected network call: ${it.url}") })),
                 handler = handler,
+                clock = SystemZetaClock,
             )
 
             val client = ZetaHttpClientBuilder()

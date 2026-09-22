@@ -67,10 +67,15 @@ setupBuildLogic {
         }
 
         if (project.isAndroidEnabled) {
+            sourceSets["androidMain"].dependencies {
+                implementation(libs.conscrypt.android)
+            }
+
             sourceSets.androidUnitTest.dependencies {
                 implementation(kotlin("test"))
                 implementation(libs.okhttp.mockwebserver)
                 implementation(libs.okhttp.tls)
+                implementation(libs.mockk)
             }
         }
     }

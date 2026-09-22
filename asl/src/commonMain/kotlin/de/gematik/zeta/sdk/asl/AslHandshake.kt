@@ -43,6 +43,7 @@ import de.gematik.zeta.sdk.crypto.ML768Kem
 import de.gematik.zeta.sdk.network.http.client.RevocationChecker
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.tpm.TpmProvider
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.http.HttpHeaders
 import io.ktor.http.URLBuilder
@@ -65,6 +66,7 @@ public data class AslHandshakeState(
     val tlsValidation: Boolean = true,
     val revocationChecker: RevocationChecker,
     val storage: AslStorage,
+    val clock: ZetaClock,
 ) {
     public companion object {
         public fun create(
@@ -73,8 +75,7 @@ public data class AslHandshakeState(
             accessTokenProvider: AccessTokenProvider,
             tpmProvider: TpmProvider,
             tlsValidation: Boolean,
-            storage: AslStorage,
-            revocationChecker: RevocationChecker,
+            dependencies: AslDependencies,
         ): AslHandshakeState {
             return AslHandshakeState(
                 request = request,
@@ -84,8 +85,9 @@ public data class AslHandshakeState(
                 accessTokenProvider = accessTokenProvider,
                 tpmProvider = tpmProvider,
                 tlsValidation = tlsValidation,
-                storage = storage,
-                revocationChecker = revocationChecker,
+                storage = dependencies.storage,
+                revocationChecker = dependencies.revocationChecker,
+                clock = dependencies.clock,
             )
         }
     }
@@ -120,6 +122,7 @@ public suspend fun AslHandshakeState.processMessage2AndBuildMessage3(aslProdEnvi
         kem = KemBundle(mlKem, ecdhKem),
         http = HttpContext(httpClient, request, tlsValidation),
         asl = AslContext(aslProdEnvironment, requiredRoleOid, storage, revocationChecker),
+        clock = clock,
     )
 
     val keyConfCipherText = encryptKeyConfirmation(
@@ -196,3 +199,9 @@ public fun aslUrl(url: URLBuilder, cid: String? = null): String {
         encodedPath = cid ?: "/ASL"
     }.buildString()
 }
+
+public data class AslDependencies(
+    val storage: AslStorage,
+    val revocationChecker: RevocationChecker,
+    val clock: ZetaClock,
+)

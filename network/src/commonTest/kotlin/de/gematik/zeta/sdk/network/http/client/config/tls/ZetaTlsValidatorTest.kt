@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.network.http.client.config.tls
 
+import de.gematik.zeta.time.SystemZetaClock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -180,7 +181,7 @@ class ZetaTlsValidatorTest {
         val protocol = ZetaTlsProtocols.TLS_1_2
 
         // Act
-        val result = ZetaTlsValidator.validateAll(cipher, protocol, emptyList())
+        val result = ZetaTlsValidator.validateAll(cipher, protocol, emptyList(), nowEpochSeconds = SystemZetaClock.now().epochSeconds)
 
         // Assert
         assertFalse(result.isCompliant)
@@ -189,7 +190,7 @@ class ZetaTlsValidatorTest {
     @Test
     fun validateAll_withNullCipherAndProtocol_returnsIsCompliantTrue() {
         // Arrange & Act
-        val result = ZetaTlsValidator.validateAll(null, null, emptyList())
+        val result = ZetaTlsValidator.validateAll(null, null, emptyList(), nowEpochSeconds = SystemZetaClock.now().epochSeconds)
 
         // Assert
         assertFalse(result.isCompliant)

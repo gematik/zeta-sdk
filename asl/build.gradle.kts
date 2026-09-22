@@ -12,7 +12,7 @@ plugins {
 setupBuildLogic {
     kotlin {
         sourceSets {
-            val commonMain by getting {
+            named("commonMain") {
                 dependencies {
                     implementation(project(":network"))
                     implementation(project(":tpm"))
@@ -23,7 +23,7 @@ setupBuildLogic {
                 }
             }
 
-            val commonTest by getting {
+            named("commonTest") {
                 dependencies {
                     implementation(kotlin("test"))
                     implementation(libs.coroutines.test)

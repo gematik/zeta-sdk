@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.network.http.client
 
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
@@ -37,6 +38,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 class ZetaHttpClientBuilderTest {
     @Test
@@ -573,5 +575,24 @@ class ZetaHttpClientBuilderTest {
         val copy = original.copy()
 
         assertNotNull(copy.build())
+    }
+
+    @Test
+    fun build_succeedsWhenClockIsConfigured() {
+        val clock = ZetaClock {
+            Instant.fromEpochSeconds(1_700_000_000L)
+        }
+
+        val mockEngine = MockEngine {
+            respond(ByteReadChannel(""), HttpStatusCode.OK)
+        }
+
+        val client = ZetaHttpClientBuilder()
+            .clock(clock)
+            .build(mockEngine)
+
+        assertNotNull(client)
+
+        client.close()
     }
 }

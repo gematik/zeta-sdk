@@ -1,20 +1,20 @@
 [versions]
-kotlin = "2.3.10"
-serialization = "1.10.0"
+kotlin = "2.4.10"
+serialization = "1.11.0"
 
 [libraries]
 serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "serialization" }
 serialization-cbor = { module = "org.jetbrains.kotlinx:kotlinx-serialization-cbor", version.ref = "serialization" }
 serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
-serialization-xml = "io.github.pdvrieze.xmlutil:serialization:0.91.2"
+serialization-xml = "io.github.pdvrieze.xmlutil:serialization:1.0.2.1"
 
-datetime = "org.jetbrains.kotlinx:kotlinx-datetime:0.7.1"
+datetime = "org.jetbrains.kotlinx:kotlinx-datetime:0.8.0"
 
 junit = { module = "junit:junit", version = "4.13.2" }
 kotlin-test-main = { module = "org.jetbrains.kotlin:kotlin-test" }
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit" }
-ktlint-cli = { module = "com.pinterest.ktlint:ktlint-cli", version = "1.7.1" }
-mockk = { module = "io.mockk:mockk", version = "1.14.5" }
+ktlint-cli = { module = "com.pinterest.ktlint:ktlint-cli", version = "1.8.0" }
+mockk = { module = "io.mockk:mockk", version = "1.14.11" }
 
 [plugins]
 kotlinx-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

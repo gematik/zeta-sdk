@@ -29,7 +29,6 @@ import de.gematik.zeta.sdk.asl.AslStorage
 import de.gematik.zeta.sdk.asl.AslStorageImpl
 import de.gematik.zeta.sdk.asl.CertData
 import de.gematik.zeta.sdk.asl.EncapsulationResult
-import de.gematik.zeta.sdk.asl.Environment
 import de.gematik.zeta.sdk.asl.EstablishedSession
 import de.gematik.zeta.sdk.asl.M3InnerLayer
 import de.gematik.zeta.sdk.asl.Message2
@@ -44,6 +43,8 @@ import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.config.tls.sanMatchesHost
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.request.HttpRequestBuilder
@@ -659,7 +660,7 @@ class Message2And3Test {
 
         val context = HttpContext(zetaClient, HttpRequestBuilder())
         val storage =
-            RevocationChecker(RevocationStorage(InMemoryStorage(), ResourceScope("", listOf())), HttpClient {})
+            RevocationChecker(RevocationStorage(InMemoryStorage(), ResourceScope("", listOf())), ZetaHttpClient(HttpClient {}), clock = SystemZetaClock)
         return CertValidationBundle(
             http = context,
             certDataFetcher = certDataFetcher,
@@ -934,18 +935,54 @@ class Message2And3Test {
         assertEquals(signed.certificateHash.toHexString(), cache.lastHash)
         assertEquals(signed.certificateDescriptionVersion, cache.lastVersion)
     }
+
+    @Test
+    fun decodeAndValidateVauKeys_usesSystemClock_byDefault() {
+        val clock = SystemZetaClock
+        val now = clock.now().epochSeconds
+        val signed = buildSigned(
+            vauKeys = defaultVauKeys(
+                issuedAt = now - 60,
+                expiresAt = now + 3600,
+            ),
+        )
+
+        decodeAndValidateVauKeys(signed, clock)
+    }
+
+    @Test
+    fun validateSignedVauPublicKeys_usesSystemClock_byDefault() = runTest {
+        val now = Clock.System.now().epochSeconds
+
+        val signed = buildSigned(
+            vauKeys = defaultVauKeys(
+                issuedAt = now - 60,
+                expiresAt = now + 3600,
+            ),
+        )
+
+        assertFailsWith<Exception> {
+            validateSignedVauPublicKeys(
+                signed = signed,
+                validation = defaultValidationBundle(),
+                requiredRoleOid = requiredOid,
+                clock = SystemZetaClock,
+            )
+        }
+    }
 }
 
 private fun defaultVauKeys(
     ecdhPublicKey: EcPointP256 = defaultEcPublicKey(),
     mlKemPublicKey: ByteArray = ByteArray(1184),
     expiresAt: Long = 2000,
+    issuedAt: Long = 0,
 ): VauKeys {
     return VauKeys(
         ecdhPublicKey = ecdhPublicKey,
         mlKemPublicKey = mlKemPublicKey,
         expiresAt = expiresAt,
-        issuedAt = 0,
+        issuedAt = issuedAt,
         comment = "",
     )
 }
@@ -1013,6 +1050,6 @@ private fun defaultEcPublicKey(
 
 class FixedClock(
     private val epochSeconds: Long,
-) : Clock {
+) : ZetaClock {
     override fun now(): Instant = Instant.fromEpochSeconds(epochSeconds)
 }

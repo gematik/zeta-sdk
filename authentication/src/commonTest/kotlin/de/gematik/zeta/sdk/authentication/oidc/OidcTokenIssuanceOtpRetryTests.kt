@@ -32,6 +32,7 @@ import de.gematik.zeta.sdk.authentication.AuthenticationStorageImpl
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -55,7 +56,7 @@ private fun retryIssuance(
     engine: MockEngine,
     storage: AuthenticationStorage = retryAuthStorage(),
 ): OidcTokenIssuance = OidcTokenIssuance(
-    authApi = AuthenticationApiImpl(ZetaHttpClient(HttpClient(engine))),
+    authApi = AuthenticationApiImpl(ZetaHttpClient(HttpClient(engine)), SystemZetaClock),
     authStorage = storage,
     authenticationCallback = null,
     resolveParEndpoint = { error("not used") },

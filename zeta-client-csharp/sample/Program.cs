@@ -35,7 +35,7 @@ var config = new ZetaClientConfig
 {
     Resource       = Env("FACHDIENST_URL"),
     ProductId      = "ZETA-Test-Client",
-    ProductVersion = "1.3.0",
+    ProductVersion = "1.3.2",
     ClientName     = "sdk-client",
     Storage = new ZetaStorageConfig
     {

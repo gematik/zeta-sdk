@@ -33,6 +33,7 @@ import de.gematik.zeta.sdk.configuration.models.AuthorizationServerMetadata
 import de.gematik.zeta.sdk.notifications.NotificationConfig
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -320,6 +321,7 @@ class NotificationDiscoveryTest {
                 resourceFqdn,
                 listOf("scope-a"),
             ),
+            clock = SystemZetaClock,
         )
 
         storage.linkResourceToAuthorizationServer(
@@ -562,6 +564,7 @@ class NotificationDiscoveryTest {
                 resourceFqdn,
                 listOf("scope-a"),
             ),
+            clock = SystemZetaClock,
         )
 
         if (linkGuardAs) {

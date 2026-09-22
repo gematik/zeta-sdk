@@ -34,7 +34,7 @@ setupBuildLogic {
         }
 
         sourceSets {
-            val nativeMain by getting {
+            named("nativeMain") {
                 dependencies {
                     implementation(project(":zeta-sdk"))
                     implementation(libs.ktor.server.cio)

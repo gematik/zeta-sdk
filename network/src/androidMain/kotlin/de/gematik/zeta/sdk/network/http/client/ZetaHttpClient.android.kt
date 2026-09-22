@@ -27,10 +27,15 @@ package de.gematik.zeta.sdk.network.http.client
 import android.os.Build
 import de.gematik.zeta.android.SdkAndroidContext
 import de.gematik.zeta.logging.Log
+import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaTlsProtocols.TLS_1_2
+import org.conscrypt.Conscrypt
+import org.conscrypt.ZetaConscryptStaple
 import java.io.File
+import java.security.Provider
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
-import javax.net.ssl.ExtendedSSLSession
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLException
 import javax.net.ssl.SSLSession
 import javax.net.ssl.SSLSocketFactory
 
@@ -46,17 +51,52 @@ internal actual fun createPlatformSslSocketFactory(base: SSLSocketFactory): SSLS
     ZetaSslSocketAndroidFactory(base)
 
 /**
- * OCSP stapling extraction on Android.
- * ExtendedSSLSession.getStatusResponses() requires API level 37+.
- * On older devices, this returns null.
+ * Conscrypt provider backing the SDK's TLS stack.
+ *
+ * Bundled so the SDK can read the server's stapled OCSP response.
+ * Android exposes staples only via `ExtendedSSLSession.getStatusResponses()` (API 37+), while
+ * minSdk is 28; building the SDK's [SSLContext] from Conscrypt makes every session a
+ * `ConscryptSession`, whose `statusResponses` is readable on all supported levels
  */
+private val conscryptProvider: Provider by lazy {
+    if (!Conscrypt.isAvailable()) {
+        val abis = Build.SUPPORTED_ABIS?.toList() ?: emptyList()
+        throw SSLException(
+            "gematik TLS compliance failure: Conscrypt is unavailable, OCSP stapling cannot be " +
+                "verified (abis=$abis)",
+        )
+    }
+    Conscrypt.newProvider().also { provider ->
+        val version = Conscrypt.version()
+        val versionText = if (version == null) {
+            "unknown"
+        } else {
+            "${version.major()}.${version.minor()}.${version.patch()}"
+        }
+        Log.i { "ZetaTls: TLS stack provider=${provider.name}, Conscrypt=$versionText" }
+    }
+}
+
+internal actual fun createPlatformSslContext(): SSLContext =
+    createPlatformSslContext(onAndroidRuntime = Build.SUPPORTED_ABIS != null)
+
+/**
+ * @param onAndroidRuntime `false` only under host-JVM unit tests, where [Build.SUPPORTED_ABIS] is null;
+ * Device always reports its ABIs.
+ */
+internal fun createPlatformSslContext(onAndroidRuntime: Boolean): SSLContext {
+    if (!onAndroidRuntime) {
+        Log.w { "ZetaTls: not an Android runtime, using the platform TLS provider (no OCSP staple)" }
+        return SSLContext.getInstance(TLS_1_2)
+    }
+    return SSLContext.getInstance(TLS_1_2, conscryptProvider)
+}
+
 internal actual fun extractStaple(session: SSLSession): ByteArray? {
-    if (Build.VERSION.SDK_INT < 37) {
-        Log.i { "ZetaTls: staple response cannot be extracted for Android SDK prior to 37" }
+    val statusResponses = ZetaConscryptStaple.statusResponses(session)
+    if (statusResponses == null) {
+        Log.w { "ZetaTls: session is not a ConscryptSession (${session.javaClass.name})" }
         return null
     }
-
-    val extendedSession = session as? ExtendedSSLSession ?: return null
-    val statusResponses = extendedSession.statusResponses
-    return statusResponses?.firstOrNull()
+    return statusResponses.firstOrNull()
 }

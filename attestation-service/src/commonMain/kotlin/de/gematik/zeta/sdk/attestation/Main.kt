@@ -41,6 +41,7 @@ import de.gematik.zeta.sdk.attestation.interfaces.ProcessMonitorOperations
 import de.gematik.zeta.sdk.attestation.server.AttestationServer
 import de.gematik.zeta.sdk.attestation.tpm.TpmAccess
 import de.gematik.zeta.sdk.attestation.tpm.TpmAccessOperations
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.http.RequestConnectionPoint
 
 fun main(args: Array<String>) {
@@ -100,6 +101,7 @@ fun main(args: Array<String>) {
         fileScanner = fileScannerOps,
         fileIntegrity = fileIntegrity,
         config = config,
+        clock = SystemZetaClock,
     )
     service.initialize()
 
