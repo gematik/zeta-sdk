@@ -29,6 +29,7 @@ import de.gematik.zeta.sdk.authentication.oidc.BindEmailRequest
 import de.gematik.zeta.sdk.authentication.oidc.OidcTokenIssuance
 import de.gematik.zeta.sdk.authentication.oidc.OtpVerifyRequest
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -58,7 +59,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "text/plain"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         val result = api.fetchNonce("https://example.com/nonce")
@@ -77,7 +78,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "text/plain"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         val exception = assertFailsWith<AuthenticationException> {
@@ -96,7 +97,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "text/plain"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         assertFailsWith<AuthenticationException> {
@@ -114,7 +115,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         val response = api.requestAccessToken(
@@ -148,7 +149,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         api.requestAccessToken(
@@ -171,7 +172,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "text/plain"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         assertFailsWith<RecoverableAuthenticationException> {
@@ -193,7 +194,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "text/plain"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         assertFailsWith<NonRecoverableAuthenticationException> {
@@ -215,7 +216,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "text/plain"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         val exception = assertFailsWith<AuthenticationException> {
@@ -245,7 +246,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         val response = api.requestAccessToken(
@@ -276,7 +277,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         val response = api.requestOidcToken(
@@ -313,7 +314,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         val response = api.requestOidcToken(
@@ -341,7 +342,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         assertFailsWith<RecoverableAuthenticationException> {
@@ -363,7 +364,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         assertFailsWith<InvalidClientException> {
@@ -385,7 +386,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         val response = api.postBindEmail(
@@ -412,7 +413,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         api.postBindEmail(
@@ -440,7 +441,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         api.postBindEmail(
@@ -465,7 +466,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "text/plain"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         assertFailsWith<NonRecoverableAuthenticationException> {
@@ -487,7 +488,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         assertFailsWith<AuthenticationException> {
@@ -510,7 +511,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         val response = api.postResendOtp(
@@ -536,7 +537,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         api.postResendOtp(
@@ -559,7 +560,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         assertFailsWith<RecoverableAuthenticationException> {
@@ -581,7 +582,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         val response = api.postVerifyOtp(
@@ -607,7 +608,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         api.postVerifyOtp(
@@ -631,7 +632,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         assertFailsWith<RecoverableAuthenticationException> {
@@ -654,7 +655,7 @@ class AuthenticationApiImplTests {
                 headers = headersOf(HttpHeaders.ContentType, "text/plain"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         assertFailsWith<NonRecoverableAuthenticationException> {

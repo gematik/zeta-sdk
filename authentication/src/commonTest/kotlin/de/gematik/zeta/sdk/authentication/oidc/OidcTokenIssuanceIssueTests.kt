@@ -33,6 +33,7 @@ import de.gematik.zeta.sdk.authentication.OidcTokenProvider
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -133,7 +134,7 @@ private fun issuanceWithCallback(
         )
     }
     return OidcTokenIssuance(
-        authApi = AuthenticationApiImpl(createClient(engine)),
+        authApi = AuthenticationApiImpl(createClient(engine), clock = SystemZetaClock),
         authStorage = storage,
         authenticationCallback = callback,
         resolveParEndpoint = { PAR_ENDPOINT },
@@ -255,7 +256,7 @@ class OidcTokenIssuanceIssueTest {
             AuthenticationCallback.AuthInfo(finalUrl = "$APP_REDIRECT_URI?code=auth-code-123&state=wrong-state")
         }
         val sut = OidcTokenIssuance(
-            authApi = AuthenticationApiImpl(createClient(engine)),
+            authApi = AuthenticationApiImpl(createClient(engine), clock = SystemZetaClock),
             authStorage = newAuthStorage(),
             authenticationCallback = mismatchedCallback,
             resolveParEndpoint = { PAR_ENDPOINT },

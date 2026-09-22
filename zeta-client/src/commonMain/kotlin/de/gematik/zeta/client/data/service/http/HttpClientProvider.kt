@@ -196,7 +196,7 @@ public class HttpClientProviderImpl(
             resource = url,
             config = BuildConfig(
                 demoClient,
-                productVersion = "1.3.0",
+                productVersion = "1.3.2",
                 "demo-client",
                 StorageConfig.Default(STORAGE_AES_KEY),
                 object : TpmConfig {},

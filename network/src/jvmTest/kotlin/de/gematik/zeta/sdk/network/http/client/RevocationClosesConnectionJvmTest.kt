@@ -27,6 +27,7 @@ package de.gematik.zeta.sdk.network.http.client
 import de.gematik.zeta.sdk.crypto.RevocationHandler
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respondError
@@ -151,21 +152,23 @@ class RevocationClosesConnectionJvmTest {
     private fun passingRevocationChecker(): RevocationChecker =
         RevocationChecker(
             storage = RevocationStorage(InMemoryStorage(), ResourceScope("https://localhost", emptyList())),
-            httpClient = HttpClient(MockEngine { respondError(HttpStatusCode.ServiceUnavailable) }),
+            httpClient = ZetaHttpClient(HttpClient(MockEngine { respondError(HttpStatusCode.ServiceUnavailable) })),
             handler = mockk<RevocationHandler>(relaxed = true).also {
                 every { it.extractCrlUrl(any()) } returns null
             },
             allowSkipForTestCertificates = true,
+            clock = SystemZetaClock,
         )
 
     private fun revokedRevocationChecker(): RevocationChecker {
         val handler = mockk<RevocationHandler>()
-        coEvery { handler.validate(any(), any(), any()) } throws IllegalStateException("Certificate is revoked")
+        coEvery { handler.validate(any(), any(), any(), any()) } throws IllegalStateException("Certificate is revoked")
 
         return RevocationChecker(
             storage = RevocationStorage(InMemoryStorage(), ResourceScope("https://localhost", emptyList())),
-            httpClient = HttpClient(MockEngine { error("unexpected network call: ${it.url}") }),
+            httpClient = ZetaHttpClient(HttpClient(MockEngine { error("unexpected network call: ${it.url}") })),
             handler = handler,
+            clock = SystemZetaClock,
         )
     }
 

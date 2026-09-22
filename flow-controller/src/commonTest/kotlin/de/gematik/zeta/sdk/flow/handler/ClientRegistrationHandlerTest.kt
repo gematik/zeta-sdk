@@ -48,6 +48,7 @@ import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.tpm.TpmProvider
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.ContentType
@@ -360,6 +361,7 @@ class ClientRegistrationHandlerTest {
         ResourceScope("test", listOf("test")),
         FakeForwardingClient(),
         InMemoryStorage(),
+        clock = SystemZetaClock,
         configurationStorage = FakeConfigurationStorage(registrationEndpoint),
     )
 

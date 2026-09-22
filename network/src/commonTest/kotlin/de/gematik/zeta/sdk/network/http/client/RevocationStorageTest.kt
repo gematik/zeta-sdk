@@ -23,6 +23,7 @@
  */
 package de.gematik.zeta.sdk.network.http.client
 
+import de.gematik.zeta.sdk.storage.ExtendedStorage
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import kotlinx.coroutines.test.runTest
@@ -37,7 +38,30 @@ class RevocationStorageTest {
 
     private val now = Clock.System.now().epochSeconds
     private val farFuture = now + 3600
-    private val past = now - 3600
+
+    private fun ocspEntry(
+        der: ByteArray,
+        nextUpdate: Long? = farFuture,
+        thisUpdate: Long = now,
+        validatedAt: Long = now,
+    ) = CachedOcspResponse(
+        responseDer = der,
+        validatedAtEpochSeconds = validatedAt,
+        nextUpdateEpochSeconds = nextUpdate,
+        thisUpdateEpochSeconds = thisUpdate,
+    )
+
+    private fun crlEntry(
+        der: ByteArray,
+        nextUpdate: Long? = farFuture,
+        thisUpdate: Long = now,
+        validatedAt: Long = now,
+    ) = CachedCrlResponse(
+        crlDer = der,
+        validatedAtEpochSeconds = validatedAt,
+        nextUpdateEpochSeconds = nextUpdate,
+        thisUpdateEpochSeconds = thisUpdate,
+    )
 
     private fun buildStorage(
         scope: ResourceScope = ResourceScope("resource-a", emptyList()),
@@ -53,24 +77,23 @@ class RevocationStorageTest {
     @Test
     fun set_thenGet_returnsSameResponse() = runTest {
         val cache = buildStorage()
-        val response = CachedOcspResponse(
-            responseDer = byteArrayOf(1, 2, 3, 4, 5),
-            expiresAtEpochSeconds = farFuture,
-        )
+        val response = ocspEntry(byteArrayOf(1, 2, 3, 4, 5))
 
         cache.setOcsp("cert-123", response)
         val result = cache.getOcsp("cert-123")
 
         assertNotNull(result)
         assertContentEquals(response.responseDer, result.responseDer)
-        assertEquals(response.expiresAtEpochSeconds, result.expiresAtEpochSeconds)
+        assertEquals(response.validatedAtEpochSeconds, result.validatedAtEpochSeconds)
+        assertEquals(response.nextUpdateEpochSeconds, result.nextUpdateEpochSeconds)
+        assertEquals(response.thisUpdateEpochSeconds, result.thisUpdateEpochSeconds)
     }
 
     @Test
     fun set_overwritesPreviousValue_forSameKey() = runTest {
         val cache = buildStorage()
-        cache.setOcsp("cert-123", CachedOcspResponse(byteArrayOf(1), farFuture))
-        cache.setOcsp("cert-123", CachedOcspResponse(byteArrayOf(9, 9), farFuture))
+        cache.setOcsp("cert-123", ocspEntry(byteArrayOf(1)))
+        cache.setOcsp("cert-123", ocspEntry(byteArrayOf(9, 9)))
 
         val result = cache.getOcsp("cert-123")
 
@@ -81,53 +104,17 @@ class RevocationStorageTest {
     @Test
     fun get_distinguishesDifferentCacheKeys() = runTest {
         val cache = buildStorage()
-        cache.setOcsp("cert-A", CachedOcspResponse(byteArrayOf(1), farFuture))
-        cache.setOcsp("cert-B", CachedOcspResponse(byteArrayOf(2), farFuture))
+        cache.setOcsp("cert-A", ocspEntry(byteArrayOf(1)))
+        cache.setOcsp("cert-B", ocspEntry(byteArrayOf(2)))
 
         assertContentEquals(byteArrayOf(1), cache.getOcsp("cert-A")?.responseDer)
         assertContentEquals(byteArrayOf(2), cache.getOcsp("cert-B")?.responseDer)
     }
 
     @Test
-    fun get_returnsNull_whenEntryIsExpired() = runTest {
-        val cache = buildStorage()
-        cache.setOcsp("cert-123", CachedOcspResponse(byteArrayOf(1), expiresAtEpochSeconds = past))
-
-        assertNull(cache.getOcsp("cert-123"))
-    }
-
-    @Test
-    fun get_treatsExpiryEqualToNow_asExpired() = runTest {
-        val cache = buildStorage()
-        val nowAtCall = Clock.System.now().epochSeconds
-        cache.setOcsp("cert-123", CachedOcspResponse(byteArrayOf(1), expiresAtEpochSeconds = nowAtCall))
-
-        assertNull(cache.getOcsp("cert-123"))
-    }
-
-    @Test
-    fun get_removesExpiredEntry_soSubsequentGetsStayNull() = runTest {
-        val backing = InMemoryStorage()
-        val cache = buildStorage(backing = backing)
-        cache.setOcsp("cert-123", CachedOcspResponse(byteArrayOf(1), expiresAtEpochSeconds = past))
-
-        cache.getOcsp("cert-123")
-        val secondCache = buildStorage(backing = backing)
-        assertNull(secondCache.getOcsp("cert-123"))
-    }
-
-    @Test
-    fun get_returnsValidEntry_whenNotYetExpired() = runTest {
-        val cache = buildStorage()
-        cache.setOcsp("cert-123", CachedOcspResponse(byteArrayOf(7), expiresAtEpochSeconds = farFuture))
-
-        assertNotNull(cache.getOcsp("cert-123"))
-    }
-
-    @Test
     fun clear_removesEntry() = runTest {
         val cache = buildStorage()
-        cache.setOcsp("cert-123", CachedOcspResponse(byteArrayOf(1), farFuture))
+        cache.setOcsp("cert-123", ocspEntry(byteArrayOf(1)))
 
         cache.clearOcsp("cert-123")
 
@@ -146,7 +133,7 @@ class RevocationStorageTest {
         val cacheA = buildStorage(scope = ResourceScope("resource-a", emptyList()), backing = backing)
         val cacheB = buildStorage(scope = ResourceScope("resource-b", emptyList()), backing = backing)
 
-        cacheA.setOcsp("cert-123", CachedOcspResponse(byteArrayOf(1), farFuture))
+        cacheA.setOcsp("cert-123", ocspEntry(byteArrayOf(1)))
 
         assertNotNull(cacheA.getOcsp("cert-123"))
         assertNull(cacheB.getOcsp("cert-123"))
@@ -159,7 +146,7 @@ class RevocationStorageTest {
         val cacheA = buildStorage(scope = scope, backing = backing)
         val cacheB = buildStorage(scope = scope, backing = backing)
 
-        cacheA.setOcsp("cert-123", CachedOcspResponse(byteArrayOf(1, 2), farFuture))
+        cacheA.setOcsp("cert-123", ocspEntry(byteArrayOf(1, 2)))
 
         val result = cacheB.getOcsp("cert-123")
         assertNotNull(result)
@@ -169,7 +156,7 @@ class RevocationStorageTest {
     @Test
     fun set_thenGet_handlesEmptyResponseDer() = runTest {
         val cache = buildStorage()
-        cache.setOcsp("cert-123", CachedOcspResponse(byteArrayOf(), farFuture))
+        cache.setOcsp("cert-123", ocspEntry(byteArrayOf()))
 
         val result = cache.getOcsp("cert-123")
         assertNotNull(result)
@@ -178,16 +165,15 @@ class RevocationStorageTest {
 
     @Test
     fun serializableOcspResponse_roundTripsViaBase64() {
-        val original = CachedOcspResponse(
-            responseDer = byteArrayOf(0, -1, 127, -128, 5),
-            expiresAtEpochSeconds = farFuture,
-        )
+        val original = ocspEntry(byteArrayOf(0, -1, 127, -128, 5))
 
         val serialized = SerializableOcspResponse.from(original)
         val restored = serialized.toCached()
 
         assertContentEquals(original.responseDer, restored.responseDer)
-        assertEquals(original.expiresAtEpochSeconds, restored.expiresAtEpochSeconds)
+        assertEquals(original.validatedAtEpochSeconds, restored.validatedAtEpochSeconds)
+        assertEquals(original.nextUpdateEpochSeconds, restored.nextUpdateEpochSeconds)
+        assertEquals(original.thisUpdateEpochSeconds, restored.thisUpdateEpochSeconds)
     }
 
     @Test
@@ -199,24 +185,23 @@ class RevocationStorageTest {
     @Test
     fun setCrl_thenGetCrl_returnsSameResponse() = runTest {
         val cache = buildStorage()
-        val response = CachedCrlResponse(
-            crlDer = byteArrayOf(1, 2, 3, 4, 5),
-            expiresAtEpochSeconds = farFuture,
-        )
+        val response = crlEntry(byteArrayOf(1, 2, 3, 4, 5))
 
         cache.setCrl("cert-123", response)
         val result = cache.getCrl("cert-123")
 
         assertNotNull(result)
         assertContentEquals(response.crlDer, result.crlDer)
-        assertEquals(response.expiresAtEpochSeconds, result.expiresAtEpochSeconds)
+        assertEquals(response.validatedAtEpochSeconds, result.validatedAtEpochSeconds)
+        assertEquals(response.nextUpdateEpochSeconds, result.nextUpdateEpochSeconds)
+        assertEquals(response.thisUpdateEpochSeconds, result.thisUpdateEpochSeconds)
     }
 
     @Test
     fun setCrl_overwritesPreviousValue_forSameKey() = runTest {
         val cache = buildStorage()
-        cache.setCrl("cert-123", CachedCrlResponse(byteArrayOf(1), farFuture))
-        cache.setCrl("cert-123", CachedCrlResponse(byteArrayOf(9, 9), farFuture))
+        cache.setCrl("cert-123", crlEntry(byteArrayOf(1)))
+        cache.setCrl("cert-123", crlEntry(byteArrayOf(9, 9)))
 
         val result = cache.getCrl("cert-123")
 
@@ -227,53 +212,17 @@ class RevocationStorageTest {
     @Test
     fun getCrl_distinguishesDifferentCacheKeys() = runTest {
         val cache = buildStorage()
-        cache.setCrl("cert-A", CachedCrlResponse(byteArrayOf(1), farFuture))
-        cache.setCrl("cert-B", CachedCrlResponse(byteArrayOf(2), farFuture))
+        cache.setCrl("cert-A", crlEntry(byteArrayOf(1)))
+        cache.setCrl("cert-B", crlEntry(byteArrayOf(2)))
 
         assertContentEquals(byteArrayOf(1), cache.getCrl("cert-A")?.crlDer)
         assertContentEquals(byteArrayOf(2), cache.getCrl("cert-B")?.crlDer)
     }
 
     @Test
-    fun getCrl_returnsNull_whenEntryIsExpired() = runTest {
-        val cache = buildStorage()
-        cache.setCrl("cert-123", CachedCrlResponse(byteArrayOf(1), expiresAtEpochSeconds = past))
-
-        assertNull(cache.getCrl("cert-123"))
-    }
-
-    @Test
-    fun getCrl_treatsExpiryEqualToNow_asExpired() = runTest {
-        val cache = buildStorage()
-        val nowAtCall = Clock.System.now().epochSeconds
-        cache.setCrl("cert-123", CachedCrlResponse(byteArrayOf(1), expiresAtEpochSeconds = nowAtCall))
-
-        assertNull(cache.getCrl("cert-123"))
-    }
-
-    @Test
-    fun getCrl_removesExpiredEntry_soSubsequentGetsStayNull() = runTest {
-        val backing = InMemoryStorage()
-        val cache = buildStorage(backing = backing)
-        cache.setCrl("cert-123", CachedCrlResponse(byteArrayOf(1), expiresAtEpochSeconds = past))
-
-        cache.getCrl("cert-123")
-        val secondCache = buildStorage(backing = backing)
-        assertNull(secondCache.getCrl("cert-123"))
-    }
-
-    @Test
-    fun getCrl_returnsValidEntry_whenNotYetExpired() = runTest {
-        val cache = buildStorage()
-        cache.setCrl("cert-123", CachedCrlResponse(byteArrayOf(7), expiresAtEpochSeconds = farFuture))
-
-        assertNotNull(cache.getCrl("cert-123"))
-    }
-
-    @Test
     fun clearCrl_removesEntry() = runTest {
         val cache = buildStorage()
-        cache.setCrl("cert-123", CachedCrlResponse(byteArrayOf(1), farFuture))
+        cache.setCrl("cert-123", crlEntry(byteArrayOf(1)))
 
         cache.clearCrl("cert-123")
 
@@ -292,7 +241,7 @@ class RevocationStorageTest {
         val cacheA = buildStorage(scope = ResourceScope("resource-a", emptyList()), backing = backing)
         val cacheB = buildStorage(scope = ResourceScope("resource-b", emptyList()), backing = backing)
 
-        cacheA.setCrl("cert-123", CachedCrlResponse(byteArrayOf(1), farFuture))
+        cacheA.setCrl("cert-123", crlEntry(byteArrayOf(1)))
 
         assertNotNull(cacheA.getCrl("cert-123"))
         assertNull(cacheB.getCrl("cert-123"))
@@ -305,7 +254,7 @@ class RevocationStorageTest {
         val cacheA = buildStorage(scope = scope, backing = backing)
         val cacheB = buildStorage(scope = scope, backing = backing)
 
-        cacheA.setCrl("cert-123", CachedCrlResponse(byteArrayOf(1, 2), farFuture))
+        cacheA.setCrl("cert-123", crlEntry(byteArrayOf(1, 2)))
 
         val result = cacheB.getCrl("cert-123")
         assertNotNull(result)
@@ -315,7 +264,7 @@ class RevocationStorageTest {
     @Test
     fun setCrl_thenGetCrl_handlesEmptyResponseDer() = runTest {
         val cache = buildStorage()
-        cache.setCrl("cert-123", CachedCrlResponse(byteArrayOf(), farFuture))
+        cache.setCrl("cert-123", crlEntry(byteArrayOf()))
 
         val result = cache.getCrl("cert-123")
         assertNotNull(result)
@@ -324,27 +273,55 @@ class RevocationStorageTest {
 
     @Test
     fun serializableCrlResponse_roundTripsViaBase64() {
-        val original = CachedCrlResponse(
-            crlDer = byteArrayOf(0, -1, 127, -128, 5),
-            expiresAtEpochSeconds = farFuture,
-        )
+        val original = crlEntry(byteArrayOf(0, -1, 127, -128, 5))
 
         val serialized = SerializableCrlResponse.from(original)
         val restored = serialized.toCached()
 
         assertContentEquals(original.crlDer, restored.crlDer)
-        assertEquals(original.expiresAtEpochSeconds, restored.expiresAtEpochSeconds)
+        assertEquals(original.validatedAtEpochSeconds, restored.validatedAtEpochSeconds)
+        assertEquals(original.nextUpdateEpochSeconds, restored.nextUpdateEpochSeconds)
+        assertEquals(original.thisUpdateEpochSeconds, restored.thisUpdateEpochSeconds)
     }
 
     @Test
     fun clear_removesBothOcspAndCrlEntries() = runTest {
         val cache = buildStorage()
-        cache.setOcsp("cert-123", CachedOcspResponse(byteArrayOf(1), farFuture))
-        cache.setCrl("cert-123", CachedCrlResponse(byteArrayOf(2), farFuture))
+        cache.setOcsp("cert-123", ocspEntry(byteArrayOf(1)))
+        cache.setCrl("cert-123", crlEntry(byteArrayOf(2)))
 
         cache.clear()
 
         assertNull(cache.getOcsp("cert-123"))
+        assertNull(cache.getCrl("cert-123"))
+    }
+
+    @Test
+    fun getOcsp_dropsEntryWrittenInTheOldFormat() = runTest {
+        val scope = ResourceScope("resource-a", emptyList())
+        val backing = InMemoryStorage()
+        val cache = buildStorage(scope = scope, backing = backing)
+
+        // what a pre-migration SDK version wrote: expiresAt, no next/thisUpdate
+        backing.put(
+            "ocsp:" + ExtendedStorage.hash("${scope.storageKey}:cert-123"),
+            """{"responseDerBase64":"AQ==","expiresAtEpochSeconds":$farFuture,"validatedAtEpochSeconds":$now}""",
+        )
+
+        assertNull(cache.getOcsp("cert-123"))
+    }
+
+    @Test
+    fun getCrl_dropsEntryWrittenInTheOldFormat() = runTest {
+        val scope = ResourceScope("resource-a", emptyList())
+        val backing = InMemoryStorage()
+        val cache = buildStorage(scope = scope, backing = backing)
+
+        backing.put(
+            "crl:" + ExtendedStorage.hash("${scope.storageKey}:cert-123"),
+            """{"crlDerBase64":"AQ==","expiresAtEpochSeconds":$farFuture,"validatedAtEpochSeconds":$now}""",
+        )
+
         assertNull(cache.getCrl("cert-123"))
     }
 }

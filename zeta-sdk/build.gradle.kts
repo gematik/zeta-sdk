@@ -51,8 +51,8 @@ setupBuildLogic {
         val interopDefFile = project.file("src/nativeInterop/cinterop/interop.def")
 
         fun KotlinNativeTarget.configureInterop() {
-            val main by compilations.getting
-            val interop by main.cinterops.creating {
+            val main = compilations.getByName("main")
+            main.cinterops.create("interop") {
                 definitionFile.set(interopDefFile)
                 compilerOpts(nativeIncludeDir)
             }

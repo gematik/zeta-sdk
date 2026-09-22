@@ -33,6 +33,7 @@ import de.gematik.zeta.sdk.authentication.OidcTokenProvider
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
@@ -367,7 +368,7 @@ class OidcTokenIssuanceTests {
     private fun issuanceWithCallback(callback: AuthenticationCallback?): OidcTokenIssuance {
         val neverCalledEngine = MockEngine { error("authorize() must not perform any HTTP request") }
         return OidcTokenIssuance(
-            authApi = AuthenticationApiImpl(ZetaHttpClient(HttpClient(neverCalledEngine))),
+            authApi = AuthenticationApiImpl(ZetaHttpClient(HttpClient(neverCalledEngine)), clock = SystemZetaClock),
             authStorage = AuthenticationStorageImpl(InMemoryStorage(), resourceScope = ResourceScope("", emptyList())),
             authenticationCallback = callback,
             resolveParEndpoint = { error("not used") },
@@ -388,7 +389,7 @@ class OidcTokenIssuanceTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         val response = api.requestPar(
@@ -413,7 +414,7 @@ class OidcTokenIssuanceTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act
         api.requestPar(
@@ -435,7 +436,7 @@ class OidcTokenIssuanceTests {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         val exception = assertFailsWith<AuthenticationException> {
@@ -459,7 +460,7 @@ class OidcTokenIssuanceTests {
                 headers = headersOf(HttpHeaders.ContentType, "text/plain"),
             )
         }
-        val api = AuthenticationApiImpl(createClient(engine))
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
 
         // Act & Assert
         val exception = assertFailsWith<AuthenticationException> {
@@ -535,7 +536,7 @@ private fun newAuthStorage(): AuthenticationStorage =
     AuthenticationStorageImpl(InMemoryStorage(), resourceScope = ResourceScope("", emptyList()))
 
 private fun issuance(engine: MockEngine, storage: AuthenticationStorage = newAuthStorage()): OidcTokenIssuance {
-    val api = AuthenticationApiImpl(createClient(engine))
+    val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
     return OidcTokenIssuance(
         authApi = api,
         authStorage = storage,

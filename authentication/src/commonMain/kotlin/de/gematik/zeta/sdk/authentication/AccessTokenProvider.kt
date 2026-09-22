@@ -41,7 +41,6 @@ import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.utils.io.core.toByteArray
 import kotlin.io.encoding.Base64
 import kotlin.random.Random
-import kotlin.time.Clock.System
 import kotlin.time.TimeSource
 import kotlin.time.measureTimedValue
 
@@ -67,7 +66,7 @@ open class AccessTokenProviderImpl(
     private val authConfig: AuthConfig,
     private val authApi: AuthenticationApi,
     private val authStorage: AuthenticationStorage,
-    private val clock: () -> Long = { System.now().epochSeconds },
+    private val clock: () -> Long,
     private val tpmProvider: TpmProvider,
 ) : AccessTokenProvider {
 
@@ -75,6 +74,7 @@ open class AccessTokenProviderImpl(
         AttestationApiImpl(
             tpmProvider = tpmProvider,
             attestationConfig = authConfig.attestation,
+            clockEpochSeconds = clock,
         )
     }
 

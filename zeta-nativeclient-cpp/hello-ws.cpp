@@ -41,7 +41,7 @@
 
 static const char* POPP_HEADER     = "PoPP";
 static const char* PRODUCT_ID      = "ZETA-Test-Client";
-static const char* PRODUCT_VERSION = "1.3.0";
+static const char* PRODUCT_VERSION = "1.3.2";
 static const char* CLIENT_NAME     = "cpp-client";
 static const char* SCOPE_ZERO      = "zero:audience";
 

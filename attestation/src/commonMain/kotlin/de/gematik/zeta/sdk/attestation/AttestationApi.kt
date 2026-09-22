@@ -49,7 +49,6 @@ import kotlinx.serialization.json.putJsonArray
 import randomUUID
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.Base64.PaddingOption
-import kotlin.time.Clock
 
 /**
  * Builds a **client assertion JWT** used to authenticate a client during token exchange
@@ -86,7 +85,7 @@ fun interface AttestationApi {
 class AttestationApiImpl(
     private val tpmProvider: TpmProvider,
     private val uuidGen: () -> String = { randomUUID() },
-    private val clockEpochSeconds: () -> Long = { Clock.System.now().epochSeconds },
+    private val clockEpochSeconds: () -> Long,
     private val attestationConfig: AttestationConfig = AttestationConfig.software(),
 ) : AttestationApi {
     val json = Json {

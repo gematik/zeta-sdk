@@ -24,11 +24,13 @@
 
 package de.gematik.zeta.sdk.network.http.client
 
+import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaTlsProtocols.TLS_1_2
 import io.ktor.client.HttpClient
 import java.io.File
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import javax.net.ssl.ExtendedSSLSession
+import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSession
 import javax.net.ssl.SSLSocketFactory
 
@@ -58,3 +60,6 @@ internal actual fun extractStaple(session: SSLSession): ByteArray? =
     (session as? ExtendedSSLSession)
         ?.statusResponses
         ?.firstOrNull()
+
+internal actual fun createPlatformSslContext(): SSLContext =
+    SSLContext.getInstance(TLS_1_2)

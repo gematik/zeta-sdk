@@ -37,6 +37,7 @@ import de.gematik.zeta.sdk.authentication.oidc.ParResponse
 import de.gematik.zeta.sdk.authentication.oidc.VerifyOtpResponse
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -48,7 +49,6 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.io.encoding.Base64
-import kotlin.time.Clock
 
 interface AuthenticationApi {
     suspend fun fetchNonce(nonceEndpoint: String): ByteArray
@@ -85,6 +85,7 @@ interface AuthenticationApi {
 
 class AuthenticationApiImpl(
     private val zetaHttpClient: ZetaHttpClient,
+    private val clock: ZetaClock,
 ) : AuthenticationApi {
 
     override suspend fun fetchNonce(nonceEndpoint: String): ByteArray {
@@ -184,7 +185,7 @@ class AuthenticationApiImpl(
         dpop: String,
         parameters: Parameters,
     ): ZetaHttpResponse {
-        val sendTime = Clock.System.now()
+        val sendTime = clock.now()
         Log.d { "[BIND-SEND] endpoint=$endpoint time=$sendTime" }
 
         val response: ZetaHttpResponse = zetaHttpClient
@@ -193,7 +194,7 @@ class AuthenticationApiImpl(
                 headers[HttpHeaders.Authorization] = "DPoP $accessToken"
             }
 
-        val recvTime = Clock.System.now()
+        val recvTime = clock.now()
 
         Log.d { "[BIND-RECV] endpoint=$endpoint time=$recvTime duration=${recvTime - sendTime} status=${response.status}" }
 
@@ -205,13 +206,13 @@ class AuthenticationApiImpl(
         parameters: Parameters,
         dpopToken: String,
     ): JsonObject {
-        val sendTime = Clock.System.now()
+        val sendTime = clock.now()
         Log.d { "[TOKEN-SEND] endpoint=$fromEndpoint time=$sendTime" }
         val response: ZetaHttpResponse = zetaHttpClient
             .submitForm(fromEndpoint, parameters) {
                 headers[HttpAuthHeaders.Dpop] = dpopToken
             }
-        val recvTime = Clock.System.now()
+        val recvTime = clock.now()
         Log.d { "[TOKEN-RECV] endpoint=$fromEndpoint time=$recvTime duration=${recvTime - sendTime} status=${response.status}" }
         return handleStatus(response)
     }

@@ -333,6 +333,27 @@ exposes the result.
 | iOS | iOS 15+                |
 
 
+### Android: cleartext traffic for revocation endpoints
+
+Certificates point to their OCSP responder and CRL distribution points over plain `http://`:
+the responses are CA-signed, and fetching them over HTTPS would be circular. Android blocks
+cleartext by default from API 28 - the SDK's minimum - so revocation fails with
+`CLEARTEXT communication to <host> not permitted by network security policy` unless the app
+allows those hosts:
+
+```xml
+<!-- res/xml/network_security_config.xml, referenced from the manifest as
+     <application android:networkSecurityConfig="@xml/network_security_config"> -->
+<network-security-config>
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="true">ocsp.example-ca.de</domain>
+    <domain includeSubdomains="true">crl.example-ca.de</domain>
+  </domain-config>
+</network-security-config>
+```
+
+The demo client permits cleartext for all domains
+
 ### Building
 
 #### Dependencies and configuration
@@ -1251,7 +1272,7 @@ Configuration structs:
 | `ZetaSdk_SmcbConfig`     | customSmcb (vtable)                                                                                                                                            |
 | `ZetaSdk_StorageConfig`  | aesB64Key, storagePath, customStorage (exactly one of aesB64Key/customStorage)                                                                                 |
 | `ZetaSdk_TpmConfig`      | reserved, currently empty                                                                                                                                      |
-| `ZetaSdk_SecurityConfig` | additionalCaPem, additionalCaPemCount, additionalCaFile, disableServerValidation, sslVerbose                                                                   |
+| `ZetaSdk_SecurityConfig` | additionalCaPem, additionalCaPemCount, additionalCaFile, disableServerValidation, sslVerbose, revocationCacheDurationSeconds                                   |
 | `ZetaSdk_NetworkConfig`  | connectTimeoutMillis, requestTimeoutMillis, socketTimeoutMillis, maxRetries, retryOnlyIdempotent (0/zero-init = SDK defaults: 15000/30000/60000ms, no retries) |
 | `ZetaSdk_ProxyConfig`    | host, port, username, password, type (0=HTTP, 1=SOCKS)                                                                                                         |
 | `ZetaSdk_LogVTable`      | context, log, logLevel                                                                                                                                         |

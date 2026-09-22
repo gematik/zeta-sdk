@@ -26,151 +26,114 @@ package de.gematik.zeta.sdk.network.http.client
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import okhttp3.CipherSuite
 import okhttp3.Connection
+import okhttp3.ConnectionSpec
 import okhttp3.Handshake
 import okhttp3.Handshake.Companion.handshake
 import okhttp3.Interceptor
-import okhttp3.Protocol
+import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
 import okhttp3.TlsVersion
-import java.util.concurrent.TimeUnit
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLSession
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 @Suppress("FunctionNaming")
 class ZetaTlsValidatorInterceptorTest {
-
     private val interceptor = ZetaTlsValidatorInterceptor()
+    private lateinit var server: MockWebServer
+    private lateinit var clientCertificates: HandshakeCertificates
 
-    @Test
-    fun intercept_proceeds_whenHandshakeIsNull() {
-        val expectedResponse = response()
-        val chain = FakeChain(
-            connection = null,
-            response = expectedResponse,
-        )
+    @BeforeTest
+    fun setUp() {
+        val serverCert = HeldCertificate.Builder()
+            .addSubjectAlternativeName("localhost")
+            .build()
+        val serverCertificates = HandshakeCertificates.Builder()
+            .heldCertificate(serverCert)
+            .build()
+        clientCertificates = HandshakeCertificates.Builder()
+            .addTrustedCertificate(serverCert.certificate)
+            .build()
 
-        val result = interceptor.intercept(chain)
+        server = MockWebServer()
+        server.useHttps(serverCertificates.sslSocketFactory())
+        server.start()
+    }
 
-        assertSame(expectedResponse, result)
-        assertEquals(1, chain.proceedCalls)
+    @AfterTest
+    fun tearDown() {
+        server.close()
     }
 
     @Test
     fun intercept_proceeds_whenHandshakeIsCompliant() {
-        val expectedResponse = response()
-        val chain = FakeChain(
-            connection = FakeConnection(
-                handshake = handshake(
-                    cipherSuite = CipherSuite.TLS_AES_128_GCM_SHA256,
-                    tlsVersion = TlsVersion.TLS_1_3,
-                ),
-            ),
-            response = expectedResponse,
-        )
+        server.enqueue(MockResponse(body = "ok"))
 
-        val result = interceptor.intercept(chain)
+        val compliantSpec = ConnectionSpec.Builder(ConnectionSpec.RESTRICTED_TLS)
+            .tlsVersions(TlsVersion.TLS_1_3)
+            .cipherSuites(CipherSuite.TLS_AES_128_GCM_SHA256)
+            .build()
 
-        assertSame(expectedResponse, result)
-        assertEquals(1, chain.proceedCalls)
+        val client = OkHttpClient.Builder()
+            .sslSocketFactory(clientCertificates.sslSocketFactory(), clientCertificates.trustManager)
+            .connectionSpecs(listOf(compliantSpec))
+            .addInterceptor(interceptor)
+            .build()
+
+        client.newCall(Request.Builder().url(server.url("/")).build()).execute().use { response ->
+            assertEquals(200, response.code)
+        }
+    }
+
+    @Test
+    fun intercept_proceeds_whenConnectionIsNull() {
+        val chain = mockk<Interceptor.Chain>(relaxed = true) {
+            every { connection() } returns null
+        }
+
+        interceptor.intercept(chain)
+
+        verify(exactly = 1) { chain.proceed(any()) }
     }
 
     @Test
     fun intercept_throws_whenHandshakeIsNonCompliant() {
-        val chain = FakeChain(
-            connection = FakeConnection(
-                handshake = handshake(
-                    cipherSuite = CipherSuite.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
-                    tlsVersion = TlsVersion.TLS_1_2,
-                ),
-            ),
-            response = response(),
-        )
+        val connection = mockk<Connection> {
+            every { handshake() } returns nonCompliantHandshake()
+        }
+        val chain = mockk<Interceptor.Chain>(relaxed = true) {
+            every { connection() } returns connection
+        }
 
         val error = assertFailsWith<SSLException> {
             interceptor.intercept(chain)
         }
 
         assertTrue(error.message!!.contains("gematik TLS compliance failure"))
-        assertEquals(0, chain.proceedCalls)
+        verify(exactly = 0) { chain.proceed(any()) }
     }
 
-    private fun handshake(
-        cipherSuite: CipherSuite,
-        tlsVersion: TlsVersion,
-    ): Handshake {
+    private fun nonCompliantHandshake(): Handshake {
         val session = mockk<SSLSession> {
-            every { getCipherSuite() } returns cipherSuite.javaName
-            every { getProtocol() } returns tlsVersion.javaName
+            every { getCipherSuite() } returns CipherSuite.TLS_RSA_WITH_3DES_EDE_CBC_SHA.javaName
+            every { getProtocol() } returns TlsVersion.TLS_1_2.javaName
             every { getPeerHost() } returns "example.com"
             every { getPeerPort() } returns 443
             every { getPeerCertificates() } returns emptyArray()
             every { getLocalCertificates() } returns emptyArray()
         }
         return session.handshake()
-    }
-
-    private fun response(): Response =
-        Response.Builder()
-            .request(
-                Request.Builder()
-                    .url("https://example.com")
-                    .build(),
-            )
-            .protocol(Protocol.HTTP_1_1)
-            .code(200)
-            .message("OK")
-            .build()
-
-    private class FakeChain(
-        private val connection: Connection?,
-        private val response: Response,
-    ) : Interceptor.Chain {
-
-        var proceedCalls: Int = 0
-            private set
-
-        private val request = Request.Builder()
-            .url("https://example.com")
-            .build()
-
-        override fun request(): Request = request
-
-        override fun proceed(request: Request): Response {
-            proceedCalls++
-            return response
-        }
-
-        override fun connection(): Connection? = connection
-
-        override fun call() = throw UnsupportedOperationException("Not needed in this test")
-
-        override fun connectTimeoutMillis(): Int = 0
-
-        override fun withConnectTimeout(timeout: Int, unit: TimeUnit): Interceptor.Chain = this
-
-        override fun readTimeoutMillis(): Int = 0
-
-        override fun withReadTimeout(timeout: Int, unit: TimeUnit): Interceptor.Chain = this
-
-        override fun writeTimeoutMillis(): Int = 0
-
-        override fun withWriteTimeout(timeout: Int, unit: TimeUnit): Interceptor.Chain = this
-    }
-
-    private class FakeConnection(
-        private val handshake: Handshake?,
-    ) : Connection {
-        override fun route() = throw UnsupportedOperationException("Not needed in this test")
-        override fun socket() = throw UnsupportedOperationException("Not needed in this test")
-        override fun handshake(): Handshake? = handshake
-        override fun protocol(): Protocol = Protocol.HTTP_1_1
     }
 }

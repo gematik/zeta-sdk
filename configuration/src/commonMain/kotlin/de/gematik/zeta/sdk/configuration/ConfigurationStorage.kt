@@ -33,9 +33,9 @@ import de.gematik.zeta.sdk.storage.ExtendedStorage
 import de.gematik.zeta.sdk.storage.ExtendedStorage.Companion.PRESENT_MARKER
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.storage.SdkStorage
+import de.gematik.zeta.time.ZetaClock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlin.time.Clock
 
 interface ConfigurationStorage {
     /** [name] selects a stored protected-resource document; the default is the primary resource. */
@@ -63,7 +63,7 @@ class ConfigurationStorageImpl(
     sdkStorage: SdkStorage,
     resourceScope: ResourceScope,
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false },
-    val clock: Clock = Clock.System,
+    val clock: ZetaClock,
 ) : ConfigurationStorage {
     private val storage = ExtendedStorage(sdkStorage, resourceScope)
 

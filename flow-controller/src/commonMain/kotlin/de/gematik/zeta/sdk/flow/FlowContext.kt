@@ -37,6 +37,7 @@ import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.storage.SdkStorage
 import de.gematik.zeta.sdk.tpm.TpmStorage
 import de.gematik.zeta.sdk.tpm.TpmStorageImpl
+import de.gematik.zeta.time.ZetaClock
 
 interface FlowContext {
     val resourceScope: ResourceScope
@@ -57,10 +58,11 @@ class FlowContextImpl(
     override val resourceScope: ResourceScope,
     override val client: ForwardingClient,
     storage: SdkStorage,
-    override val configurationStorage: ConfigurationStorage = ConfigurationStorageImpl(storage, resourceScope),
+    val clock: ZetaClock,
+    override val configurationStorage: ConfigurationStorage = ConfigurationStorageImpl(storage, resourceScope, clock = clock),
     override val clientRegistrationStorage: ClientRegistrationStorage = ClientRegistrationStorageImpl(storage, resourceScope),
     override val authenticationStorage: AuthenticationStorage = AuthenticationStorageImpl(storage, resourceScope),
-    override val tpmStorage: TpmStorage = TpmStorageImpl(storage, resourceScope),
+    override val tpmStorage: TpmStorage = TpmStorageImpl(storage, resourceScope, clock),
     override val aslStorage: AslStorage = AslStorageImpl(storage, resourceScope),
     override val revocationStorage: RevocationStorage = RevocationStorage(storage, resourceScope),
 

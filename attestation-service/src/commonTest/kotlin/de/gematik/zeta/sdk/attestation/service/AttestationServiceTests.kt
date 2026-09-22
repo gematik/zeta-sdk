@@ -36,6 +36,7 @@ import de.gematik.zeta.sdk.attestation.model.TpmQuoteResult
 import de.gematik.zeta.sdk.attestation.model.VerifyIntegrityRequest
 import de.gematik.zeta.sdk.attestation.model.VerifyIntegrityResponse
 import de.gematik.zeta.sdk.attestation.tpm.TpmAccessOperations
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.http.RequestConnectionPoint
 import kotlin.io.encoding.Base64
 import kotlin.test.Test
@@ -485,6 +486,7 @@ class AttestationServiceTest {
             fileIntegrity = fileIntegrity,
             tpm = tpm,
             config = config,
+            clock = SystemZetaClock,
         )
     }
 }

@@ -312,7 +312,7 @@ public fun newSdk(
         resource = fachdienstUrl,
         BuildConfig(
             "test-proxy",
-            "1.3.0",
+            "1.3.2",
             "sdk-client",
             StorageConfig.Custom(storage),
             object : TpmConfig {},

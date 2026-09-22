@@ -52,7 +52,7 @@ import de.gematik.zeta.sdk.flow.handler.EnsureAccessTokenHandler
 import de.gematik.zeta.sdk.flow.handler.RetryHandler
 import de.gematik.zeta.sdk.flow.zetaPlugin
 import de.gematik.zeta.sdk.network.http.client.CompositeCookieStorage
-import de.gematik.zeta.sdk.network.http.client.DEFAULT_MIN_REVOCATION_CACHE_SECONDS
+import de.gematik.zeta.sdk.network.http.client.DEFAULT_REVOCATION_CACHE_SECONDS
 import de.gematik.zeta.sdk.network.http.client.RevocationChecker
 import de.gematik.zeta.sdk.network.http.client.SdkCookieStorage
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
@@ -69,6 +69,8 @@ import de.gematik.zeta.sdk.storage.StorageConfig
 import de.gematik.zeta.sdk.storage.provideSdkStorage
 import de.gematik.zeta.sdk.tpm.TpmProvider
 import de.gematik.zeta.sdk.tpm.platformDefaultProvider
+import de.gematik.zeta.time.SystemZetaClock
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.header
@@ -77,7 +79,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
 import io.ktor.util.appendAll
 import kotlinx.coroutines.coroutineScope
-import kotlin.time.Clock.System
+import kotlin.jvm.JvmOverloads
 import kotlin.time.measureTimedValue
 
 private const val AUTH_SERVER_METADATA_UNAVAILABLE =
@@ -101,13 +103,15 @@ private const val AUTH_SERVER_METADATA_UNAVAILABLE =
 object ZetaSdk {
     fun getVersion(): String = ZETA_SDK_VERSION
 
+    @JvmOverloads
     fun build(
         resource: String,
         config: BuildConfig,
+        clock: ZetaClock = SystemZetaClock,
     ): ZetaSdkClient {
         val resourceScope = ResourceScope(resource, config.authConfig.scopes)
         val isolatedConfig = config.withNamespace(resourceScope.storageKey)
-        return ZetaSdkClientImpl(resourceScope, isolatedConfig)
+        return ZetaSdkClientImpl(resourceScope, isolatedConfig, clock)
     }
 
     suspend fun ZetaSdkClient.forget(): Result<Unit> = runCatching {
@@ -148,6 +152,7 @@ object ZetaSdk {
 class ZetaSdkClientImpl(
     val resourceScope: ResourceScope,
     private val cfg: BuildConfig,
+    private val clock: ZetaClock,
 ) : ZetaSdkClient {
     private lateinit var mainHttpClient: ZetaHttpClient
 
@@ -165,21 +170,39 @@ class ZetaSdkClientImpl(
         }
     }
 
-    val flowContext = FlowContextImpl(resourceScope, forwardingClient, storage)
-
-    private val revocationChecker = RevocationChecker(
-        storage = flowContext.revocationStorage,
-        cacheDurationSeconds = cfg.httpClientBuilder
-            ?.revocationCacheMinDurationSeconds
-            ?: DEFAULT_MIN_REVOCATION_CACHE_SECONDS,
+    val flowContext = FlowContextImpl(
+        resourceScope = resourceScope,
+        client = forwardingClient,
+        storage = storage,
+        clock = clock,
     )
 
-    private val httpClientBuilder: ZetaHttpClientBuilder =
+    private val baseHttpClientBuilder: ZetaHttpClientBuilder =
         (cfg.httpClientBuilder ?: ZetaHttpClientBuilder())
             .copy(
                 baseUrl = resourceScope.fqdn,
                 cookieStorage = compositeCookieStorage,
             )
+            .clock(clock)
+
+    private val revocationHttpClient: ZetaHttpClient =
+        baseHttpClientBuilder
+            .copy()
+            .disableServerValidation(true)
+            .build()
+
+    private val revocationChecker = RevocationChecker(
+        httpClient = revocationHttpClient,
+        storage = flowContext.revocationStorage,
+        cacheDurationSeconds = cfg.httpClientBuilder
+            ?.revocationCacheDurationSeconds
+            ?: DEFAULT_REVOCATION_CACHE_SECONDS,
+        clock = clock,
+    )
+
+    private val httpClientBuilder: ZetaHttpClientBuilder =
+        baseHttpClientBuilder
+            .copy()
             .revocationChecker(revocationChecker)
 
     init {
@@ -219,13 +242,13 @@ class ZetaSdkClientImpl(
     private lateinit var accessTokenProvider: AccessTokenProviderImpl
     private lateinit var authApi: AuthenticationApiImpl
     private val authHandler: EnsureAccessTokenHandler by lazy {
-        authApi = AuthenticationApiImpl(httpClientBuilder.build().also { authApiClient = it })
+        authApi = AuthenticationApiImpl(httpClientBuilder.build().also { authApiClient = it }, clock = clock)
         accessTokenProvider = AccessTokenProviderImpl(
             resourceScope.storageKey,
             cfg.authConfig,
             authApi,
             flowContext.authenticationStorage,
-            { System.now().epochSeconds },
+            { clock.now().epochSeconds },
             tpmProvider,
         )
         EnsureAccessTokenHandler(
@@ -249,6 +272,7 @@ class ZetaSdkClientImpl(
             accessTokenProvider,
             tpmProvider,
             !httpClientBuilder.isServerValidationDisabled,
+            clock = clock,
         )
 
         AslHandler(aslApi)
@@ -261,6 +285,7 @@ class ZetaSdkClientImpl(
         ChangeEmailClient(
             httpClient = httpClientBuilder.build().also { identityHttpClient = it },
             tpmProvider = tpmProvider,
+            clock = { clock.now().epochSeconds },
         )
     }
 
@@ -298,7 +323,7 @@ class ZetaSdkClientImpl(
                     cfg.authConfig,
                     authApi,
                     store,
-                    { System.now().epochSeconds },
+                    { clock.now().epochSeconds },
                     tpmProvider,
                 )
             },
@@ -466,7 +491,7 @@ class ZetaSdkClientImpl(
         flowContext.clientRegistrationStorage.getRegistrationInfo(regKey)
             ?: return@runCatching SdkStatus.NOT_REGISTERED
 
-        val nowEpoch = System.now().epochSeconds
+        val nowEpoch = clock.now().epochSeconds
         val expiresAt = flowContext.authenticationStorage.getTokenExpiration()?.toLongOrNull() ?: 0L
         val tokensExpired = expiresAt <= nowEpoch
 

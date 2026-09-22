@@ -32,58 +32,72 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.io.encoding.Base64
-import kotlin.time.Clock
 
 @Serializable
 public data class SerializableOcspResponse(
     val responseDerBase64: String,
-    val expiresAtEpochSeconds: Long,
+    val validatedAtEpochSeconds: Long,
+    val nextUpdateEpochSeconds: Long?,
+    val thisUpdateEpochSeconds: Long,
 ) {
     public fun toCached(): CachedOcspResponse = CachedOcspResponse(
         responseDer = Base64.decode(responseDerBase64),
-        expiresAtEpochSeconds = expiresAtEpochSeconds,
+        validatedAtEpochSeconds = validatedAtEpochSeconds,
+        nextUpdateEpochSeconds = nextUpdateEpochSeconds,
+        thisUpdateEpochSeconds = thisUpdateEpochSeconds,
     )
 
     public companion object {
         public fun from(c: CachedOcspResponse): SerializableOcspResponse = SerializableOcspResponse(
             responseDerBase64 = Base64.encode(c.responseDer),
-            expiresAtEpochSeconds = c.expiresAtEpochSeconds,
+            validatedAtEpochSeconds = c.validatedAtEpochSeconds,
+            nextUpdateEpochSeconds = c.nextUpdateEpochSeconds,
+            thisUpdateEpochSeconds = c.thisUpdateEpochSeconds,
         )
     }
 }
 
 public data class CachedOcspResponse(
     val responseDer: ByteArray,
-    val expiresAtEpochSeconds: Long,
+    val validatedAtEpochSeconds: Long,
+    val nextUpdateEpochSeconds: Long?,
+    val thisUpdateEpochSeconds: Long,
 )
 
 @Serializable
 public data class SerializableCrlResponse(
     val crlDerBase64: String,
-    val expiresAtEpochSeconds: Long,
+    val validatedAtEpochSeconds: Long,
+    val nextUpdateEpochSeconds: Long?,
+    val thisUpdateEpochSeconds: Long,
 ) {
     public fun toCached(): CachedCrlResponse = CachedCrlResponse(
         crlDer = Base64.decode(crlDerBase64),
-        expiresAtEpochSeconds = expiresAtEpochSeconds,
+        validatedAtEpochSeconds = validatedAtEpochSeconds,
+        nextUpdateEpochSeconds = nextUpdateEpochSeconds,
+        thisUpdateEpochSeconds = thisUpdateEpochSeconds,
     )
 
     public companion object {
         public fun from(c: CachedCrlResponse): SerializableCrlResponse = SerializableCrlResponse(
             crlDerBase64 = Base64.encode(c.crlDer),
-            expiresAtEpochSeconds = c.expiresAtEpochSeconds,
+            validatedAtEpochSeconds = c.validatedAtEpochSeconds,
+            nextUpdateEpochSeconds = c.nextUpdateEpochSeconds,
+            thisUpdateEpochSeconds = c.thisUpdateEpochSeconds,
         )
     }
 }
 
 public data class CachedCrlResponse(
     val crlDer: ByteArray,
-    val expiresAtEpochSeconds: Long,
+    val validatedAtEpochSeconds: Long,
+    val nextUpdateEpochSeconds: Long?,
+    val thisUpdateEpochSeconds: Long,
 )
 
 public class RevocationStorage(
     storage: SdkStorage,
     private val resourceScope: ResourceScope,
-    private val clock: Clock = Clock.System,
 ) {
     private val extendedStorage = ExtendedStorage(storage)
     private val mutex = Mutex()
@@ -124,23 +138,6 @@ public class RevocationStorage(
             return@withLock null
         }
 
-        if (
-            cached.expiresAtEpochSeconds <=
-            clock.now().epochSeconds
-        ) {
-            Log.d {
-                "[OCSP-CACHE] Cached response expired; removing it"
-            }
-
-            extendedStorage.removeIndexed(
-                indexKey = ocspIndexKey,
-                entryKey = entryKey,
-                prefixes = listOf(OCSP_PREFIX),
-            )
-
-            return@withLock null
-        }
-
         cached
     }
 
@@ -155,7 +152,9 @@ public class RevocationStorage(
 
         Log.d {
             "[OCSP-CACHE] storing storageKey=$entryKey " +
-                "expiresAt=${response.expiresAtEpochSeconds}"
+                "validatedAt=${response.validatedAtEpochSeconds} " +
+                "nextUpdate=${response.nextUpdateEpochSeconds} " +
+                "thisUpdate=${response.thisUpdateEpochSeconds}"
         }
 
         extendedStorage.putIndexed(
@@ -205,23 +204,6 @@ public class RevocationStorage(
             return@withLock null
         }
 
-        if (
-            cached.expiresAtEpochSeconds <=
-            clock.now().epochSeconds
-        ) {
-            Log.d {
-                "[CRL-CACHE] Cached response expired; removing it"
-            }
-
-            extendedStorage.removeIndexed(
-                indexKey = crlIndexKey,
-                entryKey = entryKey,
-                prefixes = listOf(CRL_PREFIX),
-            )
-
-            return@withLock null
-        }
-
         cached
     }
 
@@ -236,7 +218,9 @@ public class RevocationStorage(
 
         Log.d {
             "[CRL-CACHE] storing storageKey=$entryKey " +
-                "expiresAt=${response.expiresAtEpochSeconds}"
+                "validatedAt=${response.validatedAtEpochSeconds} " +
+                "nextUpdate=${response.nextUpdateEpochSeconds} " +
+                "thisUpdate=${response.thisUpdateEpochSeconds}"
         }
 
         extendedStorage.putIndexed(

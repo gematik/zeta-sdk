@@ -26,6 +26,7 @@ package de.gematik.zeta.sdk.network.http.client
 
 import de.gematik.zeta.sdk.network.http.client.config.ProxyConfig
 import de.gematik.zeta.sdk.network.http.client.config.ProxyType
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.HttpRequestTimeoutException
@@ -65,6 +66,7 @@ class ZetaHttpClientTests {
 
     private val noDependencies = HttpClientDependencies(
         revocationChecker = null,
+        SystemZetaClock,
     )
 
     @Test

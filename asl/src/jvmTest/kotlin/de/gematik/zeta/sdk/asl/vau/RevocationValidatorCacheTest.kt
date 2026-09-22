@@ -22,11 +22,15 @@
  * #L%
  */
 
+import de.gematik.zeta.sdk.crypto.CrlValidity
 import de.gematik.zeta.sdk.crypto.OcspRequestData
+import de.gematik.zeta.sdk.crypto.OcspValidity
 import de.gematik.zeta.sdk.crypto.RevocationHandler
 import de.gematik.zeta.sdk.network.http.client.CachedOcspResponse
 import de.gematik.zeta.sdk.network.http.client.RevocationChecker
 import de.gematik.zeta.sdk.network.http.client.RevocationStorage
+import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -39,12 +43,16 @@ import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 class RevocationValidatorCacheTest {
     private val certDer = byteArrayOf(1, 2, 3)
     private val issuerDer = byteArrayOf(4, 5, 6)
-
     private val cachedResponseDer = byteArrayOf(9, 9, 9)
+    private val now = 1_700_000_000L
+    private val clock = ZetaClock {
+        Instant.fromEpochSeconds(now)
+    }
 
     /*
      * Direct OCSP responses go through fetchOcspDirect(), which rejects
@@ -62,8 +70,9 @@ class RevocationValidatorCacheTest {
             storage.getOcsp(any())
         } returns CachedOcspResponse(
             responseDer = cachedResponseDer,
-            expiresAtEpochSeconds =
-            Clock.System.now().epochSeconds + 3600,
+            validatedAtEpochSeconds = Clock.System.now().epochSeconds,
+            nextUpdateEpochSeconds = Clock.System.now().epochSeconds + 3600,
+            thisUpdateEpochSeconds = Clock.System.now().epochSeconds,
         )
 
         val handler = mockk<RevocationHandler>(relaxed = true)
@@ -72,6 +81,7 @@ class RevocationValidatorCacheTest {
             storage = storage,
             httpClient = mockk(relaxed = true),
             handler = handler,
+            clock = clock,
         )
 
         checker.validate(
@@ -81,7 +91,7 @@ class RevocationValidatorCacheTest {
         )
 
         verify(exactly = 0) {
-            handler.validate(any(), any(), any())
+            handler.validate(any(), any(), any(), any())
         }
 
         coVerify(exactly = 0) {
@@ -100,17 +110,21 @@ class RevocationValidatorCacheTest {
         val handler = mockk<RevocationHandler>(relaxed = true)
 
         every {
-            handler.getNextUpdateEpochSeconds(
+            handler.getOcspValidity(
                 stapledResponse,
                 certDer,
                 issuerDer,
             )
-        } returns Clock.System.now().epochSeconds + 3600
+        } returns OcspValidity(
+            thisUpdateEpochSeconds = now,
+            nextUpdateEpochSeconds = now + 3600,
+        )
 
         val checker = RevocationChecker(
             storage = storage,
             httpClient = mockk(relaxed = true),
             handler = handler,
+            clock = clock,
         )
 
         checker.validate(
@@ -124,6 +138,7 @@ class RevocationValidatorCacheTest {
                 stapledResponse,
                 certDer,
                 issuerDer,
+                Instant.fromEpochSeconds(now),
             )
         }
 
@@ -154,12 +169,15 @@ class RevocationValidatorCacheTest {
         )
 
         every {
-            handler.getNextUpdateEpochSeconds(
+            handler.getOcspValidity(
                 fetchedOcspResponseDer,
                 certDer,
                 issuerDer,
             )
-        } returns Clock.System.now().epochSeconds + 3600
+        } returns OcspValidity(
+            thisUpdateEpochSeconds = now,
+            nextUpdateEpochSeconds = now + 3600,
+        )
 
         val checker = RevocationChecker(
             storage = storage,
@@ -167,6 +185,7 @@ class RevocationValidatorCacheTest {
                 responseBytes = fetchedOcspResponseDer,
             ),
             handler = handler,
+            clock = clock,
         )
 
         checker.validate(
@@ -188,6 +207,7 @@ class RevocationValidatorCacheTest {
                 fetchedOcspResponseDer,
                 certDer,
                 issuerDer,
+                Instant.fromEpochSeconds(now),
             )
         }
 
@@ -195,11 +215,8 @@ class RevocationValidatorCacheTest {
             storage.setOcsp(
                 any(),
                 match {
-                    it.responseDer.contentEquals(
-                        fetchedOcspResponseDer,
-                    ) &&
-                        it.expiresAtEpochSeconds >
-                        Clock.System.now().epochSeconds
+                    it.responseDer.contentEquals(fetchedOcspResponseDer) &&
+                        it.validatedAtEpochSeconds == now
                 },
             )
         }
@@ -223,12 +240,15 @@ class RevocationValidatorCacheTest {
         )
 
         every {
-            handler.getNextUpdateEpochSeconds(
+            handler.getOcspValidity(
                 fetchedOcspResponseDer,
                 certDer,
                 issuerDer,
             )
-        } returns Clock.System.now().epochSeconds + 3600
+        } returns OcspValidity(
+            thisUpdateEpochSeconds = Clock.System.now().epochSeconds,
+            nextUpdateEpochSeconds = Clock.System.now().epochSeconds + 3600,
+        )
 
         val checker = RevocationChecker(
             storage = storage,
@@ -236,6 +256,7 @@ class RevocationValidatorCacheTest {
                 responseBytes = fetchedOcspResponseDer,
             ),
             handler = handler,
+            clock = clock,
         )
 
         checker.validate(
@@ -249,7 +270,7 @@ class RevocationValidatorCacheTest {
         }
 
         verify(exactly = 0) {
-            handler.validateCrl(any(), any(), any())
+            handler.validateCrl(any(), any(), any(), any())
         }
 
         coVerify(exactly = 0) {
@@ -258,7 +279,7 @@ class RevocationValidatorCacheTest {
     }
 
     @Test
-    fun tryDirectCrl_passesCrlBytes_notCertBytes_toGetCrlNextUpdateEpochSeconds() = runTest {
+    fun tryDirectCrl_passesCrlBytes_notCertBytes_toGetCrlValidity() = runTest {
         val certDer = byteArrayOf(1, 2, 3)
         val issuerDer = byteArrayOf(4, 5, 6)
         val crlDer = byteArrayOf(9, 9, 9)
@@ -270,13 +291,17 @@ class RevocationValidatorCacheTest {
         val handler = mockk<RevocationHandler>(relaxed = true)
         every { handler.extractCrlUrl(certDer) } returns "http://crl.example.com/crl.crl"
         every {
-            handler.getCrlNextUpdateEpochSeconds(any())
-        } returns Clock.System.now().epochSeconds + 3_600L
+            handler.getCrlValidity(any())
+        } returns CrlValidity(
+            thisUpdateEpochSeconds = Clock.System.now().epochSeconds,
+            nextUpdateEpochSeconds = Clock.System.now().epochSeconds + 3_600L,
+        )
 
         val checker = RevocationChecker(
             storage = storage,
             httpClient = mockHttpClient(crlDer),
             handler = handler,
+            clock = clock,
         )
 
         checker.validate(
@@ -286,13 +311,13 @@ class RevocationValidatorCacheTest {
         )
 
         verify(exactly = 1) {
-            handler.getCrlNextUpdateEpochSeconds(
+            handler.getCrlValidity(
                 match { it.contentEquals(crlDer) },
             )
         }
 
         verify(exactly = 0) {
-            handler.getCrlNextUpdateEpochSeconds(
+            handler.getCrlValidity(
                 match { it.contentEquals(certDer) },
             )
         }
@@ -301,7 +326,7 @@ class RevocationValidatorCacheTest {
     private fun mockHttpClient(
         responseBytes: ByteArray = fetchedOcspResponseDer,
         throws: Boolean = false,
-    ): HttpClient {
+    ): ZetaHttpClient {
         val engine = MockEngine { request ->
             if (throws) {
                 error("Fetch failed for ${request.url}")
@@ -312,6 +337,6 @@ class RevocationValidatorCacheTest {
             )
         }
 
-        return HttpClient(engine)
+        return ZetaHttpClient(HttpClient(engine))
     }
 }

@@ -25,24 +25,35 @@
 package de.gematik.zeta.sdk.asl
 
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
+import de.gematik.zeta.time.SystemZetaClock
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.utils.io.core.toByteArray
 import kotlinx.coroutines.test.runTest
+import kotlin.io.encoding.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlin.time.Clock
 import kotlin.time.Instant
 
 class AslTiRootStoreTest {
-    private fun fakeClock(epochSeconds: Long): Clock = object : Clock {
-        override fun now() = Instant.fromEpochSeconds(epochSeconds)
-    }
-
+    private fun fakeClock(epochSeconds: Long): ZetaClock = ZetaClock { Instant.fromEpochSeconds(epochSeconds) }
+    private fun rootsJson(certDer: ByteArray): String =
+        """
+    [
+        {
+            "cert":"${Base64.encode(certDer)}",
+            "name":"test",
+            "nvb":"2020-01-01",
+            "nva":"2030-01-01"
+        }
+    ]
+        """.trimIndent()
     private var fetchCount = 0
 
     private fun mockHttpClient(
@@ -176,5 +187,29 @@ class AslTiRootStoreTest {
         val store = AslTiRootStore(mockHttpClient(json))
 
         store.getTrustAnchors(fakeClock(1000L))
+    }
+
+    @Test
+    fun getTrustAnchors_usesSystemClock_byDefault() = runTest {
+        val store = AslTiRootStore(mockHttpClient())
+
+        store.getTrustAnchors(SystemZetaClock)
+
+        assertEquals(1, fetchCount)
+    }
+
+    @Test
+    fun getTrustAnchors_refreshes_afterRefreshInterval() = runTest {
+        val store = AslTiRootStore(
+            mockHttpClient(
+                rootsJson("bm90YXZhbGlkY2VydA==".toByteArray()),
+            ),
+        )
+        val now = 1000L
+
+        store.getTrustAnchors(fakeClock(now))
+        store.getTrustAnchors(fakeClock(now + 24 * 3600 + 1))
+
+        assertEquals(2, fetchCount)
     }
 }

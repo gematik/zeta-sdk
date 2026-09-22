@@ -64,6 +64,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Clock
 
 @Suppress("FunctionNaming")
 class RevocationHandlerTest {
@@ -83,17 +84,18 @@ class RevocationHandlerTest {
 
     private val caName = X500Name("CN=Test CA")
     private val caSigner = JcaContentSignerBuilder("SHA256WithECDSA").setProvider("BC").build(caKeyPair.private)
-    private val now = Date()
-    private val oneYear = Date(now.time + 365L * 24 * 60 * 60 * 1000)
+    private val date = Date()
+    private val now = Clock.System.now()
+    private val oneYear = Date(date.time + 365L * 24 * 60 * 60 * 1000)
 
     private val caCert: X509Certificate = JcaX509CertificateConverter().setProvider("BC").getCertificate(
-        JcaX509v3CertificateBuilder(caName, BigInteger.ONE, now, oneYear, caName, caKeyPair.public)
+        JcaX509v3CertificateBuilder(caName, BigInteger.ONE, date, oneYear, caName, caKeyPair.public)
             .apply { addExtension(Extension.basicConstraints, true, BasicConstraints(true)) }
             .build(caSigner),
     )
 
     private val leafCert: X509Certificate = JcaX509CertificateConverter().setProvider("BC").getCertificate(
-        JcaX509v3CertificateBuilder(caName, BigInteger.valueOf(2), now, oneYear, X500Name("CN=Test Leaf"), keyGen.generateKeyPair().public)
+        JcaX509v3CertificateBuilder(caName, BigInteger.valueOf(2), date, oneYear, X500Name("CN=Test Leaf"), keyGen.generateKeyPair().public)
             .apply {
                 addExtension(
                     Extension.authorityInfoAccess, false,
@@ -123,12 +125,12 @@ class RevocationHandlerTest {
     )
 
     private val revokedCert: X509Certificate = JcaX509CertificateConverter().setProvider("BC").getCertificate(
-        JcaX509v3CertificateBuilder(caName, BigInteger.valueOf(3), now, oneYear, X500Name("CN=Revoked Cert"), keyGen.generateKeyPair().public)
+        JcaX509v3CertificateBuilder(caName, BigInteger.valueOf(3), date, oneYear, X500Name("CN=Revoked Cert"), keyGen.generateKeyPair().public)
             .build(caSigner),
     )
 
     private val certWithoutExtensions: X509Certificate = JcaX509CertificateConverter().setProvider("BC").getCertificate(
-        JcaX509v3CertificateBuilder(caName, BigInteger.valueOf(4), now, oneYear, X500Name("CN=No Extensions Cert"), keyGen.generateKeyPair().public)
+        JcaX509v3CertificateBuilder(caName, BigInteger.valueOf(4), date, oneYear, X500Name("CN=No Extensions Cert"), keyGen.generateKeyPair().public)
             .build(caSigner),
     )
 
@@ -172,7 +174,7 @@ class RevocationHandlerTest {
     private fun buildOcspResponse(
         cert: X509Certificate = leafCert,
         nextUpdate: Date?,
-        thisUpdate: Date = now,
+        thisUpdate: Date = date,
         status: CertificateStatus? = null, // null = GOOD in Bouncy Castle
     ): ByteArray {
         val digestCalc = JcaDigestCalculatorProviderBuilder().setProvider("BC").build()
@@ -200,7 +202,7 @@ class RevocationHandlerTest {
         val builder = JcaX509v3CertificateBuilder(
             X500Name("CN=Test CA"),
             BigInteger.valueOf(100),
-            now,
+            date,
             oneYear,
             subjectName,
             signerKeyPair.public,
@@ -220,7 +222,7 @@ class RevocationHandlerTest {
     }
 
     @Test
-    fun `getThisUpdateEpochSeconds returns correct timestamp`() {
+    fun `getOcspValidity returns correct thisUpdate timestamp`() {
         val thisUpdate = Date(1_700_000_000_000L)
 
         val ocspDer = buildOcspResponseDer(
@@ -230,21 +232,21 @@ class RevocationHandlerTest {
 
         assertEquals(
             1_700_000_000L,
-            handler.getThisUpdateEpochSeconds(ocspDer),
+            handler.getOcspValidity(ocspDer, leafCert.encoded, caCert.encoded).thisUpdateEpochSeconds,
         )
     }
 
     @Test
     fun `validate passes for good certificate`() {
         val ocspDer = buildOcspResponseDer(leafCert)
-        handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+        handler.validate(ocspDer, leafCert.encoded, caCert.encoded, now)
     }
 
     @Test
     fun `validate throws when certificate is revoked`() {
         val ocspDer = buildOcspResponseDer(revokedCert, certStatus = RevokedStatus(Date(), CRLReason.unspecified))
-        assertFailsWith<IllegalArgumentException> {
-            handler.validate(ocspDer, revokedCert.encoded, caCert.encoded)
+        assertFailsWith<CertificateRevokedException> {
+            handler.validate(ocspDer, revokedCert.encoded, caCert.encoded, now)
         }
     }
 
@@ -256,7 +258,7 @@ class RevocationHandlerTest {
             nextUpdate = Date(System.currentTimeMillis() - 86_400_000),
         )
         assertFailsWith<IllegalArgumentException> {
-            handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+            handler.validate(ocspDer, leafCert.encoded, caCert.encoded, now)
         }
     }
 
@@ -268,7 +270,7 @@ class RevocationHandlerTest {
             nextUpdate = Date(System.currentTimeMillis() + 2 * 86_400_000),
         )
         assertFailsWith<IllegalArgumentException> {
-            handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+            handler.validate(ocspDer, leafCert.encoded, caCert.encoded, now)
         }
     }
 
@@ -279,7 +281,7 @@ class RevocationHandlerTest {
             .generateKeyPair()
         val ocspDer = buildOcspResponseDer(leafCert, signerKey = wrongKeyPair.private)
         assertFailsWith<IllegalArgumentException> {
-            handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+            handler.validate(ocspDer, leafCert.encoded, caCert.encoded, now)
         }
     }
 
@@ -314,13 +316,13 @@ class RevocationHandlerTest {
 
     @Test
     fun `validateCrl passes for valid CRL and non-revoked certificate`() {
-        handler.validateCrl(buildCrlDer(), leafCert.encoded, caCert.encoded)
+        handler.validateCrl(buildCrlDer(), leafCert.encoded, caCert.encoded, now)
     }
 
     @Test
     fun `validateCrl throws when certificate serial is in CRL`() {
-        assertFailsWith<IllegalStateException> {
-            handler.validateCrl(buildCrlDer(revokedSerials = listOf(leafCert.serialNumber)), leafCert.encoded, caCert.encoded)
+        assertFailsWith<CertificateRevokedException> {
+            handler.validateCrl(buildCrlDer(revokedSerials = listOf(leafCert.serialNumber)), leafCert.encoded, caCert.encoded, now)
         }
     }
 
@@ -331,7 +333,7 @@ class RevocationHandlerTest {
             nextUpdate = Date(System.currentTimeMillis() - 86_400_000),
         )
         assertFailsWith<IllegalArgumentException> {
-            handler.validateCrl(crlDer, leafCert.encoded, caCert.encoded)
+            handler.validateCrl(crlDer, leafCert.encoded, caCert.encoded, now)
         }
     }
 
@@ -342,95 +344,107 @@ class RevocationHandlerTest {
             nextUpdate = Date(System.currentTimeMillis() + 2 * 86_400_000),
         )
         assertFailsWith<IllegalArgumentException> {
-            handler.validateCrl(crlDer, leafCert.encoded, caCert.encoded)
+            handler.validateCrl(crlDer, leafCert.encoded, caCert.encoded, now)
         }
     }
 
     @Test
-    fun getNextUpdateEpochSeconds_returnsNull_whenCertSerialNotInResponse() {
+    fun getOcspValidity_throws_whenCertSerialNotInResponse() {
         val ocspDer = buildOcspResponse(
             cert = leafCert,
-            nextUpdate = Date(now.time + 3600_000L),
+            nextUpdate = Date(date.time + 3600_000L),
         )
 
-        val result = handler.getNextUpdateEpochSeconds(
-            ocspResponseDer = ocspDer,
-            certDer = revokedCert.encoded,
-            issuerDer = caCert.encoded,
-        )
-
-        assertNull(result)
+        assertFailsWith<IllegalStateException> {
+            handler.getOcspValidity(
+                ocspResponseDer = ocspDer,
+                certDer = revokedCert.encoded,
+                issuerDer = caCert.encoded,
+            )
+        }
     }
 
     @Test
-    fun getNextUpdateEpochSeconds_returnsExpiredValue_whenNextUpdateInPast() {
-        val yesterday = Date(now.time - 24 * 3600 * 1000L)
+    fun getOcspValidity_returnsExpiredValue_whenNextUpdateInPast() {
+        val yesterday = Date(date.time - 24 * 3600 * 1000L)
         val ocspDer = buildOcspResponse(nextUpdate = yesterday)
 
-        val result = handler.getNextUpdateEpochSeconds(
+        val result = handler.getOcspValidity(
             ocspResponseDer = ocspDer,
             certDer = leafCert.encoded,
             issuerDer = caCert.encoded,
-        )
+        ).nextUpdateEpochSeconds
 
         assertNotNull(result)
-        assert(result < now.time / 1000) { "nextUpdate should be in the past" }
+        assert(result < date.time / 1000) { "nextUpdate should be in the past" }
     }
 
     @Test
-    fun getNextUpdateEpochSeconds_returnsOneWeek_forPoPPScenario() {
-        val producedAt = Date(now.time - 3 * 24 * 3600 * 1000L)
-        val nextUpdate = Date(now.time + 4 * 24 * 3600 * 1000L)
+    fun getOcspValidity_returnsOneWeek_forPoPPScenario() {
+        val producedAt = Date(date.time - 3 * 24 * 3600 * 1000L)
+        val nextUpdate = Date(date.time + 4 * 24 * 3600 * 1000L)
         val ocspDer = buildOcspResponse(
             nextUpdate = nextUpdate,
             thisUpdate = producedAt,
         )
 
-        val result = handler.getNextUpdateEpochSeconds(
+        val result = handler.getOcspValidity(
             ocspResponseDer = ocspDer,
             certDer = leafCert.encoded,
             issuerDer = caCert.encoded,
-        )
+        ).nextUpdateEpochSeconds
 
         assertNotNull(result)
-        assert(result > now.time / 1000) { "nextUpdate should be in the future" }
-        assert(result < now.time / 1000 + 5 * 24 * 3600) { "nextUpdate should be 4 days from now" }
+        assert(result > date.time / 1000) { "nextUpdate should be in the future" }
+        assert(result < date.time / 1000 + 5 * 24 * 3600) { "nextUpdate should be 4 days from now" }
     }
 
     @Test
-    fun `getCrlNextUpdateEpochSeconds returns correct timestamp`() {
+    fun `getCrlValidity returns correct nextUpdate timestamp`() {
         val nextUpdate = Date(1_700_000_000_000L)
         val crlDer = buildCrlDer(nextUpdate = nextUpdate)
 
-        val result = handler.getCrlNextUpdateEpochSeconds(crlDer)
+        val result = handler.getCrlValidity(crlDer).nextUpdateEpochSeconds
 
         assertEquals(1_700_000_000L, result)
     }
 
     @Test
-    fun `getCrlNextUpdateEpochSeconds returns future timestamp for valid CRL`() {
+    fun `getCrlValidity returns thisUpdate and nextUpdate from a single parse`() {
+        val thisUpdate = Date(1_700_000_000_000L)
+        val nextUpdate = Date(1_700_086_400_000L)
+        val crlDer = buildCrlDer(thisUpdate = thisUpdate, nextUpdate = nextUpdate)
+
+        val result = handler.getCrlValidity(crlDer)
+
+        assertEquals(1_700_000_000L, result.thisUpdateEpochSeconds)
+        assertEquals(1_700_086_400L, result.nextUpdateEpochSeconds)
+    }
+
+    @Test
+    fun `getCrlValidity returns future nextUpdate for valid CRL`() {
         val nextUpdate = Date(System.currentTimeMillis() + 7 * 86_400_000)
         val crlDer = buildCrlDer(nextUpdate = nextUpdate)
 
-        val result = handler.getCrlNextUpdateEpochSeconds(crlDer)
+        val result = handler.getCrlValidity(crlDer).nextUpdateEpochSeconds
 
         assertNotNull(result)
         assertTrue(result > System.currentTimeMillis() / 1000)
     }
 
     @Test
-    fun `getCrlNextUpdateEpochSeconds returns past timestamp for expired CRL`() {
+    fun `getCrlValidity returns past nextUpdate for expired CRL`() {
         val nextUpdate = Date(System.currentTimeMillis() - 86_400_000)
         val crlDer = buildCrlDer(nextUpdate = nextUpdate)
 
-        val result = handler.getCrlNextUpdateEpochSeconds(crlDer)
+        val result = handler.getCrlValidity(crlDer).nextUpdateEpochSeconds
 
         assertNotNull(result)
         assertTrue(result < System.currentTimeMillis() / 1000)
     }
 
     @Test
-    fun getThisUpdateEpochSeconds_throws_whenNoSingleResponsePresent() {
+    fun getOcspValidity_throws_whenNoSingleResponsePresent() {
         // A response with no addResponse(...) call at all — zero SingleResponse entries.
         val respBuilder = BasicOCSPRespBuilder(RespID(JcaX509CertificateHolder(caCert).subject))
         val signer = JcaContentSignerBuilder("SHA256WithECDSA").setProvider("BC").build(caKeyPair.private)
@@ -438,30 +452,33 @@ class RevocationHandlerTest {
         val ocspDer = OCSPRespBuilder().build(OCSPRespBuilder.SUCCESSFUL, basicResp).encoded
 
         assertFailsWith<IllegalStateException> {
-            handler.getThisUpdateEpochSeconds(ocspDer)
+            handler.getOcspValidity(ocspDer, leafCert.encoded, caCert.encoded)
         }
     }
 
     @Test
-    fun getThisUpdateEpochSeconds_throws_whenDerIsMalformed() {
+    fun getOcspValidity_throws_whenDerIsMalformed() {
         val garbage = byteArrayOf(0x00, 0x01, 0x02, 0x03)
 
         assertFailsWith<Exception> {
-            handler.getThisUpdateEpochSeconds(garbage)
+            handler.getOcspValidity(garbage, leafCert.encoded, caCert.encoded)
         }
     }
 
     @Test
-    fun getThisUpdateEpochSeconds_truncatesToWholeSeconds_whenSubSecondPrecisionPresent() {
+    fun getOcspValidity_truncatesToWholeSeconds_whenSubSecondPrecisionPresent() {
         // Date only has millisecond precision — verify the conversion floors to the second, not rounds.
         val thisUpdate = Date(1_700_000_000_500L) // .5 seconds past the whole second
         val ocspDer = buildOcspResponseDer(leafCert, thisUpdate = thisUpdate)
 
-        assertEquals(1_700_000_000L, handler.getThisUpdateEpochSeconds(ocspDer))
+        assertEquals(
+            1_700_000_000L,
+            handler.getOcspValidity(ocspDer, leafCert.encoded, caCert.encoded).thisUpdateEpochSeconds,
+        )
     }
 
     @Test
-    fun getThisUpdateEpochSeconds_returnsFirstResponse_whenMultipleResponsesPresent() {
+    fun getOcspValidity_takesBothValuesFromResponseMatchingCertSerial_whenMultipleResponsesPresent() {
         val digestCalcProvider = JcaDigestCalculatorProviderBuilder().setProvider("BC").build()
         val issuerHolder = JcaX509CertificateHolder(caCert)
         val respBuilder = BasicOCSPRespBuilder(RespID(issuerHolder.subject))
@@ -488,21 +505,26 @@ class RevocationHandlerTest {
         val basicResp = respBuilder.build(signer, arrayOf(JcaX509CertificateHolder(caCert)), Date())
         val ocspDer = OCSPRespBuilder().build(OCSPRespBuilder.SUCCESSFUL, basicResp).encoded
 
-        assertEquals(1_700_000_000L, handler.getThisUpdateEpochSeconds(ocspDer))
+        // Both values must come from the entry for the certificate under test, not from
+        // the first entry for thisUpdate and the matching one for nextUpdate.
+        val result = handler.getOcspValidity(ocspDer, revokedCert.encoded, caCert.encoded)
+
+        assertEquals(1_800_000_000L, result.thisUpdateEpochSeconds)
+        assertEquals(1_800_086_400L, result.nextUpdateEpochSeconds)
     }
 
     @Test
-    fun getThisUpdateEpochSeconds_returnsZero_whenThisUpdateIsAtEpoch() {
+    fun getOcspValidity_returnsZero_whenThisUpdateIsAtEpoch() {
         val ocspDer = buildOcspResponseDer(leafCert, thisUpdate = Date(0L))
 
-        assertEquals(0L, handler.getThisUpdateEpochSeconds(ocspDer))
+        assertEquals(0L, handler.getOcspValidity(ocspDer, leafCert.encoded, caCert.encoded).thisUpdateEpochSeconds)
     }
 
     @Test
     fun validate_passes_whenSignerIsTheIssuerItself() {
         // signerCert defaults to caCert in buildOcspResponseDer — this is the baseline "no delegation" case
         val ocspDer = buildOcspResponseDer(leafCert, signerKey = caKeyPair.private, signerCert = caCert)
-        handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+        handler.validate(ocspDer, leafCert.encoded, caCert.encoded, now)
     }
 
     @Test
@@ -517,7 +539,7 @@ class RevocationHandlerTest {
             signerCert = delegatedCert,
         )
 
-        handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+        handler.validate(ocspDer, leafCert.encoded, caCert.encoded, now)
     }
 
     @Test
@@ -533,7 +555,7 @@ class RevocationHandlerTest {
         )
 
         assertFailsWith<IllegalArgumentException> {
-            handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+            handler.validate(ocspDer, leafCert.encoded, caCert.encoded, now)
         }
     }
 
@@ -555,7 +577,7 @@ class RevocationHandlerTest {
         )
 
         assertFailsWith<IllegalArgumentException> {
-            handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+            handler.validate(ocspDer, leafCert.encoded, caCert.encoded, now)
         }
     }
 
@@ -578,7 +600,7 @@ class RevocationHandlerTest {
         )
 
         assertFailsWith<IllegalArgumentException> {
-            handler.validate(ocspDer, leafCert.encoded, caCert.encoded)
+            handler.validate(ocspDer, leafCert.encoded, caCert.encoded, now)
         }
     }
 

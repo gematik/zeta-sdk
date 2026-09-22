@@ -43,6 +43,8 @@ import kotlinx.coroutines.withTimeout
 import platform.Foundation.NSURL
 import platform.SafariServices.SFSafariViewController
 import platform.UIKit.UIApplication
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 import kotlin.time.Duration.Companion.milliseconds
 
 public actual class BrowserLauncher actual constructor(
@@ -90,7 +92,14 @@ public actual class BrowserLauncher actual constructor(
             withTimeout(DEFAULT_CALLBACK_TIMEOUT_MILLIS.milliseconds) { deferred.await() }
         } finally {
             withContext(NonCancellable + Dispatchers.Main) {
-                safariViewController?.dismissViewControllerAnimated(true, completion = null)
+                // Wait for the dismissal transition to finish. UIKit drops a presentation that starts
+                // while another transition is still running, which silently loses the OTP dialog that
+                // the token flow puts on screen right after this call returns.
+                safariViewController?.let { controller ->
+                    suspendCoroutine { continuation ->
+                        controller.dismissViewControllerAnimated(true) { continuation.resume(Unit) }
+                    }
+                }
                 safariViewController = null
                 server?.stop(500, 1000)
                 server = null

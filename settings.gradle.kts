@@ -16,7 +16,7 @@ pluginManagement {
     }
 
     plugins {
-        id("co.touchlab.skie") version "0.10.10"
+        id("co.touchlab.skie") version "0.10.14"
     }
 }
 

@@ -27,6 +27,7 @@ package de.gematik.zeta.sdk.flow
 import de.gematik.zeta.sdk.flow.RequestEvaluatorImplTest.FakeForwardingClient
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -80,6 +81,7 @@ class ResponseEvaluatorImplTest {
             ResourceScope("", emptyList()),
             FakeForwardingClient(),
             storage,
+            clock = SystemZetaClock,
         )
 
         // Act
@@ -448,6 +450,7 @@ class ResponseEvaluatorImplTest {
             ResourceScope("", emptyList()),
             FakeForwardingClient(),
             storage,
+            clock = SystemZetaClock,
         )
 
     private suspend fun responseWith(

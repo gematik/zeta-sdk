@@ -28,7 +28,7 @@ import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.storage.ExtendedStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.storage.SdkStorage
-import kotlin.time.Clock
+import de.gematik.zeta.time.ZetaClock
 
 interface TpmStorage {
     suspend fun saveClientKeys(publicKey: String, privateKey: String)
@@ -46,6 +46,7 @@ interface TpmStorage {
 class TpmStorageImpl(
     storage: SdkStorage,
     resourceScope: ResourceScope,
+    val clock: ZetaClock,
 ) : TpmStorage {
     private val extended = ExtendedStorage(storage, resourceScope)
 
@@ -66,7 +67,7 @@ class TpmStorageImpl(
             mapOf(
                 PREFIX_CLIENT_PUBLIC to publicKey,
                 PREFIX_CLIENT_PRIVATE to privateKey,
-                PREFIX_CLIENT_TS to Clock.System.now().toString(),
+                PREFIX_CLIENT_TS to clock.now().toString(),
             ),
         )
     }

@@ -27,6 +27,8 @@ package de.gematik.zeta.sdk.configuration
 import de.gematik.zeta.sdk.storage.ExtendedStorage.Companion.hash
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
+import de.gematik.zeta.time.SystemZetaClock
+import de.gematik.zeta.time.ZetaClock
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.SerializationException
 import kotlin.test.Test
@@ -45,7 +47,7 @@ import kotlin.time.Instant
 class ConfigurationStorageTest {
 
     private fun buildStorage(
-        clock: Clock = Clock.System,
+        clock: ZetaClock = SystemZetaClock,
         sdk: InMemoryStorage = InMemoryStorage(),
         fqdn: String = "https://api.example.com",
         scope: String = "scope-a",
@@ -839,6 +841,7 @@ class ConfigurationStorageTest {
         val storage = ConfigurationStorageImpl(
             sdk,
             scope,
+            clock = SystemZetaClock,
         )
 
         // Act
@@ -905,6 +908,7 @@ class ConfigurationStorageTest {
         val storage = ConfigurationStorageImpl(
             sdk,
             scope,
+            clock = SystemZetaClock,
         )
 
         sdk.put(
@@ -950,6 +954,7 @@ class ConfigurationStorageTest {
         val storage = ConfigurationStorageImpl(
             sdkStorage = sdk,
             resourceScope = scope,
+            clock = SystemZetaClock,
         )
 
         sdk.put(
@@ -1011,7 +1016,7 @@ class ConfigurationStorageTest {
 
     private class TestClock(
         private var epochSeconds: Long = 1_000_000L,
-    ) : Clock {
+    ) : ZetaClock {
 
         override fun now(): Instant =
             Instant.fromEpochSeconds(epochSeconds)

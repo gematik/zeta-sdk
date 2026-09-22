@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
 
+  <!--
+    Revocation checks fetch CRL/OCSP over plain HTTP by design, which Android blocks by default
+    since API 28.
+  -->
+  <base-config cleartextTrafficPermitted="true">
+
+  </base-config>
+
 </network-security-config>

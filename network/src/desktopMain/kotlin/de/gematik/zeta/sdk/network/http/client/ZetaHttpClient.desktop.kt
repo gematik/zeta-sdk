@@ -35,6 +35,7 @@ import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaCipherSuites
 import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaSignatureAlgorithms
 import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaTlsCurves
 import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaTlsValidator
+import de.gematik.zeta.time.ZetaClock
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.ProxyBuilder
@@ -56,7 +57,6 @@ import io.ktor.utils.io.core.toByteArray
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.staticCFunction
 import kotlinx.coroutines.runBlocking
-import kotlin.time.Clock
 
 @OptIn(ExperimentalForeignApi::class)
 private fun initZetaRevocationCallback(
@@ -106,7 +106,7 @@ internal actual fun buildPlatformClient(
 
     return HttpClient(Curl) {
         engine {
-            applyTlsConfig(cfg.security)
+            applyTlsConfig(cfg.security, dependencies)
             applyProxyConfig(cfg.network.proxyConfig)
         }
         install(WebSockets)
@@ -114,7 +114,7 @@ internal actual fun buildPlatformClient(
     }
 }
 
-private fun CurlClientEngineConfig.applyTlsConfig(security: SecurityConfig) {
+private fun CurlClientEngineConfig.applyTlsConfig(security: SecurityConfig, dependencies: HttpClientDependencies) {
     Log.d { "[ZETA-TLS] applyTlsConfig: disableServerValidation=${security.disableServerValidation} additionalCaPem=${security.additionalCaPem.size} items additionalCaFile=${security.additionalCaFile}" }
 
     sslVerify = !security.disableServerValidation
@@ -149,12 +149,17 @@ private fun CurlClientEngineConfig.applyTlsConfig(security: SecurityConfig) {
         sslEcCurves = ZetaTlsCurves.ALLOWED.joinToString(":")
         sslSignatureAlgorithms = ZetaSignatureAlgorithms.ALLOWED.joinToString(":")
         tlsValidationConfig = TlsValidationConfig(
-            onSessionValidated = ::validateSession,
+            onSessionValidated = { sessionData ->
+                validateSession(
+                    sessionData = sessionData,
+                    clock = dependencies.clock,
+                )
+            },
         )
     }
 }
 
-internal fun validateSession(sessionData: TlsSessionData): PendingRevocationData? {
+internal fun validateSession(sessionData: TlsSessionData, clock: ZetaClock): PendingRevocationData? {
     Log.d { "[ZETA-TLS] validateSession: host=${sessionData.host} protocol=${sessionData.protocol} cipher=${sessionData.cipherSuite}" }
 
     val leafCertInfo = sessionData.leafCertInfo ?: run {
@@ -174,10 +179,10 @@ internal fun validateSession(sessionData: TlsSessionData): PendingRevocationData
     val certResult = leafCertInfo.fullChain?.let { chain ->
         ZetaCertificateValidator.validateChain(
             chain.map { it.toZetaCertInfo() },
-            Clock.System.now().epochSeconds,
+            clock.now().epochSeconds,
             sessionData.host,
         )
-    } ?: ZetaCertificateValidator.validate(leafCertInfo.toZetaCertInfo(), Clock.System.now().epochSeconds, sessionData.host)
+    } ?: ZetaCertificateValidator.validate(leafCertInfo.toZetaCertInfo(), clock.now().epochSeconds, sessionData.host)
 
     Log.d { "[ZETA-TLS] certResult: valid=${certResult.isValid} errors=${certResult.errors}" }
 

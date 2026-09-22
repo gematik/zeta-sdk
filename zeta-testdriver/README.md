@@ -21,11 +21,6 @@ curl -X POST http://localhost:8080/oidc/collect-email \
 -H "Content-Type: application/json" \
 -d '{"email": "zeta@mailgun.com"}'
 
-# Set KVNR (re-authenticates as the new identity on next request)
-curl -X POST http://localhost:8080/testdriver-api/kvnr \
--H "Content-Type: application/json" \
--d '{"kvnr": "X110411675"}'
-
 # Notifications (push pusher/channel management)
 
 # Register a pusher (device_display_name and data are required by the Notification Service;

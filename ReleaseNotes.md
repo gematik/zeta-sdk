@@ -1,7 +1,7 @@
 
 # RELEASE NOTES
 
-## Version: v1.3.0
+## Version: v1.3.2
 
 This version implements the ZETA protocol for the ZETA client SDK.
 
@@ -57,11 +57,29 @@ runtime environments.
 
 ### Known issues:
 
-- Android devices currently supported from API >= 37 (due to change in Android crypto API.
-  Will be fixed in the following release)
 - TLS validation is not fully implemented on iOS
 - The SDK does not fully handle paths parts in the AS well-known URL. The AS well-known is defined
   as on the root path, so this is WONTFIX.
+
+
+## Changes in 1.3.2 (from 1.3.0)
+
+### New Features
+
+- Updated Gradle dependencies to the latest compatible versions.
+- Refactored time handling across the SDK by introducing the ZetaClock interface,
+ allowing a custom clock implementation to be injected.
+
+### Behavioural Changes
+
+- N/A
+
+### Bug Fixes
+
+- Added support for extracting stapled OCSP responses on Android API levels below 37.
+- ANFTI2-915 / ANFTI2-781: Updated ktor-client-fork with upstream changes to resolve reported WebSocket issues.
+- ANFTI2-889: Updated the RevocationChecker HTTP client to use the configured SDK HTTP settings, including proxy and timeout configuration.
+- Fixed OCSP stapled-response handling to comply with A_27379-01.
 
 ## Changes in 1.3.0 (from 1.2.5)
 

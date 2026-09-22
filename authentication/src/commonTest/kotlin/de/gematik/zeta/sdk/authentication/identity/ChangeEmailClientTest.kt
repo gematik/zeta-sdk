@@ -26,6 +26,7 @@ package de.gematik.zeta.sdk.authentication.identity
 
 import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestData
@@ -147,6 +148,7 @@ class ChangeEmailClientTest {
         val client = ChangeEmailClient(
             httpClient = ZetaHttpClientBuilder().build(engine),
             tpmProvider = FakeTpmProvider(kid, uuid),
+            clock = { SystemZetaClock.now().epochSeconds },
         )
 
         val response = client.changeEmail(issuer, clientId, newEmail)

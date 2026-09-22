@@ -36,3 +36,5 @@ ktlint_standard_statement-wrapping = disabled
 ktlint_standard_string-template-indent = disabled
 ktlint_standard_class-signature = disabled
 ktlint_standard_function-expression-body = disabled
+ktlint_standard_blank-line-between-when-conditions = disabled
+ktlint_standard_kdoc = disabled

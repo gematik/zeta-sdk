@@ -24,6 +24,9 @@
 
 package de.gematik.zeta.sdk.network.http.client
 
+import de.gematik.zeta.time.ZetaClock
+
 public data class HttpClientDependencies(
     val revocationChecker: RevocationChecker? = null,
+    val clock: ZetaClock,
 )

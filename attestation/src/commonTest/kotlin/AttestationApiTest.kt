@@ -37,6 +37,7 @@ import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.tpm.Tpm
 import de.gematik.zeta.sdk.tpm.TpmProvider
 import de.gematik.zeta.sdk.tpm.TpmStorageImpl
+import de.gematik.zeta.time.SystemZetaClock
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -76,8 +77,7 @@ class AttestationApiTest {
         val productId = "demo-product"
         val productVersion = "0.2.0"
         val aud = "https://zeta-test.de/token"
-
-        val api = AttestationApiImpl(Tpm.provider(TpmStorageImpl(InMemoryStorage(), ResourceScope("", emptyList()))), { fixedUuid })
+        val api = AttestationApiImpl(Tpm.provider(TpmStorageImpl(InMemoryStorage(), ResourceScope("", emptyList()), clock = SystemZetaClock)), { fixedUuid }, clockEpochSeconds = { SystemZetaClock.now().epochSeconds })
         val jwt = api.createClientAssertion(
             productId = productId,
             productVersion = productVersion,
@@ -102,7 +102,7 @@ class AttestationApiTest {
         val productVersion = "0.2.0"
         val aud = "https://zeta-test.de/token"
 
-        val api = AttestationApiImpl(Tpm.provider(TpmStorageImpl(InMemoryStorage(), ResourceScope("", emptyList()))), { fixedUuid })
+        val api = AttestationApiImpl(Tpm.provider(TpmStorageImpl(InMemoryStorage(), ResourceScope("", emptyList()), clock = SystemZetaClock)), { fixedUuid }, clockEpochSeconds = { SystemZetaClock.now().epochSeconds })
         val jwt = api.createClientAssertion(
             productId = productId,
             productVersion = productVersion,
@@ -129,7 +129,7 @@ class AttestationApiTest {
         val productId = "demo_product"
         val productVersion = "0.2.0"
 
-        val api = AttestationApiImpl(Tpm.provider(TpmStorageImpl(InMemoryStorage(), ResourceScope("", emptyList()))), { fixedUuid })
+        val api = AttestationApiImpl(Tpm.provider(TpmStorageImpl(InMemoryStorage(), ResourceScope("", emptyList()), clock = SystemZetaClock)), { fixedUuid }, clockEpochSeconds = { SystemZetaClock.now().epochSeconds })
         val jwt = api.createClientAssertion(
             productId = productId,
             productVersion = productVersion,

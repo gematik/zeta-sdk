@@ -54,6 +54,7 @@ import de.gematik.zeta.sdk.crypto.openssl.OPENSSL_STACK
 import de.gematik.zeta.sdk.crypto.openssl.OPENSSL_sk_num
 import de.gematik.zeta.sdk.crypto.openssl.OPENSSL_sk_value
 import de.gematik.zeta.sdk.crypto.openssl.V_OCSP_CERTSTATUS_GOOD
+import de.gematik.zeta.sdk.crypto.openssl.V_OCSP_CERTSTATUS_REVOKED
 import de.gematik.zeta.sdk.crypto.openssl.X509
 import de.gematik.zeta.sdk.crypto.openssl.X509_CRL_free
 import de.gematik.zeta.sdk.crypto.openssl.X509_CRL_get0_by_cert
@@ -92,12 +93,17 @@ import kotlinx.cinterop.toKString
 import kotlinx.cinterop.value
 import platform.posix.mktime
 import platform.posix.tm
+import kotlin.time.Instant
 
 @OptIn(ExperimentalForeignApi::class, UnsafeNumber::class)
 actual class RevocationHandlerImpl : RevocationHandler {
     val failedToParseIssuerErrorMessage = "Failed to parse issuer"
     val failedToParseCertificateErrorMessage = "Failed to parse certificate"
-    actual override fun getThisUpdateEpochSeconds(ocspResponseDer: ByteArray): Long = memScoped {
+    actual override fun getOcspValidity(
+        ocspResponseDer: ByteArray,
+        certDer: ByteArray,
+        issuerDer: ByteArray,
+    ): OcspValidity = memScoped {
         val pData = alloc<CPointerVar<UByteVar>>()
         pData.value = ocspResponseDer.refTo(0).getPointer(this).reinterpret()
 
@@ -115,7 +121,10 @@ actual class RevocationHandlerImpl : RevocationHandler {
                 val timeStr = ASN1_STRING_get0_data(producedAt.reinterpret())?.reinterpret<ByteVar>()?.toKString()
                     ?: error("Failed to get time string")
 
-                parseGeneralizedTime(timeStr)
+                OcspValidity(
+                    thisUpdateEpochSeconds = parseGeneralizedTime(timeStr),
+                    nextUpdateEpochSeconds = nextUpdateEpochSeconds(basicResp, certDer, issuerDer),
+                )
             } finally {
                 OCSP_BASICRESP_free(basicResp)
             }
@@ -124,78 +133,52 @@ actual class RevocationHandlerImpl : RevocationHandler {
         }
     }
 
-    actual override fun getNextUpdateEpochSeconds(
-        ocspResponseDer: ByteArray,
+    private fun MemScope.nextUpdateEpochSeconds(
+        basicResp: CPointer<*>,
         certDer: ByteArray,
         issuerDer: ByteArray,
-    ): Long? = memScoped {
-        val pData = alloc<CPointerVar<UByteVar>>()
-        pData.value = ocspResponseDer.refTo(0).getPointer(this).reinterpret()
+    ): Long? {
+        val pCert = alloc<CPointerVar<UByteVar>>()
+        pCert.value = certDer.refTo(0).getPointer(this).reinterpret()
+        val cert = d2i_X509(null, pCert.ptr, certDer.size.convert())
+            ?: error(failedToParseCertificateErrorMessage)
 
-        val ocspResp = d2i_OCSP_RESPONSE(null, pData.ptr, ocspResponseDer.size.convert())
-            ?: error("Failed to parse OCSP response")
+        val pIssuer = alloc<CPointerVar<UByteVar>>()
+        pIssuer.value = issuerDer.refTo(0).getPointer(this).reinterpret()
+        val issuer = d2i_X509(null, pIssuer.ptr, issuerDer.size.convert())
+            ?: error(failedToParseIssuerErrorMessage)
 
         try {
-            val basicResp = OCSP_response_get1_basic(ocspResp)
-                ?: error("Failed to get basic OCSP response")
+            val certId = OCSP_cert_to_id(null, cert, issuer)
+                ?: error("Failed to create certificate ID")
 
             try {
-                val pCert = alloc<CPointerVar<UByteVar>>()
-                pCert.value = certDer.refTo(0).getPointer(this).reinterpret()
-                val cert = d2i_X509(null, pCert.ptr, certDer.size.convert())
-                    ?: error(failedToParseCertificateErrorMessage)
+                val statusPtr = alloc<IntVar>()
+                val reasonPtr = alloc<IntVar>()
+                val revTimePtr = allocPointerTo<ASN1_GENERALIZEDTIME>()
+                val thisUpdPtr = allocPointerTo<ASN1_GENERALIZEDTIME>()
+                val nextUpdPtr = allocPointerTo<ASN1_GENERALIZEDTIME>()
 
-                val pIssuer = alloc<CPointerVar<UByteVar>>()
-                pIssuer.value = issuerDer.refTo(0).getPointer(this).reinterpret()
-                val issuer = d2i_X509(null, pIssuer.ptr, issuerDer.size.convert())
-                    ?: error(failedToParseIssuerErrorMessage)
+                val found = OCSP_resp_find_status(
+                    basicResp.reinterpret(),
+                    certId,
+                    statusPtr.ptr,
+                    reasonPtr.ptr,
+                    revTimePtr.ptr,
+                    thisUpdPtr.ptr,
+                    nextUpdPtr.ptr,
+                )
+                check(found == 1) { "No OCSP single response for this certificate" }
 
-                try {
-                    val certId = OCSP_cert_to_id(null, cert, issuer)
-                        ?: error("Failed to create certificate ID")
-
-                    try {
-                        val statusPtr = alloc<IntVar>()
-                        val reasonPtr = alloc<IntVar>()
-                        val revTimePtr = allocPointerTo<ASN1_GENERALIZEDTIME>()
-                        val thisUpdPtr = allocPointerTo<ASN1_GENERALIZEDTIME>()
-                        val nextUpdPtr = allocPointerTo<ASN1_GENERALIZEDTIME>()
-
-                        val found = OCSP_resp_find_status(
-                            basicResp,
-                            certId,
-                            statusPtr.ptr,
-                            reasonPtr.ptr,
-                            revTimePtr.ptr,
-                            thisUpdPtr.ptr,
-                            nextUpdPtr.ptr,
-                        )
-
-                        if (found != 1) {
-                            return@memScoped null
-                        }
-
-                        val nextUpdate = nextUpdPtr.value
-                            ?: return@memScoped null
-
-                        val timeStr = ASN1_STRING_get0_data(nextUpdate.reinterpret())
-                            ?.reinterpret<ByteVar>()
-                            ?.toKString()
-                            ?: return@memScoped null
-
-                        parseGeneralizedTime(timeStr)
-                    } finally {
-                        OCSP_CERTID_free(certId)
-                    }
-                } finally {
-                    X509_free(cert)
-                    X509_free(issuer)
-                }
+                return nextUpdPtr.value
+                    ?.let { ASN1_STRING_get0_data(it.reinterpret())?.reinterpret<ByteVar>()?.toKString() }
+                    ?.let { parseGeneralizedTime(it) }
             } finally {
-                OCSP_BASICRESP_free(basicResp)
+                OCSP_CERTID_free(certId)
             }
         } finally {
-            OCSP_RESPONSE_free(ocspResp)
+            X509_free(cert)
+            X509_free(issuer)
         }
     }
 
@@ -203,6 +186,7 @@ actual class RevocationHandlerImpl : RevocationHandler {
         ocspResponseDer: ByteArray,
         certDer: ByteArray,
         issuerDer: ByteArray,
+        now: Instant,
     ) = memScoped {
         val pData = alloc<CPointerVar<UByteVar>>()
         pData.value = ocspResponseDer.refTo(0).getPointer(this).reinterpret()
@@ -252,7 +236,12 @@ actual class RevocationHandlerImpl : RevocationHandler {
 
                         val found = OCSP_resp_find_status(basicResp, certId, statusPtr.ptr, reasonPtr.ptr, revTimePtr.ptr, thisUpdPtr.ptr, nextUpdPtr.ptr)
                         require(found == 1) { "Certificate not found in OCSP response" }
-                        require(statusPtr.value == V_OCSP_CERTSTATUS_GOOD) { "Certificate revoked" }
+                        if (statusPtr.value == V_OCSP_CERTSTATUS_REVOKED) {
+                            throw CertificateRevokedException("Certificate is REVOKED (reason code ${reasonPtr.value})")
+                        }
+                        require(statusPtr.value == V_OCSP_CERTSTATUS_GOOD) {
+                            "OCSP status for this certificate is not GOOD: ${statusPtr.value}"
+                        }
                     } finally {
                         OCSP_CERTID_free(certId)
                     }
@@ -382,7 +371,7 @@ actual class RevocationHandlerImpl : RevocationHandler {
         return null
     }
 
-    actual override fun validateCrl(crlDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray) = memScoped {
+    actual override fun validateCrl(crlDer: ByteArray, certDer: ByteArray, issuerDer: ByteArray, now: Instant) = memScoped {
         val pCrl = alloc<CPointerVar<UByteVar>>()
         pCrl.value = crlDer.refTo(0).getPointer(this).reinterpret()
         val crl = d2i_X509_CRL(null, pCrl.ptr, crlDer.size.convert())
@@ -411,7 +400,9 @@ actual class RevocationHandlerImpl : RevocationHandler {
                 }
 
                 val revoked = X509_CRL_get0_by_cert(crl, null, cert)
-                require(revoked == 0) { "Certificate is REVOKED" }
+                if (revoked != 0) {
+                    throw CertificateRevokedException("Certificate is REVOKED")
+                }
 
                 Log.i { "Certificate not found in CRL - status OK" }
             } finally {
@@ -423,7 +414,7 @@ actual class RevocationHandlerImpl : RevocationHandler {
         }
     }
 
-    actual override fun getCrlNextUpdateEpochSeconds(crlDer: ByteArray): Long? {
+    actual override fun getCrlValidity(crlDer: ByteArray): CrlValidity {
         // https://ey-fp-dev.atlassian.net/browse/ZETAP-1725
         TODO("Not yet implemented")
     }

@@ -30,16 +30,13 @@ import de.gematik.zeta.client.di.DIContainer
 import de.gematik.zeta.client.model.PrescriptionModel
 import de.gematik.zeta.client.ui.common.mvi.MviState
 import de.gematik.zeta.client.ui.common.mvi.MviViewModel
+import de.gematik.zeta.time.SystemZetaClock
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.update
-import kotlin.time.Clock
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
-import kotlin.time.DurationUnit
-import kotlin.time.Instant
 
 @OptIn(ExperimentalReactiveStateApi::class)
 public class AddPrescriptionViewModel(
@@ -86,7 +83,7 @@ private val SAMPLE_MODEL = PrescriptionModel(
     practitionerId = "PRAC-98765",
     medicationName = "Ibuprofen 400 mg",
     dosage = "1",
-    issuedAt = Clock.System.now().toString(),
-    expiresAt = Clock.System.now().plus(10.days).toString(),
+    issuedAt = SystemZetaClock.now().toString(),
+    expiresAt = SystemZetaClock.now().plus(10.days).toString(),
     status = "CREATED",
 )

@@ -53,6 +53,7 @@ import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.storage.SdkStorage
 import de.gematik.zeta.sdk.tpm.TpmProvider
+import de.gematik.zeta.time.SystemZetaClock
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestBuilder
@@ -524,6 +525,7 @@ fun createContext(
     client = FakeForwardingClient(),
     storage = storage,
     configurationStorage = FakeConfigurationStorage(),
+    clock = SystemZetaClock,
     clientRegistrationStorage = clientRegistrationStorage,
 )
 

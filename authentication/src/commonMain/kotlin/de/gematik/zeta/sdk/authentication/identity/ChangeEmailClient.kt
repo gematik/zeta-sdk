@@ -35,7 +35,6 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.serialization.json.Json
-import kotlin.time.Clock
 
 /**
  * Client for the guard's identity endpoint that changes the email address bound to this client.
@@ -44,7 +43,7 @@ import kotlin.time.Clock
 class ChangeEmailClient(
     private val httpClient: ZetaHttpClient,
     tpmProvider: TpmProvider,
-    clock: () -> Long = { Clock.System.now().epochSeconds },
+    clock: () -> Long,
 ) {
     private val assertionFactory = IdentityClientAssertionFactory(tpmProvider, clock)
     private val json = Json { ignoreUnknownKeys = true }

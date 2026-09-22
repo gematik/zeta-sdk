@@ -29,7 +29,6 @@ import de.gematik.zeta.sdk.network.http.client.config.ClientConfig
 import de.gematik.zeta.sdk.network.http.client.config.ProxyConfig
 import de.gematik.zeta.sdk.network.http.client.config.ProxyType
 import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaCipherSuites
-import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaTlsProtocols.TLS_1_2
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.okhttp.OkHttp
@@ -73,6 +72,13 @@ internal expect fun createPlatformSslSocketFactory(base: SSLSocketFactory): SSLS
  * Extract the stapled OCSP response from the TLS [session] using a platform-specific strategy.
  */
 internal expect fun extractStaple(session: SSLSession): ByteArray?
+
+/**
+ * Create the [SSLContext] that backs the SDK's TLS stack, using a platform-specific provider.
+ * Android builds it from a bundled Conscrypt provider so that the stapled OCSP response is
+ * readable on every supported API level; the JVM uses the platform default.
+ */
+internal expect fun createPlatformSslContext(): SSLContext
 
 /**
  * Builds an OkHttp-backed [HttpClient] shared by JVM and Android.
@@ -158,9 +164,10 @@ private fun buildSecureTls(cfg: ClientConfig, dependencies: HttpClientDependenci
     val zetaTrustManager = ZetaTrustManager(
         delegate = baseTrustManager,
         revocationChecker = dependencies.revocationChecker,
+        clock = dependencies.clock,
     )
 
-    val sslContext = SSLContext.getInstance(TLS_1_2).apply {
+    val sslContext = createPlatformSslContext().apply {
         init(null, arrayOf<TrustManager>(zetaTrustManager), SecureRandom())
     }
 
