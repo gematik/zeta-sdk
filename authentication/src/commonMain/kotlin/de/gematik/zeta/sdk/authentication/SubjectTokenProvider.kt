@@ -41,6 +41,8 @@ class OidcTokenProvider(val config: OidcConfig) : AuthTokenProvider {
     lateinit var resolveBindEmailEndpoint: suspend () -> String
     lateinit var resolveVerifyEmailEndpoint: suspend () -> String
     lateinit var resolveResendEmailEndpoint: suspend () -> String
+    lateinit var resolveAuthorizationEndpoint: suspend () -> String
+    lateinit var resolveBrokerEndpoint: suspend () -> String
 }
 
 fun interface SubjectTokenProvider : AuthTokenProvider {

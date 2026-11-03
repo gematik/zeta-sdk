@@ -122,12 +122,48 @@ class RevocationClosesConnectionJvmTest {
         }
     }
 
+    @Test
+    fun connect_tls12NoSanAndHostInCommonName_requestReachesServer() = runTest {
+        assertCommonNameFallbackAccepted(protocol = "TLSv1.2")
+    }
+
+    @Test
+    fun connect_tls13NoSanAndHostInCommonName_requestReachesServer() = runTest {
+        assertCommonNameFallbackAccepted(protocol = "TLSv1.3")
+    }
+
+    @Test
+    fun connect_noSanAndCommonNameDoesNotMatchHost_closesConnectionBeforeSendingRequestData() = runTest {
+        val ca = generateCa()
+        val leaf = generateLeafCert(ca, san = null, commonName = "not-localhost")
+        withTestServer(leaf, listOf(ca.cert)) { server ->
+            val sdkClient = buildClient(server.port, trustedCa = ca, checker = passingRevocationChecker(), host = "localhost")
+
+            assertFailsWith<Exception> { sdkClient.get("/") }
+            assertNoDataReachedServer(server)
+        }
+    }
+
+    private suspend fun assertCommonNameFallbackAccepted(protocol: String) {
+        val ca = generateCa()
+        val leaf = generateLeafCert(ca, san = null, commonName = "localhost")
+        withTestServer(leaf, listOf(ca.cert), protocol) { server ->
+            val sdkClient = buildClient(server.port, trustedCa = ca, checker = passingRevocationChecker(), host = "localhost")
+
+            val response = sdkClient.get("/")
+
+            assertEquals(200, response.status.value)
+            assertEquals(protocol, server.awaitNegotiatedProtocol(timeoutMs = 3_000))
+        }
+    }
+
     private suspend fun withTestServer(
         leaf: Leaf,
         chain: List<X509Certificate>,
+        protocol: String = "TLSv1.2",
         block: suspend (TestTlsServer) -> Unit,
     ) {
-        val server = TestTlsServer(leaf, chain)
+        val server = TestTlsServer(leaf, chain, protocol)
         try {
             block(server)
         } finally {
@@ -135,8 +171,13 @@ class RevocationClosesConnectionJvmTest {
         }
     }
 
-    private fun buildClient(port: Int, trustedCa: Ca, checker: RevocationChecker): ZetaHttpClient =
-        ZetaHttpClientBuilder("https://127.0.0.1:$port")
+    private fun buildClient(
+        port: Int,
+        trustedCa: Ca,
+        checker: RevocationChecker,
+        host: String = "127.0.0.1",
+    ): ZetaHttpClient =
+        ZetaHttpClientBuilder("https://$host:$port")
             .revocationChecker(checker)
             .addCaPem(trustedCa.cert.toPem())
             .build()
@@ -184,18 +225,17 @@ class RevocationClosesConnectionJvmTest {
         return Ca(sign(builder as JcaX509v3CertificateBuilder, keyPair), keyPair)
     }
 
-    private fun generateLeafCert(ca: Ca, san: String): Leaf {
+    private fun generateLeafCert(ca: Ca, san: String?, commonName: String? = san): Leaf {
         val keyPair = KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()
         val (now, notAfter) = validityWindow()
-        val subject = X500Name("CN=$san")
+        val subject = X500Name("CN=$commonName")
         val builder = JcaX509v3CertificateBuilder(
             X500Name("CN=Test Revoked CA"), BigInteger.valueOf(2), now, notAfter, subject, keyPair.public,
-        ).addExtension(
-            Extension.subjectAlternativeName,
-            false,
-            GeneralNames(generalNameFor(san)),
         )
-        return Leaf(sign(builder as JcaX509v3CertificateBuilder, ca.keyPair), keyPair)
+        if (san != null) {
+            builder.addExtension(Extension.subjectAlternativeName, false, GeneralNames(generalNameFor(san)))
+        }
+        return Leaf(sign(builder, ca.keyPair), keyPair)
     }
 
     private fun generalNameFor(san: String): GeneralName {
@@ -219,9 +259,12 @@ class RevocationClosesConnectionJvmTest {
             Base64.getMimeEncoder(64, "\n".toByteArray()).encodeToString(encoded) +
             "\n-----END CERTIFICATE-----\n"
 
-    private class TestTlsServer(leaf: Leaf, chain: List<X509Certificate>) {
+    private class TestTlsServer(leaf: Leaf, chain: List<X509Certificate>, protocol: String) {
         private val dataLatch = CountDownLatch(1)
         private val received = mutableListOf<Byte>()
+
+        @Volatile
+        private var negotiatedProtocol: String? = null
         private val serverSocket: SSLServerSocket
 
         val port: Int
@@ -233,9 +276,10 @@ class RevocationClosesConnectionJvmTest {
             }
             val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
                 .apply { init(keyStore, "test".toCharArray()) }
-            val sslContext = SSLContext.getInstance("TLSv1.2").apply { init(kmf.keyManagers, null, null) }
+            val sslContext = SSLContext.getInstance(protocol).apply { init(kmf.keyManagers, null, null) }
 
             serverSocket = sslContext.serverSocketFactory.createServerSocket(0) as SSLServerSocket
+            serverSocket.enabledProtocols = arrayOf(protocol)
             port = serverSocket.localPort
 
             Thread(::acceptOnce, "zeta-test-tls-server").apply { isDaemon = true; start() }
@@ -246,6 +290,7 @@ class RevocationClosesConnectionJvmTest {
                 (serverSocket.accept() as SSLSocket).use { socket ->
                     socket.soTimeout = 5_000
                     socket.startHandshake()
+                    negotiatedProtocol = socket.session.protocol
 
                     val buffer = ByteArray(4096)
                     val count = runCatching { socket.inputStream.read(buffer) }.getOrDefault(-1)
@@ -265,6 +310,11 @@ class RevocationClosesConnectionJvmTest {
         fun awaitReceivedBytes(timeoutMs: Long): ByteArray {
             dataLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
             return received.toByteArray()
+        }
+
+        fun awaitNegotiatedProtocol(timeoutMs: Long): String? {
+            dataLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
+            return negotiatedProtocol
         }
 
         fun stop() {

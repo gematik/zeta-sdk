@@ -25,13 +25,17 @@
 package de.gematik.zeta.sdk.authentication.oidc
 
 import de.gematik.zeta.logging.Log
+import de.gematik.zeta.sdk.attestation.AttestationStateStorage
 import de.gematik.zeta.sdk.authentication.AccessTokenParams
 import de.gematik.zeta.sdk.authentication.AuthenticationApi
 import de.gematik.zeta.sdk.authentication.AuthenticationStorage
 import de.gematik.zeta.sdk.authentication.OidcTokenProvider
 import de.gematik.zeta.sdk.authentication.RecoverableAuthenticationException
+import de.gematik.zeta.sdk.authentication.computeTokenExpirations
+import de.gematik.zeta.sdk.authentication.identity.models.ClientManagementScopes
 import de.gematik.zeta.sdk.crypto.hashWithSha256
 import io.ktor.http.Parameters
+import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -48,22 +52,19 @@ data class TokenIssuanceRequest(
 )
 
 /**
- * Interactive OIDC token issuance: PKCE + PAR, browser-based authorization via the
- * [AuthenticationCallback], authorization-code exchange at the token endpoint, and — for
- * mobile clients on first use — the email-binding sub-flow (`zeta:email-verify`).
- *
- * Endpoints are resolved lazily from the discovered issuer via the `resolve*Endpoint` lambdas,
- * so discovery must have run before [issue] is called.
+ * OIDC token issuance per Abb-ZETA-OIDC-Token-Bezug-mit-Identitaetsbindung: PAR, browser
+ * authorization, authorization-code exchange, the email-binding sub-flow while the registration
+ * is `pending_user_binding` (scope `zeta:email-binding`) and the RFC 8693 token exchange.
  */
 class OidcTokenIssuance(
     private val authApi: AuthenticationApi,
     private val authStorage: AuthenticationStorage,
-    private val authenticationCallback: AuthenticationCallback?,
     private val resolveParEndpoint: suspend () -> String,
     private val resolveBindEmailEndpoint: suspend () -> String,
     private val resolveResendEmailEndpoint: suspend () -> String,
     private val resolveVerifyEmailEndpoint: suspend () -> String,
     private val clock: () -> Long,
+    private val attestationState: AttestationStateStorage? = null,
 ) {
     companion object {
         private const val GRANT_TYPE_AUTHORIZATION_CODE = "authorization_code"
@@ -71,18 +72,23 @@ class OidcTokenIssuance(
         private const val CLIENT_ASSERTION_TYPE_JWT_BEARER = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
         private const val SUBJECT_TOKEN_TYPE_ACCESS_TOKEN = "urn:ietf:params:oauth:token-type:access_token"
         private const val REQUESTED_TOKEN_TYPE_REFRESH_TOKEN = "urn:ietf:params:oauth:token-type:refresh_token"
-        const val SCOPE_EMAIL_VERIFY = "zeta:email-verify"
         const val BINDING_MODE_COLLECT_EMAIL = "collect_email"
+        const val BINDING_MODE_VERIFY_OTP = "verify_otp"
         private const val CHALLENGE_TYPE_EMAIL_OTP = "email_otp"
         private const val BIND_STATUS_BOUND = "bound"
     }
 
-    /**
-     * Runs the authorization-code flow: PAR -> [authorize] (user logs in via browser) ->
-     * token request with DPoP and client assertion. Returns [TokenIssuanceResult.Issued] with
-     * the persisted access token, or [TokenIssuanceResult.EmailBindingRequired] when the token
-     * response scope contains `zeta:email-verify` — complete via [completeEmailBinding].
-     */
+    private suspend fun storeAttestationToken(token: String?) {
+        if (token == null) return
+        val state = attestationState
+        if (state == null) {
+            Log.d { "ZETA attestation token received but no attestation state configured" }
+            return
+        }
+        state.setZetaAttestationToken(token)
+        Log.i { "Stored ZETA attestation token for fast-path re-registration" }
+    }
+
     suspend fun issue(
         request: TokenIssuanceRequest,
         provider: OidcTokenProvider,
@@ -90,6 +96,9 @@ class OidcTokenIssuance(
         val verifier = generateCodeVerifier()
         val challenge = generateCodeChallenge(verifier)
         val state = generateState()
+        val authorizationEndpoint = provider.resolveAuthorizationEndpoint()
+        val brokerEndpoint = provider.resolveBrokerEndpoint()
+
         val requestUri = postPar(
             provider = provider,
             codeChallenge = challenge,
@@ -99,17 +108,21 @@ class OidcTokenIssuance(
         )
 
         val code = authorize(
+            provider = provider,
             clientId = request.params.clientId,
             requestUri = requestUri,
             expectedState = state,
+            authorizationEndpoint = authorizationEndpoint,
+            brokerEndpoint = brokerEndpoint,
         )
 
+        // Abb-ZETA-OIDC-Token-Bezug (09) POST /token grant_type=authorization_code
         val tokenRequest = OidcTokenRequest(
             grantType = GRANT_TYPE_AUTHORIZATION_CODE,
             clientId = request.params.clientId,
             requestedTokenType = REQUESTED_TOKEN_TYPE_REFRESH_TOKEN,
             scope = request.params.scopes.joinToString(" "),
-            appRedirectUri = provider.config.requestUriApp,
+            appRedirectUri = provider.config.redirectUri,
             nonce = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(request.nonce),
             code = code,
             codeVerifier = verifier,
@@ -122,20 +135,36 @@ class OidcTokenIssuance(
             authApi.requestOidcToken(request.tokenEndpoint, tokenRequest, request.dpopProvider(request.tokenEndpoint, null))
         }
         Log.d { "[AUTH-TIMING] OidcTokenIssuance requestOidcToken=$httpTime" }
+        Log.d {
+            "[OIDC] token response: scope=${resp.scope} binding_mode=${resp.bindingMode} email_hint=${resp.emailHint} " +
+                "refresh_token=${presence(resp.refreshToken)} zeta_attestation_token=${presence(resp.zetaAttestationToken)}"
+        }
 
-        if (isEmailVerificationPending(resp.scope)) {
+        // Abb-ZETA-OIDC-Token-Bezug (15) / (24) reduced E-Mail-Binding token, registration is pending_user_binding.
+        val bindingMode = resp.bindingMode
+        if (bindingMode != null) {
+            val requiredScope = requiredScopeFor(bindingMode)
+            check(requiredScope in scopes(resp.scope)) {
+                "binding_mode=$bindingMode requires scope $requiredScope (scope=${resp.scope})"
+            }
+            if (resp.refreshToken != null) Log.w { "E-Mail-Binding token response unexpectedly carries a refresh_token; ignoring it" }
             return TokenIssuanceResult.EmailBindingRequired(
                 bindingToken = resp.accessToken,
                 scope = resp.scope,
                 emailHint = resp.emailHint,
-                bindingMode = resp.bindingMode,
+                bindingMode = bindingMode,
             )
         }
+        check(!hasEmailBindingScope(resp.scope)) { "Token response has an E-Mail-Binding scope but no binding_mode (scope=${resp.scope})" }
 
+        // Abb-ZETA-OIDC-Token-Bezug (33) / (34) full tokens, registration already bound
         val refreshToken = resp.refreshToken
-            ?: error("Full OIDC token response missing refresh_token (scope=${resp.scope})")
+            ?: error("Token response has neither binding_mode nor a refresh_token (scope=${resp.scope})")
 
-        authStorage.saveAccessTokens(resp.accessToken, refreshToken, clock() + resp.expiresIn)
+        storeAttestationToken(resp.zetaAttestationToken)
+        val (accessExpiresAt, refreshExpiresAt) = computeTokenExpirations(clock(), resp.expiresIn, resp.refreshExpires)
+
+        authStorage.saveAccessTokens(resp.accessToken, refreshToken, accessExpiresAt, refreshExpiresAt)
         return TokenIssuanceResult.Issued(resp.accessToken)
     }
 
@@ -148,8 +177,8 @@ class OidcTokenIssuance(
     ): String {
         val parameters = Parameters.build {
             append("response_type", "code")
-            append("redirect_uri", provider.config.requestUriApp)
-            append("oidc_redirect_uri", provider.config.requestUriOidc)
+            append("redirect_uri", provider.config.redirectUri)
+            append("oidc_redirect_uri", provider.config.oidcRedirectUri)
             append("code_challenge", codeChallenge)
             append("code_challenge_method", "S256")
             append("scope", scope)
@@ -161,39 +190,42 @@ class OidcTokenIssuance(
         return authApi.requestPar(resolveParEndpoint(), parameters).requestUri
     }
 
-    internal suspend fun authorize(
+    suspend fun authorize(
+        provider: OidcTokenProvider,
         clientId: String,
         requestUri: String,
         expectedState: String,
+        authorizationEndpoint: String,
+        brokerEndpoint: String,
     ): String {
-        requireNotNull(authenticationCallback) { "authenticationCallback has to be setup" }
-        val authInfo = authenticationCallback.authenticationCb(
-            clientId = clientId,
-            requestUri = requestUri,
+        val authorizationUrl = URLBuilder(authorizationEndpoint).apply {
+            parameters.append("client_id", clientId)
+            parameters.append("request_uri", requestUri)
+        }.buildString()
+
+        val finalUrl = provider.config.authorizationLauncher.open(
+            AuthorizationRequest(
+                authorizationUrl = authorizationUrl,
+                redirectUri = provider.config.redirectUri,
+                oidcRedirectUri = provider.config.oidcRedirectUri,
+                brokerEndpoint = brokerEndpoint,
+            ),
         )
 
-        val finalRedirectUrl = authInfo.finalUrl
-            ?: error("No redirect returned from authenticationCallback")
-        val redirectUrl = Url(finalRedirectUrl)
-        val returnedState = redirectUrl.parameters["state"]
-        val code = redirectUrl.parameters["code"]
-            ?: run {
-                val error = redirectUrl.parameters["error"]
-                val errorDescription = redirectUrl.parameters["error_description"]
-                error("authorization failed: $error - $errorDescription")
-            }
+        val params = Url(finalUrl).parameters
+        params["error"]?.let { throw AuthorizationFailedException(it, params["error_description"]) }
 
-        require(returnedState == expectedState) {
-            "state mismatch: expected $expectedState but got $returnedState"
-        }
+        val returnedState = requireNotNull(params["state"]) { "Final callback does not contain 'state'" }
+        check(returnedState == expectedState) { "State mismatch in authorization callback" }
 
-        return code
+        return requireNotNull(params["code"]) { "Final callback does not contain 'code'" }
     }
 
     suspend fun exchangeEmailBindingToken(
         bindingToken: String,
         request: TokenIssuanceRequest,
     ): String {
+        // Abb-ZETA-OIDC-Token-Bezug (30) POST /token grant_type=token-exchange with the E-Mail-Binding token
         val exchangeRequest = OidcTokenRequest(
             grantType = GRANT_TYPE_TOKEN_EXCHANGE,
             clientId = request.params.clientId,
@@ -205,9 +237,14 @@ class OidcTokenIssuance(
         )
 
         val resp = authApi.requestOidcToken(request.tokenEndpoint, exchangeRequest, request.dpopProvider(request.tokenEndpoint, null))
+        if (resp.refreshToken == null) Log.w { "Token exchange response missing refresh_token; the next token request will restart the OIDC flow" }
         val refreshToken = resp.refreshToken ?: ""
 
-        authStorage.saveAccessTokens(resp.accessToken, refreshToken, clock() + resp.expiresIn)
+        // Abb-ZETA-OIDC-Token-Bezug (33) / (34) full tokens
+        storeAttestationToken(resp.zetaAttestationToken)
+        val (accessExpiresAt, refreshExpiresAt) = computeTokenExpirations(clock(), resp.expiresIn, resp.refreshExpires)
+
+        authStorage.saveAccessTokens(resp.accessToken, refreshToken, accessExpiresAt, refreshExpiresAt)
         return resp.accessToken
     }
 
@@ -245,13 +282,6 @@ class OidcTokenIssuance(
         body = OtpVerifyRequest(otp = otp),
     )
 
-    /**
-     * Completes the email binding started by [issue]: collects the email via
-     * [OtpCallback.awaitEmail] when `binding_mode = collect_email`, then loops on
-     * [OtpCallback.awaitOtp] (verify or resend) until the server reports `status = bound`,
-     * and finally exchanges the binding token for the real access + refresh token
-     * via [exchangeEmailBindingToken]. Returns the access token.
-     */
     suspend fun completeEmailBinding(
         pending: TokenIssuanceResult.EmailBindingRequired,
         request: TokenIssuanceRequest,
@@ -263,16 +293,20 @@ class OidcTokenIssuance(
 
         var emailHint = pending.emailHint
 
-        if (requiresEmailCollection(pending.bindingMode)) {
+        if (pending.bindingMode == BINDING_MODE_COLLECT_EMAIL) {
+            // Abb-ZETA-OIDC-Token-Bezug (16) (17) ask the user for the email address
             val email = otpCallback.awaitEmail()
             val dpop = request.dpopProvider(bindEmailEndpoint, pending.bindingToken)
+            // Abb-ZETA-OIDC-Token-Bezug (18) POST /zeta/identity/bind-email
             val bindResult = requestEmailBinding(bindEmailEndpoint, pending.bindingToken, dpop, email)
+            // Abb-ZETA-OIDC-Token-Bezug (21) 202 Accepted {challenge_type: email_otp}
             check(bindResult.challengeType == CHALLENGE_TYPE_EMAIL_OTP) { "Unexpected challenge_type: ${bindResult.challengeType}" }
             emailHint = bindResult.emailHint
         }
 
         var rejected = false
         while (true) {
+            // Abb-ZETA-OIDC-Token-Bezug (25) (26) ask the user for the OTP
             when (val submission = otpCallback.awaitOtp(emailHint, rejected)) {
                 is OtpSubmission.Resend -> {
                     val dpop = request.dpopProvider(resendEndpoint, pending.bindingToken)
@@ -283,7 +317,9 @@ class OidcTokenIssuance(
                 is OtpSubmission.Otp -> {
                     try {
                         val dpop = request.dpopProvider(verifyEndpoint, pending.bindingToken)
+                        // Abb-ZETA-OIDC-Token-Bezug (27) POST /zeta/identity/bind-email/verify
                         val verifyResult = verifyEmailBindingOtp(verifyEndpoint, pending.bindingToken, dpop, submission.code)
+                        // Abb-ZETA-OIDC-Token-Bezug (29) 200 OK {status: bound}
                         check(verifyResult.status == BIND_STATUS_BOUND) { "Unexpected status after OTP verify: ${verifyResult.status}" }
                         return exchangeEmailBindingToken(pending.bindingToken, request)
                     } catch (_: RecoverableAuthenticationException) {
@@ -350,7 +386,7 @@ private fun generateState(): String =
     Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(Random.nextBytes(16))
 
 fun interface AuthenticationCallback {
-    suspend fun authenticationCb(clientId: String, requestUri: String): AuthInfo
+    suspend fun authenticationCb(authorizationUrl: String): AuthInfo
     data class AuthInfo(val finalUrl: String? = null)
 }
 
@@ -366,11 +402,16 @@ sealed class TokenIssuanceResult {
 
 private fun scopes(scope: String?): List<String> = scope?.split(" ").orEmpty()
 
-private fun isEmailVerificationPending(scope: String?): Boolean =
-    OidcTokenIssuance.SCOPE_EMAIL_VERIFY in scopes(scope)
+private fun presence(value: String?): String = if (value != null) "present" else "absent"
 
-private fun requiresEmailCollection(bindingMode: String?): Boolean =
-    bindingMode == OidcTokenIssuance.BINDING_MODE_COLLECT_EMAIL
+private fun requiredScopeFor(bindingMode: String): String = when (bindingMode) {
+    OidcTokenIssuance.BINDING_MODE_COLLECT_EMAIL -> ClientManagementScopes.EMAIL_BINDING
+    OidcTokenIssuance.BINDING_MODE_VERIFY_OTP -> ClientManagementScopes.EMAIL_VERIFY
+    else -> error("Unknown binding_mode: $bindingMode")
+}
+
+private fun hasEmailBindingScope(scope: String?): Boolean =
+    scopes(scope).any { it == ClientManagementScopes.EMAIL_BINDING || it == ClientManagementScopes.EMAIL_VERIFY }
 
 @Serializable
 data class OidcAccessTokenResponse(
@@ -382,6 +423,7 @@ data class OidcAccessTokenResponse(
     @SerialName("refresh_token") val refreshToken: String? = null,
     @SerialName("email_hint") val emailHint: String? = null,
     @SerialName("binding_mode") val bindingMode: String? = null,
+    @SerialName("zeta_attestation_token") val zetaAttestationToken: String? = null,
 )
 
 @Serializable

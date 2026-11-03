@@ -239,6 +239,7 @@ internal fun LeafCertInfo.toZetaCertInfo() = ZetaCertInfo(
     notBefore = notBefore ?: error("Missing notBefore in leaf cert - rejecting"),
     notAfter = notAfter ?: Long.MAX_VALUE,
     san = san ?: error("Missing SAN in leaf cert - rejecting"),
+    commonName = commonName,
 )
 
 private fun String.toCanonicalSigAlgName(): String = when (
@@ -266,6 +267,7 @@ private fun ChainCertMeta.toZetaCertInfo() = ZetaCertInfo(
     notBefore = notBefore ?: 0L,
     notAfter = notAfter ?: Long.MAX_VALUE,
     san = san ?: emptyList(),
+    commonName = commonName,
 )
 
 internal expect fun platformDefaultCaBundlePem(): ByteArray?

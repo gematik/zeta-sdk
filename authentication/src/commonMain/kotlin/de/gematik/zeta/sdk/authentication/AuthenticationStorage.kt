@@ -30,10 +30,11 @@ import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.storage.SdkStorage
 
 interface AuthenticationStorage {
-    suspend fun saveAccessTokens(accessToken: String, refreshToken: String, expiresAt: Long)
+    suspend fun saveAccessTokens(accessToken: String, refreshToken: String, expiresAt: Long, refreshExpiresAt: Long? = null)
     suspend fun getAccessToken(): String?
     suspend fun getRefreshToken(): String?
-    suspend fun getTokenExpiration(): String?
+    suspend fun getAccessTokenExpiration(): String?
+    suspend fun getRefreshTokenExpiration(): String?
     suspend fun clearAccessToken()
     suspend fun clear()
 }
@@ -48,32 +49,41 @@ class AuthenticationStorageImpl(
         const val ENTRY_KEY = "auth_token"
         const val PREFIX_ACCESS = "at"
         const val PREFIX_REFRESH = "rt"
-        const val PREFIX_EXPIRES = "exp"
+        const val PREFIX_ACCESS_EXPIRES = "exp"
+        const val PREFIX_REFRESH_EXPIRES = "ref_exp"
         const val INDEX_KEY = "auth_token_index"
     }
 
-    override suspend fun saveAccessTokens(accessToken: String, refreshToken: String, expiresAt: Long) {
+    override suspend fun saveAccessTokens(
+        accessToken: String,
+        refreshToken: String,
+        expiresAt: Long,
+        refreshExpiresAt: Long?,
+    ) {
         extended.putIndexed(
             INDEX_KEY, ENTRY_KEY,
             mapOf(
                 PREFIX_ACCESS to accessToken,
                 PREFIX_REFRESH to refreshToken,
-                PREFIX_EXPIRES to expiresAt.toString(),
+                PREFIX_ACCESS_EXPIRES to expiresAt.toString(),
+                PREFIX_REFRESH_EXPIRES to (refreshExpiresAt?.toString() ?: ""),
             ),
         )
     }
 
     override suspend fun getAccessToken(): String? = extended.getIndexed(ENTRY_KEY, PREFIX_ACCESS)
     override suspend fun getRefreshToken(): String? = extended.getIndexed(ENTRY_KEY, PREFIX_REFRESH)
-    override suspend fun getTokenExpiration(): String? = extended.getIndexed(ENTRY_KEY, PREFIX_EXPIRES)
+    override suspend fun getAccessTokenExpiration(): String? = extended.getIndexed(ENTRY_KEY, PREFIX_ACCESS_EXPIRES)
+    override suspend fun getRefreshTokenExpiration(): String? =
+        extended.getIndexed(ENTRY_KEY, PREFIX_REFRESH_EXPIRES)?.takeIf { it.isNotEmpty() }
 
     override suspend fun clearAccessToken() {
         Log.d { "Removing access token, keeping refresh token" }
-        extended.removeIndexed(INDEX_KEY, ENTRY_KEY, listOf(PREFIX_ACCESS, PREFIX_EXPIRES))
+        extended.removeIndexed(INDEX_KEY, ENTRY_KEY, listOf(PREFIX_ACCESS, PREFIX_ACCESS_EXPIRES))
     }
 
     override suspend fun clear() {
         Log.d { "Removing all auth tokens" }
-        extended.clearIndexed(INDEX_KEY, ENTRY_KEY, listOf(PREFIX_ACCESS, PREFIX_REFRESH, PREFIX_EXPIRES))
+        extended.clearIndexed(INDEX_KEY, ENTRY_KEY, listOf(PREFIX_ACCESS, PREFIX_REFRESH, PREFIX_ACCESS_EXPIRES, PREFIX_REFRESH_EXPIRES))
     }
 }

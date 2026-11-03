@@ -36,4 +36,6 @@ sealed class ZetaClientError(message: String) : Exception(message) {
     data class AslError(val errorCode: Int, val detail: String) :
         ZetaClientError("ASL protocol error $errorCode: $detail")
     class StepUpFailed : ZetaClientError("Step-up authentication already attempted — aborting")
+    data class PrerequisiteFailed(val code: String, val detail: String) :
+        ZetaClientError("Prerequisite failed [$code]: $detail")
 }

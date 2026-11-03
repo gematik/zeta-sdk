@@ -25,6 +25,7 @@
 package de.gematik.zeta.sdk.authentication
 
 import de.gematik.zeta.logging.Log
+import de.gematik.zeta.sdk.attestation.AttestationStateStorage
 import de.gematik.zeta.sdk.authentication.model.AccessTokenRequest
 import de.gematik.zeta.sdk.authentication.oidc.TokenIssuanceRequest
 import de.gematik.zeta.sdk.tpm.TpmProvider
@@ -36,6 +37,7 @@ class SubjectTokenIssuance(
     private val authStorage: AuthenticationStorage,
     private val tpmProvider: TpmProvider,
     private val clock: () -> Long,
+    private val attestationState: AttestationStateStorage? = null,
 ) {
     suspend fun issue(
         request: TokenIssuanceRequest,
@@ -67,7 +69,10 @@ class SubjectTokenIssuance(
         )
         val (resp, httpTime) = measureTimedValue { authApi.requestAccessToken(request.tokenEndpoint, tokenRequest, request.dpopProvider(request.tokenEndpoint, null)) }
         Log.d { "[AUTH-TIMING] SubjectTokenIssuance requestAccessToken=$httpTime" }
-        authStorage.saveAccessTokens(resp.accessToken, resp.refreshToken, clock() + resp.expiresIn)
+
+        resp.zetaAttestationToken?.let { attestationState?.setZetaAttestationToken(it) }
+        val (accessExpiresAt, refreshExpiresAt) = computeTokenExpirations(clock(), resp.expiresIn, resp.refreshExpires)
+        authStorage.saveAccessTokens(resp.accessToken, resp.refreshToken, accessExpiresAt, refreshExpiresAt)
         return resp.accessToken
     }
 }

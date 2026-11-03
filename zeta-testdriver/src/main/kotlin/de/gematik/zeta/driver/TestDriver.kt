@@ -50,6 +50,7 @@ import kotlinx.serialization.json.Json
 public val customCaPems: MutableList<String> = mutableListOf()
 
 private const val NOTIFICATIONS_PUSHERS_PATH = "/testdriver-api/notifications/pushers"
+private const val CLIENT_MANAGEMENT_PATH = "/testdriver-api/client-management"
 
 public fun Application.testDriverRouting(
     manager: TestDriverManager = TestDriverManager(),
@@ -102,13 +103,29 @@ public fun Application.testDriverRouting(
         get("/testdriver-api/notifications/channels/local") { getLocalChannels(call, manager.notifications()) }
         post("/testdriver-api/notifications/channels/local") { setLocalChannels(call, manager.notifications()) }
 
+        get("/testdriver-api/hellozeta/android") {
+            val r = manager.featureRunner.run("classpath:features/hello_zeta_android.feature")
+            call.respond(if (r.passed) HttpStatusCode.OK else HttpStatusCode.InternalServerError, r)
+        }
+
+        get("/testdriver-api/hellozeta/ios") {
+            val r = manager.featureRunner.run("classpath:features/hello_zeta_ios.feature")
+            call.respond(if (r.passed) HttpStatusCode.OK else HttpStatusCode.InternalServerError, r)
+        }
+
+        // Client management
+        post("$CLIENT_MANAGEMENT_PATH/identity/email") { changeEmail(call, manager.sdk) }
+        post("$CLIENT_MANAGEMENT_PATH/identity/email/resend") { resendEmailChangeCode(call, manager.sdk) }
+        post("$CLIENT_MANAGEMENT_PATH/identity/email/verify") { verifyEmailChange(call, manager.sdk) }
+        get("$CLIENT_MANAGEMENT_PATH/clients") { listClients(call, manager.sdk) }
+        delete("$CLIENT_MANAGEMENT_PATH/clients/{client_id}") { deleteClient(call, manager.sdk) }
+
         // OIDC
         post("/oidc/collect-email") { collectEmail(call, manager.otpCallback) }
         post("/oidc/resend-otp") { resendOtp(call, manager.otpCallback) }
         post("/oidc/verify-otp") { verifyOtp(call, manager.otpCallback) }
         post("/oidc/kvnr-email") { setKvnrEmail(call, manager) }
         get("/oidc/status") { otpStatus(call, manager.otpCallback) }
-        get("/oidc/change-email") { changeEmail(call, manager) }
 
         get("/health") {
             call.respondText("alive")
@@ -205,28 +222,6 @@ private suspend fun otpStatus(call: ApplicationCall, otpCallback: TestDriverOtpC
             lastRejected = otpCallback.lastRejected,
         ),
     )
-}
-
-private suspend fun changeEmail(call: ApplicationCall, manager: TestDriverManager) {
-    val body = call.receiveText()
-    val newEmail = runCatching { Json.decodeFromString<EmailRequest>(body).email }
-        .getOrElse {
-            Log.d { "Failed to parse request body: $body" }
-            call.respond(HttpStatusCode.BadRequest, "Invalid request body, expected JSON: email}")
-            return
-        }
-
-    Log.d { "Requesting email change to: $newEmail" }
-
-    val result = manager.sdk.changeEmail(newEmail)
-    if (result.isSuccess) {
-        Log.d { "Email change accepted for: $newEmail" }
-        call.respond(HttpStatusCode.Accepted, "Email changed")
-    } else {
-        val error = result.exceptionOrNull()
-        Log.d { "Failed for $newEmail: ${error?.message}" }
-        call.respond(HttpStatusCode.Conflict, "Failed to change email: ${error?.message}")
-    }
 }
 
 @Serializable

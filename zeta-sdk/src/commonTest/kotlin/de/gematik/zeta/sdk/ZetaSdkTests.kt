@@ -26,14 +26,21 @@ package de.gematik.zeta.sdk
 
 import de.gematik.zeta.sdk.ZetaSdk.clearRegistration
 import de.gematik.zeta.sdk.ZetaSdk.forget
+import de.gematik.zeta.sdk.attestation.RegisteredAttestationType
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.authentication.AuthenticationStorageImpl
+import de.gematik.zeta.sdk.authentication.identity.models.RegisteredClient
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
 import de.gematik.zeta.sdk.network.http.client.CompositeCookieStorage
 import de.gematik.zeta.sdk.network.http.client.SdkCookieStorage
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
+import de.gematik.zeta.sdk.notifications.LocalPusher
+import de.gematik.zeta.sdk.notifications.LocalPusherStorageImpl
+import de.gematik.zeta.sdk.notifications.PushKeyChain
+import de.gematik.zeta.sdk.notifications.PushKeyChainStorageImpl
+import de.gematik.zeta.sdk.notifications.PushKeyMaterial
 import de.gematik.zeta.sdk.storage.ExtendedStorage
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
@@ -108,6 +115,36 @@ class ZetaSdkTest {
     }
 
     @Test
+    fun forget_clearsLocalPusherAndPushKeyChain() = runTest {
+        // Arrange
+        val client = buildClient()
+        val pusherStorage = LocalPusherStorageImpl(storage, resourceScope)
+        val keyChainStorage = PushKeyChainStorageImpl(storage, resourceScope)
+        pusherStorage.save(LocalPusher(pushkey = "fcm-token", appId = "de.gematik.zeta.client"))
+        keyChainStorage.save(
+            PushKeyChain(
+                listOf(
+                    PushKeyMaterial(
+                        yearMonth = "2026-09",
+                        sharedSecret = ByteArray(32) { 1 },
+                        aesKey = ByteArray(32) { 2 },
+                    ),
+                ),
+            ),
+        )
+        assertNotNull(pusherStorage.get())
+        assertNotNull(keyChainStorage.get())
+
+        // Act
+        with(ZetaSdk) { client.forget() }
+
+        // Assert: otherwise registerPusher short-circuits on the stale pusher after a forget and
+        // the new identity is never registered with the Notification Service.
+        assertNull(pusherStorage.get())
+        assertNull(keyChainStorage.get())
+    }
+
+    @Test
     fun clearRegistration_clearsCookie() = runTest {
         // Arrange
         val client = buildClient()
@@ -119,6 +156,30 @@ class ZetaSdkTest {
 
         // Assert
         assertNull(readCookie())
+    }
+
+    @Test
+    fun forget_clearsAttestationState() = runTest {
+        val client = buildClient() as ZetaSdkClientImpl
+        client.attestationState.setAttestationType(RegisteredAttestationType.APPLE)
+        client.attestationState.setZetaAttestationToken("zat")
+
+        with(ZetaSdk) { client.forget() }
+
+        assertNull(client.attestationState.getAttestationType())
+        assertNull(client.attestationState.getZetaAttestationToken())
+    }
+
+    @Test
+    fun clearRegistration_keepsAttestationState() = runTest {
+        val client = buildClient() as ZetaSdkClientImpl
+        client.attestationState.setAttestationType(RegisteredAttestationType.APPLE)
+        client.attestationState.setZetaAttestationToken("zat")
+
+        with(ZetaSdk) { client.clearRegistration() }
+
+        assertEquals(RegisteredAttestationType.APPLE, client.attestationState.getAttestationType())
+        assertEquals("zat", client.attestationState.getZetaAttestationToken())
     }
 
     @Test
@@ -382,6 +443,7 @@ class ZetaSdkTest {
             accessToken = "access-token",
             refreshToken = "refresh-token",
             expiresAt = Clock.System.now().epochSeconds + 3600,
+            refreshExpiresAt = Clock.System.now().epochSeconds + 3600,
         )
         assertNotNull(authStorage.getAccessToken())
 
@@ -802,6 +864,56 @@ class ZetaSdkTest {
         assertEquals("Client-10", result.clientName)
     }
 
+    @Test
+    fun forget_clearsClientManagementToken() = runTest {
+        val client = buildClient() as ZetaSdkClientImpl
+        client.seedClientManagementToken()
+
+        with(ZetaSdk) { client.forget() }
+
+        assertNull(client.clientManagementAuthStorage.getAccessToken())
+    }
+
+    @Test
+    fun clearRegistration_clearsClientManagementToken() = runTest {
+        val client = buildClient() as ZetaSdkClientImpl
+        client.seedClientManagementToken()
+
+        with(ZetaSdk) { client.clearRegistration() }
+
+        assertNull(client.clientManagementAuthStorage.getAccessToken())
+    }
+
+    @Test
+    fun logout_clearsClientManagementToken() = runTest {
+        val client = buildClient() as ZetaSdkClientImpl
+        client.seedClientManagementToken()
+
+        client.logout()
+
+        assertNull(client.clientManagementAuthStorage.getAccessToken())
+    }
+
+    @Test
+    fun deleteClient_returnsFailure_forBlankId() = runTest {
+        val result = buildClient().deleteClient(" ")
+
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test
+    fun listClients_returnsFailure_whenDiscoveryFails() = runTest {
+        assertTrue(ZetaSdk.build("https://api.example.com", createTestBuildConfig()).listClients().isFailure)
+    }
+
+    private suspend fun ZetaSdkClientImpl.seedClientManagementToken() =
+        clientManagementAuthStorage.saveAccessTokens(
+            accessToken = "cm-token",
+            refreshToken = "",
+            expiresAt = Clock.System.now().epochSeconds + 3600,
+            refreshExpiresAt = null,
+        )
+
     private fun createTestBuildConfig(
         productId: String = "test-product",
         productVersion: String = "1.0.0",
@@ -844,13 +956,16 @@ class ZetaSdkTest {
     private class ForeignZetaSdkClient(
         private val logoutResult: Result<Unit> = Result.success(Unit),
     ) : ZetaSdkClient {
+        companion object {
+            const val NOT_IN_SCOPE = "not in scope of the test"
+        }
         var logoutCalled = false
 
         override suspend fun discover(): Result<Unit> = Result.success(Unit)
         override suspend fun register(): Result<Unit> = Result.success(Unit)
         override suspend fun authenticate(): Result<Unit> = Result.success(Unit)
         override fun httpClient(builder: ZetaHttpClientBuilder.() -> Unit): ZetaHttpClient {
-            error("not in scope of the test")
+            error(NOT_IN_SCOPE)
         }
         override suspend fun <R> ws(
             targetUrl: String,
@@ -858,7 +973,7 @@ class ZetaSdkTest {
             customHeaders: Map<String, String>?,
             block: suspend DefaultClientWebSocketSession.() -> R,
         ) {
-            error("not in scope of the test")
+            error(NOT_IN_SCOPE)
         }
         override suspend fun status(): Result<SdkStatus> = Result.success(SdkStatus.NOT_REGISTERED)
         override suspend fun logout(): Result<Unit> {
@@ -866,6 +981,15 @@ class ZetaSdkTest {
             return logoutResult
         }
         override suspend fun close(): Result<Unit> = Result.success(Unit)
-        override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
+        override suspend fun changeEmail(newEmail: String) = error(NOT_IN_SCOPE)
+        override suspend fun resendEmailChangeCode() = error(NOT_IN_SCOPE)
+        override suspend fun verifyEmailChange(code: String) = error(NOT_IN_SCOPE)
+        override suspend fun deleteClient(id: String): Result<Unit> {
+            error(NOT_IN_SCOPE)
+        }
+
+        override suspend fun listClients(): Result<List<RegisteredClient>> {
+            error(NOT_IN_SCOPE)
+        }
     }
 }

@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.notifications
 
+import de.gematik.zeta.sdk.authentication.DpopProvider
 import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import io.ktor.client.engine.mock.MockEngine
@@ -46,7 +47,7 @@ import kotlin.test.assertFailsWith
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationApiClientImplRateLimitRetryTest {
-    private class CountingDpopProvider : NotificationDpopProvider {
+    private class CountingDpopProvider : DpopProvider {
         var proofsIssued = 0
 
         override suspend fun createDpopProof(htm: String, htu: String, accessToken: String): String {

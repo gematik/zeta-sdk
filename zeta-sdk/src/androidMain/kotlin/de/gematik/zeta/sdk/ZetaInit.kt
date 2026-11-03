@@ -30,8 +30,9 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
 
 object ZetaInit {
-    fun initAndroid(context: Context) {
-        SdkAndroidContext.init(context)
+    @JvmOverloads
+    fun initAndroid(context: Context, playIntegrityCloudProjectNumber: Long? = null) {
+        SdkAndroidContext.init(context, playIntegrityCloudProjectNumber)
         registerBouncyCastleProvider()
     }
 

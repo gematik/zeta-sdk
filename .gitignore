@@ -1,5 +1,8 @@
 *.iml
 .gradle
+!/.gradle/
+/.gradle/*
+!/.gradle/init.d/
 .kotlin
 build
 build-cache
@@ -16,9 +19,9 @@ kotlin-js-store
 build-cache
 
 ## CS project
-zeta-client-csharp/**/bin
-zeta-client-csharp/**/obj
-zeta-client-csharp/runtimes
+zeta-csharp-nuget/**/bin
+zeta-csharp-nuget/**/obj
+zeta-csharp-nuget/runtimes
 
 
 # ------------
@@ -37,7 +40,7 @@ azure-configs.properties
 # ------------
 xcuserdata/
 # Local runtime config (copy from *.template and fill in) - never commit
-iosApp/iosApp/iosApp/zeta.env
+iosApp/iosApp/zeta.env
 zeta-client/src/androidMain/assets/zeta.env
 # Local keystores/certificates - never commit
 *.p12
@@ -52,6 +55,8 @@ zeta-client/src/androidMain/assets/zeta.env
 *.suo
 *.nupkg
 *.snupkg
+
+.gradle-home/
 
 .jenkins
 .githubignore

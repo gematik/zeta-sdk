@@ -27,6 +27,7 @@ package de.gematik.zeta.client
 import android.app.Application
 import android.content.pm.ApplicationInfo
 import de.gematik.zeta.client.config.AndroidConfig
+import de.gematik.zeta.client.config.getConfig
 import de.gematik.zeta.client.notification.ZetaNotifications
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.logging.ZetaLogger
@@ -62,7 +63,11 @@ public class ZetaClientApp : Application() {
             Log.initDebugLogger()
         }
         AndroidConfig.init(this)
-        ZetaInit.initAndroid(this)
+        val playIntegrityCloudProjectNumber = getConfig("PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER")?.trim()?.toLongOrNull()
+        if (playIntegrityCloudProjectNumber == null) {
+            Log.w { "PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER in zeta.env is missing or not a number; Play Integrity disabled" }
+        }
+        ZetaInit.initAndroid(this, playIntegrityCloudProjectNumber = playIntegrityCloudProjectNumber)
         // No-op unless the optional push-notification feature is enabled at build time.
         ZetaNotifications.integration?.onApplicationCreate(this)
     }

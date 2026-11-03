@@ -24,7 +24,10 @@
 
 package de.gematik.zeta.sdk
 
+import de.gematik.zeta.sdk.authentication.identity.ChallengeType
 import de.gematik.zeta.sdk.authentication.identity.ChangeEmailResponse
+import de.gematik.zeta.sdk.authentication.identity.EmailChallenge
+import de.gematik.zeta.sdk.authentication.identity.models.RegisteredClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
@@ -328,12 +331,12 @@ class ZetaSdkClientExtensionTest {
     @Test
     fun changeEmail_returnsResponse_whenClientChangeEmailSucceeds() {
         val client = FakeZetaSdkClient().apply {
-            changeEmailResult = Result.success(ChangeEmailResponse("verified"))
+            changeEmailResult = Result.success(ChangeEmailResponse.Verified)
         }
 
         val result = ZetaSdkClientExtension.changeEmail(client, "new@example.de")
 
-        assertEquals("verified", result.status)
+        assertEquals(ChangeEmailResponse.Verified, result)
         assertTrue(client.changeEmailCalled)
     }
 
@@ -349,7 +352,48 @@ class ZetaSdkClientExtensionTest {
         assertTrue(client.changeEmailCalled)
     }
 
+    @Test
+    fun resendEmailChangeCode_returnsChallenge() {
+        val client = FakeZetaSdkClient()
+
+        assertEquals(EmailChallenge(ChallengeType.EMAIL_OTP, "m***@example.de"), ZetaSdkClientExtension.resendEmailChangeCode(client))
+    }
+
+    @Test
+    fun verifyEmailChange_passesCode_andThrowsOnFailure() {
+        val client = FakeZetaSdkClient()
+
+        ZetaSdkClientExtension.verifyEmailChange(client, "123456")
+        assertEquals(listOf("123456"), client.verifiedCodes)
+
+        client.verifyResult = Result.failure(IllegalStateException("invalidCode"))
+        assertFailsWith<IllegalStateException> { ZetaSdkClientExtension.verifyEmailChange(client, "000000") }
+    }
+
+    @Test
+    fun listClients_returnsClients() {
+        val client = FakeZetaSdkClient()
+
+        assertEquals(listOf(RegisteredClient("c1", "Pixel 9")), ZetaSdkClientExtension.listClients(client))
+    }
+
+    @Test
+    fun deleteClient_passesId_andThrowsOnFailure() {
+        val client = FakeZetaSdkClient()
+
+        ZetaSdkClientExtension.deleteClient(client, "c1")
+        assertEquals(listOf("c1"), client.deletedIds)
+
+        client.deleteResult = Result.failure(IllegalStateException("notFound"))
+        assertFailsWith<IllegalStateException> { ZetaSdkClientExtension.deleteClient(client, "foreign") }
+    }
+
     private class FakeZetaSdkClient : ZetaSdkClient {
+        val verifiedCodes = mutableListOf<String>()
+        var verifyResult: Result<Unit> = Result.success(Unit)
+        val deletedIds = mutableListOf<String>()
+        var deleteResult: Result<Unit> = Result.success(Unit)
+
         var discoverCalled = false
         var registerCalled = false
         var authenticateCalled = false
@@ -363,7 +407,7 @@ class ZetaSdkClientExtensionTest {
         var logoutResult: Result<Unit> = Result.success(Unit)
         var statusResult: Result<SdkStatus> = Result.success(SdkStatus.NOT_REGISTERED)
         var changeEmailCalled = false
-        var changeEmailResult: Result<ChangeEmailResponse> = Result.success(ChangeEmailResponse("verified"))
+        var changeEmailResult: Result<ChangeEmailResponse> = Result.success(ChangeEmailResponse.Verified)
 
         override suspend fun discover(): Result<Unit> {
             discoverCalled = true
@@ -389,6 +433,21 @@ class ZetaSdkClientExtensionTest {
             changeEmailCalled = true
             return changeEmailResult
         }
+
+        override suspend fun resendEmailChangeCode(): Result<EmailChallenge> =
+            Result.success(EmailChallenge(ChallengeType.EMAIL_OTP, "m***@example.de"))
+
+        override suspend fun verifyEmailChange(code: String): Result<Unit> {
+            verifiedCodes += code
+            return verifyResult
+        }
+
+        override suspend fun deleteClient(id: String): Result<Unit> {
+            deletedIds += id
+            return deleteResult
+        }
+
+        override suspend fun listClients(): Result<List<RegisteredClient>> = Result.success(listOf(RegisteredClient("c1", "Pixel 9")))
 
         override fun httpClient(builder: ZetaHttpClientBuilder.() -> Unit): ZetaHttpClient {
             throw NotImplementedError("Not needed for these tests")

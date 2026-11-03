@@ -28,6 +28,8 @@ import Jwk
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.attestation.AttestationApi
 import de.gematik.zeta.sdk.attestation.AttestationApiImpl
+import de.gematik.zeta.sdk.attestation.AttestationStateStorage
+import de.gematik.zeta.sdk.attestation.assertion.HardwarePostureBuilder
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.model.AccessTokenRequest
 import de.gematik.zeta.sdk.authentication.model.DPoPTokenClaims
@@ -40,9 +42,6 @@ import de.gematik.zeta.sdk.crypto.hashWithSha256
 import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.utils.io.core.toByteArray
 import kotlin.io.encoding.Base64
-import kotlin.random.Random
-import kotlin.time.TimeSource
-import kotlin.time.measureTimedValue
 
 data class AccessTokenParams(
     val clientId: String,
@@ -68,6 +67,8 @@ open class AccessTokenProviderImpl(
     private val authStorage: AuthenticationStorage,
     private val clock: () -> Long,
     private val tpmProvider: TpmProvider,
+    private val hardwarePostureBuilder: HardwarePostureBuilder? = null,
+    private val attestationState: AttestationStateStorage? = null,
 ) : AccessTokenProvider {
 
     open val attestationApi: AttestationApi by lazy {
@@ -75,6 +76,7 @@ open class AccessTokenProviderImpl(
             tpmProvider = tpmProvider,
             attestationConfig = authConfig.attestation,
             clockEpochSeconds = clock,
+            hardwarePostureBuilder = hardwarePostureBuilder,
         )
     }
 
@@ -85,6 +87,7 @@ open class AccessTokenProviderImpl(
             authStorage = authStorage,
             tpmProvider = tpmProvider,
             clock = clock,
+            attestationState = attestationState,
         )
     }
 
@@ -93,59 +96,71 @@ open class AccessTokenProviderImpl(
             authApi = authApi,
             authStorage = authStorage,
             clock = clock,
-            authenticationCallback = (authConfig.subjectTokenProvider as OidcTokenProvider).config.authenticationCallback,
-            resolveParEndpoint = authConfig.subjectTokenProvider.resolveParEndpoint,
+            resolveParEndpoint = (authConfig.subjectTokenProvider as OidcTokenProvider).resolveParEndpoint,
             resolveBindEmailEndpoint = authConfig.subjectTokenProvider.resolveBindEmailEndpoint,
             resolveVerifyEmailEndpoint = authConfig.subjectTokenProvider.resolveVerifyEmailEndpoint,
             resolveResendEmailEndpoint = authConfig.subjectTokenProvider.resolveResendEmailEndpoint,
+            attestationState = attestationState,
         )
     }
 
-    override suspend fun getValidToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams, dpopKey: String): String {
-        val start = TimeSource.Monotonic.markNow()
-        val (cached, cacheReadTime) = measureTimedValue { authStorage.getAccessToken() }
-        val (exp, expReadTime) = measureTimedValue { authStorage.getTokenExpiration() }
-        Log.d { "[AUTH-TIMING] getValidToken cacheRead=$cacheReadTime expRead=$expReadTime" }
-
-        if (cached != null && exp != null && exp != "" && exp.toLong() - clock() > SAFETY_MARGIN_SECS) {
-            Log.d { "[AUTH-TIMING] getValidToken CACHE_HIT total=${start.elapsedNow()}" }
-            return cached
+    override suspend fun getValidToken(
+        tokenEndpoint: String,
+        nonceEndpoint: String,
+        params: AccessTokenParams,
+        dpopKey: String,
+    ): String {
+        cachedAccessToken()?.let {
+            return it
         }
 
-        val (refreshToken, refreshReadTime) = measureTimedValue { authStorage.getRefreshToken() }
-        Log.d { "[AUTH-TIMING] getValidToken refreshTokenRead=$refreshReadTime hasRefresh=${!refreshToken.isNullOrBlank()}" }
+        val token = tryRefresh(tokenEndpoint, nonceEndpoint, params)
+            ?: issueNewAccessToken(tokenEndpoint, nonceEndpoint, params, dpopKey)
 
-        if (!refreshToken.isNullOrBlank()) {
-            return try {
-                Log.d { "Access token expired, fetching refresh token" }
-                val (token, refreshTime) = measureTimedValue {
-                    refreshToken(tokenEndpoint, nonceEndpoint, params, refreshToken)
-                }
-                Log.d { "[AUTH-TIMING] getValidToken REFRESH total=${start.elapsedNow()} refreshFlow=$refreshTime" }
-                token
-            } catch (ex: Exception) {
-                Log.d { "Refresh token failed: (${ex.message})" }
-                val (token, newTokenTime) = measureTimedValue {
-                    issueNewAccessToken(tokenEndpoint, nonceEndpoint, params, dpopKey)
-                }
-                Log.d { "[AUTH-TIMING] getValidToken REFRESH_FAILED_NEW_TOKEN total=${start.elapsedNow()} newTokenFlow=$newTokenTime" }
-                token
-            }
-        }
-
-        Log.d { "No refresh token found, getting new access token" }
-        val (token, newTokenTime) = measureTimedValue {
-            issueNewAccessToken(tokenEndpoint, nonceEndpoint, params, dpopKey)
-        }
-        Log.d { "[AUTH-TIMING] getValidToken NEW_TOKEN total=${start.elapsedNow()} newTokenFlow=$newTokenTime" }
         return token
     }
+
+    private suspend fun cachedAccessToken(): String? {
+        val token = authStorage.getAccessToken() ?: return null
+        val secondsLeft = secondsUntil(authStorage.getAccessTokenExpiration()) ?: return null
+        return token.takeIf { secondsLeft > SAFETY_MARGIN_SECS }
+    }
+
+    private suspend fun usableRefreshToken(): String? {
+        val token = authStorage.getRefreshToken()?.takeIf { it.isNotBlank() }
+        if (token == null) {
+            Log.d { "No refresh token found" }
+            return null
+        }
+        val secondsLeft = secondsUntil(authStorage.getRefreshTokenExpiration())
+        if (secondsLeft != null && secondsLeft <= SAFETY_MARGIN_SECS) {
+            Log.d { "Refresh token expired, skipping refresh" }
+            return null
+        }
+        return token
+    }
+
+    private suspend fun tryRefresh(
+        tokenEndpoint: String,
+        nonceEndpoint: String,
+        params: AccessTokenParams,
+    ): String? {
+        val refreshToken = usableRefreshToken() ?: return null
+        return try {
+            refreshToken(tokenEndpoint, nonceEndpoint, params, refreshToken)
+        } catch (e: AuthenticationException) {
+            Log.w { "Refresh token failed: (${e.message}); requesting a new token" }
+            null
+        }
+    }
+
+    private fun secondsUntil(epochSeconds: String?): Long? =
+        epochSeconds?.toLongOrNull()?.minus(clock())
 
     private suspend fun refreshToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams, refreshToken: String): String {
         require(refreshToken.isNotBlank())
 
-        val (nonce, nonceTime) = measureTimedValue { authApi.fetchNonce(nonceEndpoint) }
-        Log.d { "[AUTH-TIMING] refreshToken fetchNonce=$nonceTime" }
+        val nonce = authApi.fetchNonce(nonceEndpoint)
         return requestAccessToken("refresh_token", tokenEndpoint, nonce, params, refreshToken)
     }
 
@@ -155,9 +170,9 @@ open class AccessTokenProviderImpl(
         params: AccessTokenParams,
         dpopKey: String,
     ): String {
-        val (nonce, nonceTime) = measureTimedValue { authApi.fetchNonce(nonceEndpoint) }
-        Log.d { "[AUTH-TIMING] issueNewAccessToken fetchNonce=$nonceTime" }
+        val nonce = authApi.fetchNonce(nonceEndpoint)
 
+        // Abb-ZETA-OIDC-Token-Bezug (08) DPoP key pair; the proof is built per request by dpopProvider
         val dpopKeyGenerated = tpmProvider.generateDpopKey()
 
         val request = TokenIssuanceRequest(
@@ -203,36 +218,21 @@ open class AccessTokenProviderImpl(
         subjectToken: suspend () -> String? = { null },
         subjectTokenType: String? = null,
     ): String {
-        val start = TimeSource.Monotonic.markNow()
-        val requestId = Random.nextInt()
         try {
-            val (clientAssertion, assertionTime) = measureTimedValue { createClientAssertion(tokenEndpoint, nonce, params) }
-            Log.d { "[AUTH-TIMING][$requestId] requestAccessToken createClientAssertion=$assertionTime" }
-
-            val (dpop, dpopTime) = measureTimedValue { createDpopForTokenEndpoint(tokenEndpoint, nonce) }
-            Log.d { "[AUTH-TIMING][$requestId] requestAccessToken createDpopToken=$dpopTime" }
-
-            val (subjectTokenValue, subjectTokenTime) = measureTimedValue { subjectToken() }
-            Log.d { "[AUTH-TIMING][$requestId] requestAccessToken subjectToken=$subjectTokenTime" }
-
+            val clientAssertion = createClientAssertion(tokenEndpoint, nonce, params)
+            val dpop = createDpopForTokenEndpoint(tokenEndpoint, nonce)
+            val subjectTokenValue = subjectToken()
             val request = buildAccessTokenRequest(grantType, params, clientAssertion, refreshToken, subjectTokenValue, subjectTokenType)
+            val resp = authApi.requestAccessToken(tokenEndpoint, request, dpop)
 
-            val sendEpoch = clock()
-            Log.d { "[AUTH-TIMING][$requestId] requestAccessToken sending_http epoch=$sendEpoch monotonic=${start.elapsedNow()}" }
+            resp.zetaAttestationToken?.let { attestationState?.setZetaAttestationToken(it) }
+            val (accessExpiresAt, refreshExpiresAt) = computeTokenExpirations(clock(), resp.expiresIn, resp.refreshExpires)
 
-            val (resp, httpTime) = measureTimedValue { authApi.requestAccessToken(tokenEndpoint, request, dpop) }
-
-            val recvEpoch = clock()
-            Log.d { "[AUTH-TIMING][$requestId] requestAccessToken received_http epoch=$recvEpoch httpTime=$httpTime" }
-
-            val (_, saveTime) = measureTimedValue {
-                authStorage.saveAccessTokens(resp.accessToken, resp.refreshToken, clock() + resp.expiresIn)
-            }
-            Log.d { "[AUTH-TIMING][$requestId] requestAccessToken saveTokens=$saveTime total=${start.elapsedNow()}" }
+            authStorage.saveAccessTokens(resp.accessToken, resp.refreshToken, accessExpiresAt, refreshExpiresAt)
 
             return resp.accessToken
         } catch (e: AuthenticationException) {
-            Log.w { "[AUTH-TIMING][$requestId] requestAccessToken FAILED in ${start.elapsedNow()}: ${e.message}" }
+            Log.w { "requestAccessToken FAILED: ${e.message}" }
             throw e
         }
     }
@@ -274,8 +274,6 @@ open class AccessTokenProviderImpl(
     )
 
     override suspend fun createDpopToken(dpopKey: Jwk, method: String, url: String, nonceBytes: ByteArray?, accessTokenHash: String?): String {
-        val start = TimeSource.Monotonic.markNow()
-
         val now = clock()
         val jti = tpmProvider.randomUuid().toHexDashString()
         val htu = url.applyHtuRules()
@@ -296,22 +294,17 @@ open class AccessTokenProviderImpl(
                 ath = accessTokenHash,
             ),
         )
-        val (signed, signTime) = measureTimedValue { signDpopToken(token) }
-        Log.d { "[AUTH-TIMING] createDpopToken signDpopToken=$signTime total=${start.elapsedNow()}" }
+        val signed = signDpopToken(token)
         return AccessTokenUtility.addSignature(token, signed)
     }
 
     /** The base64url-encoded SHA-256 hash of the token. */
     override suspend fun hash(token: String): String {
-        val (result, hashTime) = measureTimedValue {
-            val hashedToken = hashWithSha256(token.encodeToByteArray())
-            Base64
-                .UrlSafe
-                .withPadding(Base64.PaddingOption.ABSENT)
-                .encode(hashedToken)
-        }
-        Log.d { "[AUTH-TIMING] hash=$hashTime" }
-        return result
+        val hashedToken = hashWithSha256(token.encodeToByteArray())
+        return Base64
+            .UrlSafe
+            .withPadding(Base64.PaddingOption.ABSENT)
+            .encode(hashedToken)
     }
 
     private suspend fun signDpopToken(token: String): String {
@@ -334,3 +327,19 @@ open class AccessTokenProviderImpl(
         }
     }
 }
+
+internal fun computeTokenExpirations(
+    now: Long,
+    expiresIn: Int,
+    refreshExpiresIn: Int?,
+): TokenExpirations {
+    val accessExpiresAt = now + expiresIn
+    val refreshExpiresAt = refreshExpiresIn?.takeIf { it > 0 }?.let { now + it }
+
+    return TokenExpirations(accessExpiresAt, refreshExpiresAt)
+}
+
+internal data class TokenExpirations(
+    val accessExpiresAt: Long,
+    val refreshExpiresAt: Long?,
+)

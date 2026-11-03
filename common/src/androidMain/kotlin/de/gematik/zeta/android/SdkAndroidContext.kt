@@ -29,8 +29,13 @@ import android.content.Context
 public object SdkAndroidContext {
     private var appContext: Context? = null
 
-    public fun init(context: Context) {
+    /** Google Cloud project number for Play Integrity; `null` disables Play Integrity. */
+    public var playIntegrityCloudProjectNumber: Long? = null
+        private set
+
+    public fun init(context: Context, playIntegrityCloudProjectNumber: Long? = null) {
         appContext = context.applicationContext
+        this.playIntegrityCloudProjectNumber = playIntegrityCloudProjectNumber
     }
 
     public fun get(): Context = appContext ?: error("SdkAndroidContext not initialized")

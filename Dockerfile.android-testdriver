@@ -1,0 +1,13 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends socat \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY zeta-android-testdriver/build/outputs/apk/debug/zeta-android-testdriver-debug.apk /opt/testdriver/app.apk
+COPY android-testdriver-entrypoint.sh /opt/testdriver/entrypoint.sh
+RUN chmod +x /opt/testdriver/entrypoint.sh
+
+EXPOSE 8080
+ENTRYPOINT ["/opt/testdriver/entrypoint.sh"]

@@ -27,6 +27,7 @@ package de.gematik.zeta.sdk
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.authentication.AuthenticationStorageImpl
+import de.gematik.zeta.sdk.authentication.identity.models.RegisteredClient
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
 import de.gematik.zeta.sdk.clientregistration.ClientRegistrationStorageImpl
 import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationResponse
@@ -386,7 +387,16 @@ class ZetaSdkClientTests {
 
             override suspend fun logout(): Result<Unit> = Result.success(Unit)
             override suspend fun close(): Result<Unit> = Result.success(Unit)
-            override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
+            override suspend fun changeEmail(newEmail: String) = error("Not in scope of the test")
+            override suspend fun resendEmailChangeCode() = error("Not in scope of the test")
+            override suspend fun verifyEmailChange(code: String) = error("Not in scope of the test")
+            override suspend fun deleteClient(id: String): Result<Unit> {
+                error("Not in scope of the test")
+            }
+
+            override suspend fun listClients(): Result<List<RegisteredClient>> {
+                error("Not in scope of the test")
+            }
         }
 
         // Act
@@ -426,6 +436,15 @@ class ZetaSdkClientTests {
             override suspend fun logout(): Result<Unit> = Result.success(Unit)
             override suspend fun close(): Result<Unit> = Result.success(Unit)
             override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
+            override suspend fun resendEmailChangeCode() = error("not in scope of the test")
+            override suspend fun verifyEmailChange(code: String) = error("not in scope of the test")
+            override suspend fun deleteClient(id: String): Result<Unit> {
+                error("Not in scope of the test")
+            }
+
+            override suspend fun listClients(): Result<List<RegisteredClient>> {
+                error("Not in scope of the test")
+            }
         }
 
         // Act
@@ -708,6 +727,15 @@ class ZetaSdkClientTests {
             override suspend fun logout(): Result<Unit> = Result.success(Unit)
             override suspend fun close(): Result<Unit> = Result.success(Unit)
             override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
+            override suspend fun resendEmailChangeCode() = error("not in scope of the test")
+            override suspend fun verifyEmailChange(code: String) = error("not in scope of the test")
+            override suspend fun deleteClient(id: String): Result<Unit> {
+                error("Not in scope of the test")
+            }
+
+            override suspend fun listClients(): Result<List<RegisteredClient>> {
+                error("Not in scope of the test")
+            }
         }
 
         // Act
@@ -742,6 +770,15 @@ class ZetaSdkClientTests {
             override suspend fun logout(): Result<Unit> = Result.success(Unit)
             override suspend fun close(): Result<Unit> = Result.success(Unit)
             override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
+            override suspend fun resendEmailChangeCode() = error("not in scope of the test")
+            override suspend fun verifyEmailChange(code: String) = error("not in scope of the test")
+            override suspend fun deleteClient(id: String): Result<Unit> {
+                error("Not in scope of the test")
+            }
+
+            override suspend fun listClients(): Result<List<RegisteredClient>> {
+                error("Not in scope of the test")
+            }
         }
 
         // Act
@@ -776,6 +813,15 @@ class ZetaSdkClientTests {
             override suspend fun logout(): Result<Unit> = Result.success(Unit)
             override suspend fun close(): Result<Unit> = Result.success(Unit)
             override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
+            override suspend fun resendEmailChangeCode() = error("not in scope of the test")
+            override suspend fun verifyEmailChange(code: String) = error("not in scope of the test")
+            override suspend fun deleteClient(id: String): Result<Unit> {
+                error("Not in scope of the test")
+            }
+
+            override suspend fun listClients(): Result<List<RegisteredClient>> {
+                error("Not in scope of the test")
+            }
         }
 
         // Act
@@ -809,6 +855,15 @@ class ZetaSdkClientTests {
             override suspend fun logout(): Result<Unit> = Result.failure(Exception("Close failed"))
             override suspend fun close(): Result<Unit> = Result.success(Unit)
             override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
+            override suspend fun resendEmailChangeCode() = error("not in scope of the test")
+            override suspend fun verifyEmailChange(code: String) = error("not in scope of the test")
+            override suspend fun deleteClient(id: String): Result<Unit> {
+                error("Not in scope of the test")
+            }
+
+            override suspend fun listClients(): Result<List<RegisteredClient>> {
+                error("Not in scope of the test")
+            }
         }
 
         // Act
@@ -842,6 +897,15 @@ class ZetaSdkClientTests {
             override suspend fun logout(): Result<Unit> = Result.success(Unit)
             override suspend fun close(): Result<Unit> = Result.success(Unit)
             override suspend fun changeEmail(newEmail: String) = error("not in scope of the test")
+            override suspend fun resendEmailChangeCode() = error("not in scope of the test")
+            override suspend fun verifyEmailChange(code: String) = error("not in scope of the test")
+            override suspend fun deleteClient(id: String): Result<Unit> {
+                error("Not in scope of the test")
+            }
+
+            override suspend fun listClients(): Result<List<RegisteredClient>> {
+                error("Not in scope of the test")
+            }
         }
 
         // Act
@@ -1030,6 +1094,13 @@ class ZetaSdkClientTests {
     }
 
     @Test
+    fun `client management base url is the guard host with zeta prefix`() = runTest {
+        val client = buildClientWithStorage(InMemoryStorage()) as ZetaSdkClientImpl
+
+        assertEquals("https://fachdienst.example.com/zeta", client.clientManagementBaseUrl)
+    }
+
+    @Test
     fun `notification client is memoized on the instance`() = runTest {
         // Arrange
         val client = buildClientWithStorage(InMemoryStorage()) as ZetaSdkClientImpl
@@ -1169,6 +1240,94 @@ class ZetaSdkClientTests {
         client.close()
     }
 
+    @Test
+    fun `status returns REGISTERED_NO_VALID_TOKENS when refresh token itself is expired`() = runTest {
+        // Arrange
+        val storage = InMemoryStorage()
+        val client = buildClientWithStorage(storage)
+        setupRegistration(storage)
+        setupTokens(
+            storage,
+            accessToken = "access-token",
+            refreshToken = "refresh-token",
+            expiresAt = Clock.System.now().epochSeconds - 60,
+            refreshExpiresAt = Clock.System.now().epochSeconds - 60,
+        )
+
+        // Act
+        val result = client.status()
+
+        // Assert
+        assertTrue(result.isSuccess)
+        assertEquals(SdkStatus.REGISTERED_NO_VALID_TOKENS, result.getOrThrow())
+    }
+
+    @Test
+    fun `status returns REGISTERED_NO_VALID_TOKENS when access token valid but refresh token is expired`() = runTest {
+        // Arrange
+        val storage = InMemoryStorage()
+        val client = buildClientWithStorage(storage)
+        setupRegistration(storage)
+        setupTokens(
+            storage,
+            accessToken = "access-token",
+            refreshToken = "refresh-token",
+            expiresAt = Clock.System.now().epochSeconds + 3600,
+            refreshExpiresAt = Clock.System.now().epochSeconds - 60,
+        )
+
+        // Act
+        val result = client.status()
+
+        // Assert
+        assertTrue(result.isSuccess)
+        assertEquals(SdkStatus.REGISTERED_NO_VALID_TOKENS, result.getOrThrow())
+    }
+
+    @Test
+    fun `status returns HAS_REFRESH_TOKEN when access token expired but refresh token still valid by 1 second`() = runTest {
+        // Arrange
+        val storage = InMemoryStorage()
+        val client = buildClientWithStorage(storage)
+        setupRegistration(storage)
+        setupTokens(
+            storage,
+            accessToken = "access-token",
+            refreshToken = "refresh-token",
+            expiresAt = Clock.System.now().epochSeconds - 60,
+            refreshExpiresAt = Clock.System.now().epochSeconds + 1,
+        )
+
+        // Act
+        val result = client.status()
+
+        // Assert
+        assertTrue(result.isSuccess)
+        assertEquals(SdkStatus.HAS_REFRESH_TOKEN, result.getOrThrow())
+    }
+
+    @Test
+    fun `status treats unknown refresh token expiration as usable`() = runTest {
+        // Arrange
+        val storage = InMemoryStorage()
+        val client = buildClientWithStorage(storage)
+        setupRegistration(storage)
+        setupTokens(
+            storage,
+            accessToken = "access-token",
+            refreshToken = "refresh-token",
+            expiresAt = Clock.System.now().epochSeconds + 3600,
+            refreshExpiresAt = null,
+        )
+
+        // Act
+        val result = client.status()
+
+        // Assert
+        assertTrue(result.isSuccess)
+        assertEquals(SdkStatus.HAS_ACCESS_AND_REFRESH_TOKEN, result.getOrThrow())
+    }
+
     private val resourceScope = ResourceScope(resource, listOf(scope))
     private suspend fun setupRegistration(storage: SdkStorage) {
         ConfigurationStorageImpl(storage, resourceScope, clock = SystemZetaClock).linkResourceToAuthorizationServer(getAuthServer(authServerIssuer))
@@ -1183,11 +1342,13 @@ class ZetaSdkClientTests {
         accessToken: String = "access-token",
         refreshToken: String = "refresh-token",
         expiresAt: Long = Clock.System.now().epochSeconds + 3600,
+        refreshExpiresAt: Long? = Clock.System.now().epochSeconds + 3600,
     ) {
         AuthenticationStorageImpl(storage, resourceScope).saveAccessTokens(
             accessToken = accessToken,
             refreshToken = refreshToken,
             expiresAt = expiresAt,
+            refreshExpiresAt = refreshExpiresAt,
         )
     }
 

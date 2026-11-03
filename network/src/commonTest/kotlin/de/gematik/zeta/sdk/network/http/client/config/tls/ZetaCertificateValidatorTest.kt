@@ -407,4 +407,53 @@ class ZetaCertificateValidatorTest {
         // Assert
         assertTrue(result.isValid, "expected valid, got errors: ${result.errors}")
     }
+
+    @Test
+    fun validate_withNoSanAndHostInCommonName_returnsIsValidTrue() {
+        // Arrange
+        val cert = validEcCert().copy(san = emptyList(), commonName = "example.com")
+
+        // Act
+        val result = ZetaCertificateValidator.validate(cert, now, host = "example.com")
+
+        // Assert
+        assertTrue(result.isValid, "expected valid, got errors: ${result.errors}")
+    }
+
+    @Test
+    fun validate_withNoSanAndWildcardCommonName_matchesSubdomain() {
+        // Arrange
+        val cert = validEcCert().copy(san = emptyList(), commonName = "*.example.com")
+
+        // Act
+        val result = ZetaCertificateValidator.validate(cert, now, host = "api.example.com")
+
+        // Assert
+        assertTrue(result.isValid, "expected valid, got errors: ${result.errors}")
+    }
+
+    @Test
+    fun validate_withNoSanAndCommonNameMismatch_returnsIsValidFalse() {
+        // Arrange
+        val cert = validEcCert().copy(san = emptyList(), commonName = "other.com")
+
+        // Act
+        val result = ZetaCertificateValidator.validate(cert, now, host = "example.com")
+
+        // Assert
+        assertFalse(result.isValid)
+        assertTrue(result.errors.any { "Certificate SAN does not match host" in it && "other.com" in it })
+    }
+
+    @Test
+    fun validate_withSanMismatchAndHostInCommonName_ignoresCommonName() {
+        // Arrange
+        val cert = validEcCert().copy(san = listOf("other.com"), commonName = "example.com")
+
+        // Act
+        val result = ZetaCertificateValidator.validate(cert, now, host = "example.com")
+
+        // Assert
+        assertFalse(result.isValid)
+    }
 }

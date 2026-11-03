@@ -1,0 +1,9 @@
+Feature: Hello ZETA iOS
+
+  Scenario: Hello ZETA with sekIDP login and OTP
+    Given an iOS device with the ZETA app
+    When I tap "Hello Zeta"
+    And I tap "Login"
+    And I enter the OTP from the verification email
+    And I tap "Confirm"
+    Then the result shows "Hello ZETA!"

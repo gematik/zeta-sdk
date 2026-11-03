@@ -26,8 +26,18 @@ package de.gematik.zeta.client.ui.hello
 
 import com.ensody.reactivestate.test.contextualBackgroundScope
 import de.gematik.zeta.client.data.repository.HelloZetaRepository
+import de.gematik.zeta.sdk.authentication.identity.ChallengeType
+import de.gematik.zeta.sdk.authentication.identity.ChangeEmailResponse
+import de.gematik.zeta.sdk.authentication.identity.EmailChallenge
+import de.gematik.zeta.sdk.authentication.identity.ErrorBody
+import de.gematik.zeta.sdk.authentication.identity.InvalidClientManagementRequestException
+import de.gematik.zeta.sdk.authentication.identity.ProblemCode
+import de.gematik.zeta.sdk.authentication.identity.ProblemDetails
+import de.gematik.zeta.sdk.notifications.NotificationHistoryNotFoundException
 import de.gematik.zeta.sdk.notifications.model.Channel
 import de.gematik.zeta.sdk.notifications.model.ChannelStatus
+import de.gematik.zeta.sdk.notifications.model.HistoricNotification
+import io.ktor.client.statement.HttpResponse
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -41,11 +51,14 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -159,14 +172,139 @@ class HelloZetaViewModelTest {
     }
 
     @Test
-    fun changeEmail_showsSdkStatus() = testScope.runTest {
-        coEvery { mockRepository.changeEmail("new@example.de") } returns "Email change verified"
+    fun loadHistory_showsEntriesNewestFirst() = testScope.runTest {
+        val oldest = historicNotification("id-1", "first")
+        val newest = historicNotification("id-2", "second")
+        coEvery { mockRepository.getHistory() } returns listOf(oldest, newest)
+
+        viewModel.loadHistory()
+        advanceUntilIdle()
+
+        assertEquals(listOf(newest, oldest), viewModel.history.value)
+        assertEquals("History: 2 entries", viewModel.lastResult.value)
+    }
+
+    @Test
+    fun loadHistory_failure_keepsPreviousEntries() = testScope.runTest {
+        val entry = historicNotification("id-1", "first")
+        coEvery { mockRepository.getHistory() } returns listOf(entry) andThenThrows IllegalStateException("No local pusher is registered")
+
+        viewModel.loadHistory()
+        advanceUntilIdle()
+        viewModel.loadHistory()
+        advanceUntilIdle()
+
+        assertEquals(listOf(entry), viewModel.history.value)
+        assertTrue(viewModel.lastResult.value.startsWith("Error:"))
+    }
+
+    @Test
+    fun openHistoricNotification_showsEntryFetchedByIdUntilClosed() = testScope.runTest {
+        val entry = historicNotification("id-1", "first")
+        coEvery { mockRepository.getHistoricNotification("id-1") } returns entry
+
+        viewModel.openHistoricNotification("id-1")
+        advanceUntilIdle()
+
+        coVerify { mockRepository.getHistoricNotification("id-1") }
+        assertEquals(HelloZetaViewModel.HistoryDetail.Loaded(entry), viewModel.historyDetail.value)
+
+        viewModel.closeHistoricNotification()
+
+        assertNull(viewModel.historyDetail.value)
+    }
+
+    @Test
+    fun openHistoricNotification_notFound_showsErrorCodeInDialog() = testScope.runTest {
+        coEvery { mockRepository.getHistoricNotification("gone") } throws NotificationHistoryNotFoundException(
+            mockk<HttpResponse>(relaxed = true),
+            "NOTIFICATION_NOT_FOUND",
+            "No notification is stored for the authenticated user",
+        )
+
+        viewModel.openHistoricNotification("gone")
+        advanceUntilIdle()
+
+        assertEquals(
+            HelloZetaViewModel.HistoryDetail.Failed("NOTIFICATION_NOT_FOUND: No notification is stored for the authenticated user"),
+            viewModel.historyDetail.value,
+        )
+    }
+
+    @Test
+    fun changeEmail_pending_opensOtpPromptWithHint() = testScope.runTest {
+        coEvery { mockRepository.changeEmail("new@example.de") } returns
+            ChangeEmailResponse.Pending(challengeType = ChallengeType.EMAIL_OTP, emailHint = "n***@example.de")
 
         viewModel.changeEmail("new@example.de")
         advanceUntilIdle()
 
-        coVerify { mockRepository.changeEmail("new@example.de") }
+        assertEquals(HelloZetaViewModel.EmailOtpPrompt(emailHint = "n***@example.de"), viewModel.emailOtpPrompt.value)
+        assertEquals("Email change pending", viewModel.lastResult.value)
+    }
+
+    @Test
+    fun changeEmail_alreadyVerified_opensNoPrompt() = testScope.runTest {
+        coEvery { mockRepository.changeEmail("same@example.de") } returns ChangeEmailResponse.Verified
+
+        viewModel.changeEmail("same@example.de")
+        advanceUntilIdle()
+
+        assertNull(viewModel.emailOtpPrompt.value)
         assertEquals("Email change verified", viewModel.lastResult.value)
+    }
+
+    @Test
+    fun verifyEmailChange_success_closesPrompt() = testScope.runTest {
+        openOtpPrompt()
+        coEvery { mockRepository.verifyEmailChange("123456") } returns Unit
+
+        viewModel.verifyEmailChange("123456")
+        advanceUntilIdle()
+
+        assertNull(viewModel.emailOtpPrompt.value)
+        assertEquals("Email verified", viewModel.lastResult.value)
+    }
+
+    @Test
+    fun verifyEmailChange_invalidCode_keepsPromptOpenAsRejected() = testScope.runTest {
+        openOtpPrompt()
+        coEvery { mockRepository.verifyEmailChange("000000") } throws
+            InvalidClientManagementRequestException(mockk<HttpResponse>(relaxed = true), ErrorBody(problem = ProblemDetails(status = 400, code = ProblemCode.INVALID_CODE)))
+
+        viewModel.verifyEmailChange("000000")
+        advanceUntilIdle()
+
+        assertEquals(HelloZetaViewModel.EmailOtpPrompt(emailHint = "n***@example.de", rejected = true), viewModel.emailOtpPrompt.value)
+    }
+
+    @Test
+    fun resendEmailChangeCode_updatesHintAndClearsRejection() = testScope.runTest {
+        openOtpPrompt()
+        coEvery { mockRepository.verifyEmailChange("000000") } throws
+            InvalidClientManagementRequestException(mockk<HttpResponse>(relaxed = true), ErrorBody(problem = ProblemDetails(status = 400, code = ProblemCode.INVALID_CODE)))
+        viewModel.verifyEmailChange("000000")
+        coEvery { mockRepository.resendEmailChangeCode() } returns EmailChallenge(ChallengeType.EMAIL_OTP, "x***@example.de")
+
+        viewModel.resendEmailChangeCode()
+        advanceUntilIdle()
+
+        assertEquals(HelloZetaViewModel.EmailOtpPrompt(emailHint = "x***@example.de"), viewModel.emailOtpPrompt.value)
+    }
+
+    @Test
+    fun cancelEmailChange_closesPrompt() = testScope.runTest {
+        openOtpPrompt()
+
+        viewModel.cancelEmailChange()
+
+        assertNull(viewModel.emailOtpPrompt.value)
+    }
+
+    private fun openOtpPrompt() {
+        coEvery { mockRepository.changeEmail("new@example.de") } returns
+            ChangeEmailResponse.Pending(challengeType = ChallengeType.EMAIL_OTP, emailHint = "n***@example.de")
+        viewModel.changeEmail("new@example.de")
     }
 
     @Test
@@ -178,4 +316,7 @@ class HelloZetaViewModelTest {
 
         assertTrue(viewModel.lastResult.value.startsWith("Error:"))
     }
+
+    private fun historicNotification(identifier: String, message: String) =
+        HistoricNotification(identifier, buildJsonObject { put("message", message) })
 }

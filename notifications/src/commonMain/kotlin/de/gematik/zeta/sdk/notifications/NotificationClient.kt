@@ -75,7 +75,19 @@ interface NotificationClient {
      */
     suspend fun decryptPushNotification(ciphertext: String, timeMessageEncrypted: String): String
 
+    /**
+     * The historic notification with [notificationId], an ID as listed by [getNotifications]. This is
+     * not the `identifier` of a received push, which carries the resource server's reference.
+     * Throws [NotificationHistoryNotFoundException] for an unknown ID and for a notification history
+     * the operator has deactivated (A_29974); the Notification Service does not tell the two apart.
+     */
     suspend fun getNotification(notificationId: String): HistoricNotification
 
+    /**
+     * The notification history of the local device. A `pushkey` is not required: the last pusher
+     * registered via [registerPusher] is used. A deactivated notification history (A_29974) may
+     * surface as [NotificationHistoryNotFoundException] or as an empty list, depending on the
+     * Notification Service.
+     */
     suspend fun getNotifications(): HistoricNotifications
 }

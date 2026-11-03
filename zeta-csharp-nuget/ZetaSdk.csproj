@@ -1,0 +1,71 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <PackageId>Zeta.Sdk</PackageId>
+    <VersionPrefix>2.0.0</VersionPrefix>
+    <Authors>EY Strategy &amp; Transactions GmbH, 2025, licensed for gematik GmbH</Authors>
+    <Description>Managed C# wrapper around the ZETA native SDK.</Description>
+    <PackageTags>zeta;gematik;</PackageTags>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(ZetaRid)' == 'linux-x64'">
+    <PackageId>Zeta.Sdk.Linux</PackageId>
+    <Description>$(Description) Linux x64 build.</Description>
+    <PackageTags>$(PackageTags);linux;linux-x64</PackageTags>
+    <ZetaNativeFile>runtimes/linux-x64/native/libzeta_sdk.so</ZetaNativeFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(ZetaRid)' == 'win-x64'">
+    <PackageId>Zeta.Sdk.Windows</PackageId>
+    <Description>$(Description) Windows x64 build.</Description>
+    <PackageTags>$(PackageTags);windows;win-x64</PackageTags>
+    <ZetaNativeFile>runtimes/win-x64/native/zeta_sdk.dll</ZetaNativeFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(ZetaRid)' == 'osx-arm64'">
+    <PackageId>Zeta.Sdk.MacOS</PackageId>
+    <Description>$(Description) macOS arm64 build.</Description>
+    <PackageTags>$(PackageTags);macos;osx-arm64</PackageTags>
+    <ZetaNativeFile>runtimes/osx-arm64/native/libzeta_sdk.dylib</ZetaNativeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="sample/**/*.cs" />
+    <Compile Remove="tests/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ZetaSdk.Tests" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ZetaRid)' != ''">
+    <None Include="$(ZetaNativeFile)"
+          Pack="true"
+          PackagePath="runtimes/$(ZetaRid)/native/%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ZetaRid)' == ''">
+    <None Include="runtimes/**/*" Pack="false">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <Target Name="EnsureNativeLibs" BeforeTargets="GenerateNuspec">
+    <Error Condition="'$(ZetaRid)' == ''"
+           Text="Packing requires -p:ZetaRid=linux-x64, win-x64 or osx-arm64." />
+    <Error Condition="'$(ZetaRid)' != '' And '$(ZetaNativeFile)' == ''"
+           Text="Unsupported ZetaRid '$(ZetaRid)'. Supported: linux-x64, win-x64, osx-arm64." />
+    <Error Condition="'$(ZetaNativeFile)' != '' And !Exists('$(ZetaNativeFile)')"
+           Text="Missing native lib: $(ZetaNativeFile)" />
+  </Target>
+</Project>

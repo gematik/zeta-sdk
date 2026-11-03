@@ -46,6 +46,7 @@ import kotlinx.serialization.json.buildJsonObject
  */
 public open class TestDriverManager(
     initialConfig: SdkInstanceConfig = SdkInstanceConfig.fromFileOrEnv(),
+    public val featureRunner: FeatureRunner = FeatureRunner(),
 ) {
     private val store = InMemoryStorage()
     public val otpCallback: TestDriverOtpCallback = TestDriverOtpCallback(initialConfig.oidcBindingEmail)

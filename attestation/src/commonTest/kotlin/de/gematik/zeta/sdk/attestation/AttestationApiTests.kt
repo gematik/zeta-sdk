@@ -28,19 +28,27 @@ import Jwk
 import PublicKeyOut
 import de.gematik.zeta.platform.Platform
 import de.gematik.zeta.platform.platform
+import de.gematik.zeta.sdk.attestation.assertion.HardwarePosture
+import de.gematik.zeta.sdk.attestation.assertion.HardwarePostureBuilder
 import de.gematik.zeta.sdk.attestation.model.AttestationConfig
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
+import de.gematik.zeta.sdk.attestation.model.PlatformProductId.AppleProductId
+import de.gematik.zeta.sdk.attestation.model.PostureType
 import de.gematik.zeta.sdk.tpm.TpmProvider
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.Base64.PaddingOption
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.uuid.Uuid
 
@@ -326,6 +334,70 @@ class AttestationApiImplTest {
         assertNotEquals(payload1["exp"]?.jsonPrimitive?.content, payload2["exp"]?.jsonPrimitive?.content)
     }
 
+    private fun decodePayload(jwt: String) = Json.parseToJsonElement(
+        Base64.UrlSafe.withPadding(PaddingOption.ABSENT).decode(jwt.split(".")[1]).decodeToString(),
+    ).jsonObject
+
+    private fun clientStatement(jwt: String) = decodePayload(jwt)["client_statement"]!!.jsonObject
+
+    private val appleId = AppleProductId("apple", "ios", listOf("de.gematik.app"))
+
+    @Test
+    fun createClientAssertion_usesApplePosture_whenBuilderReturnsPosture() = runTest {
+        val fakePosture: JsonElement = buildJsonObject { put("device_model", "iPhone15,2") }
+        val impl = buildImpl(hardwarePostureBuilder = HardwarePostureBuilder { _, _, _, _, _ -> HardwarePosture(PostureType.APPLE, fakePosture) })
+
+        val jwt = impl.createClientAssertion(productId, productVersion, fixedNonce, defaultClientId, fixedExp, defaultaud, appleId)
+
+        val statement = clientStatement(jwt)
+        assertEquals("apple", statement["posture_type"]?.jsonPrimitive?.content)
+        assertEquals("iPhone15,2", statement["posture"]!!.jsonObject["device_model"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun createClientAssertion_usesPostureTypeFromBuilder_forAndroid() = runTest {
+        val fakePosture: JsonElement = buildJsonObject { put("signed_client_data_hash", "sig") }
+        val impl = buildImpl(hardwarePostureBuilder = HardwarePostureBuilder { _, _, _, _, _ -> HardwarePosture(PostureType.ANDROID, fakePosture) })
+
+        val jwt = impl.createClientAssertion(productId, productVersion, fixedNonce, defaultClientId, fixedExp, defaultaud, appleId)
+
+        assertEquals("android", clientStatement(jwt)["posture_type"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun createClientAssertion_fallsBackToSoftware_whenBuilderReturnsNull() = runTest {
+        val impl = buildImpl(hardwarePostureBuilder = HardwarePostureBuilder { _, _, _, _, _ -> null })
+
+        val jwt = impl.createClientAssertion(productId, productVersion, fixedNonce, defaultClientId, fixedExp, defaultaud, appleId)
+
+        val statement = clientStatement(jwt)
+        assertEquals("software", statement["posture_type"]?.jsonPrimitive?.content)
+        val productIdJson = statement["posture"]!!.jsonObject["platform_product_id"]!!.jsonObject
+        assertEquals("apple", productIdJson["platform"]?.jsonPrimitive?.content)
+        assertEquals("ios", productIdJson["platform_type"]?.jsonPrimitive?.content)
+        assertEquals("de.gematik.app", productIdJson["app_bundle_ids"]!!.jsonArray.single().jsonPrimitive.content)
+    }
+
+    @Test
+    fun createClientAssertion_passesClientKeyAndNonceToBuilder() = runTest {
+        var received: Pair<ByteArray, ByteArray>? = null
+        val impl = buildImpl(hardwarePostureBuilder = HardwarePostureBuilder { key, nonce, _, _, _ -> received = key to nonce; null })
+
+        impl.createClientAssertion(productId, productVersion, fixedNonce, defaultClientId, fixedExp, defaultaud, appleId)
+
+        assertContentEquals(ByteArray(32) { 0x01 }, received!!.first)
+        assertContentEquals(fixedNonce, received.second)
+    }
+
+    @Test
+    fun createClientAssertion_propagates_whenBuilderThrows() = runTest {
+        val impl = buildImpl(hardwarePostureBuilder = HardwarePostureBuilder { _, _, _, _, _ -> throw IllegalStateException("assertion failed") })
+
+        assertFailsWith<IllegalStateException> {
+            impl.createClientAssertion(productId, productVersion, fixedNonce, defaultClientId, fixedExp, defaultaud, appleId)
+        }
+    }
+
     open class FakeTpmProvider : TpmProvider {
         override suspend fun isHardwareBacked(): Boolean = false
 
@@ -376,14 +448,19 @@ class AttestationApiImplTest {
     private fun buildImpl(
         tpmProvider: TpmProvider = FakeTpmProvider(),
         attestationConfig: AttestationConfig = AttestationConfig.software(),
+        hardwarePostureBuilder: HardwarePostureBuilder? = null,
     ) = AttestationApiImpl(
         tpmProvider = tpmProvider,
         uuidGen = { fixedUuid },
         clockEpochSeconds = { fixedEpoch },
         attestationConfig = attestationConfig,
+        hardwarePostureBuilder = hardwarePostureBuilder,
     )
 
     private fun platformProductId() = when (val p = platform()) {
+        Platform.IOS ->
+            PlatformProductId.AppleProductId("apple", "ios", listOf())
+
         is Platform.Jvm.Macos, Platform.Native.Macos ->
             PlatformProductId.AppleProductId("apple", "macos", listOf())
 
@@ -392,6 +469,9 @@ class AttestationApiImplTest {
 
         is Platform.Jvm.Windows ->
             PlatformProductId.WindowsProductId("windows", "", "demo-client")
+
+        Platform.Android ->
+            PlatformProductId.AndroidProductId(packageName = "de.gematik.test", sha256CertFingerprints = listOf())
 
         else -> error("Unknown platform: $p")
     }

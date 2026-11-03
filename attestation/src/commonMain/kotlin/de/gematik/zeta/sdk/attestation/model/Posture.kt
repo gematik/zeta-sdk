@@ -68,34 +68,28 @@ data class ApplePosture(
     @SerialName("system_name") val systemName: String,
     @SerialName("device_model") val deviceModel: String,
     @SerialName("key_id") val keyId: String,
-    @SerialName("fmt") val fmt: String = "apple-appattest",
-    @SerialName("attStmt") val attStmt: AttStmt,
-    @SerialName("authData") val authData: AuthData,
-    @SerialName("signature") val signature: String,
-    @SerialName("assertionAuthenticatorData") val assertionAuthenticatorData: AssertionAuthenticatorData,
-    @SerialName("client_data_json") val clientDataJson: String,
+    @SerialName("fmt") val fmt: String = APPLE_APP_ATTEST_FMT,
+    @SerialName("attStmt") val attStmt: AppleAttestationStatement,
+    @SerialName("authData") val authData: AppleAttestationAuthData,
+    @SerialName("signature") val signature: String? = null,
+    @SerialName("assertionAuthenticatorData") val assertionAuthenticatorData: AssertionAuthenticatorData? = null,
+)
+
+const val APPLE_APP_ATTEST_FMT = "apple-appattest"
+
+@Serializable
+data class AppleAttestationStatement(
+    @SerialName("x5c") val x5c: List<String>,
+    @SerialName("receipt") val receipt: String,
 )
 
 @Serializable
-data class AttStmt(
-    @SerialName("x5c")
-    val x5c: List<String>,
-    @SerialName("receipt")
-    val receipt: String,
-)
-
-@Serializable
-data class AuthData(
-    @SerialName("rpidHash")
-    val rpidHash: String,
-    @SerialName("flags")
-    val flags: String,
-    @SerialName("counter")
-    val counter: Int,
-    @SerialName("aaguid")
-    val aaguid: String,
-    @SerialName("credentialId")
-    val credentialId: String,
+data class AppleAttestationAuthData(
+    @SerialName("rpidHash") val rpidHash: String,
+    @SerialName("flags") val flags: String,
+    @SerialName("counter") val counter: Long,
+    @SerialName("aaguid") val aaguid: String,
+    @SerialName("credentialId") val credentialId: String,
 )
 
 @Serializable
@@ -103,7 +97,7 @@ data class AssertionAuthenticatorData(
     @SerialName("rpidHash")
     val rpidHash: String,
     @SerialName("counter")
-    val counter: Int,
+    val counter: Long,
 )
 
 expect suspend fun buildPosture(platformProductId: PlatformProductId?, productId: String, productVersion: String, attChallenge: String, publicKeyB64: String): JsonElement

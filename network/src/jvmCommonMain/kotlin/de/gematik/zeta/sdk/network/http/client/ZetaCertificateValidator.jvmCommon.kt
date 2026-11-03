@@ -25,6 +25,11 @@
 package de.gematik.zeta.sdk.network.http.client
 
 import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaCertInfo
+import de.gematik.zeta.sdk.network.http.client.config.tls.certificateMatchesHost
+import org.bouncycastle.asn1.ASN1String
+import org.bouncycastle.asn1.x500.X500Name
+import org.bouncycastle.asn1.x500.style.BCStyle
+import org.bouncycastle.asn1.x509.GeneralName
 import java.security.cert.X509Certificate
 import java.security.interfaces.ECPublicKey
 import java.security.interfaces.RSAPublicKey
@@ -70,5 +75,29 @@ public fun X509Certificate.toZetaCertInfo(): ZetaCertInfo {
         notBefore = notBefore.time / 1000,
         notAfter = notAfter.time / 1000,
         san = sanDnsNames,
+        commonName = mostSpecificCommonName(),
     )
 }
+
+internal fun X509Certificate.mostSpecificCommonName(): String? =
+    X500Name.getInstance(subjectX500Principal.encoded)
+        .getRDNs(BCStyle.CN)
+        .lastOrNull()
+        ?.first
+        ?.value
+        ?.let { (it as? ASN1String)?.string }
+
+internal fun X509Certificate.matchesHost(host: String): Boolean {
+    val sans = subjectAlternativeNames.orEmpty()
+    fun sansOfType(type: Int) = sans.filter { it[0] == type }.map { it[1] as String }
+
+    return if (host.isIpAddress()) {
+        sansOfType(GeneralName.iPAddress).any { it.equals(host, ignoreCase = true) }
+    } else {
+        certificateMatchesHost(sansOfType(GeneralName.dNSName), mostSpecificCommonName(), host)
+    }
+}
+
+private val IPV4_REGEX = Regex("""\d{1,3}(\.\d{1,3}){3}""")
+
+private fun String.isIpAddress(): Boolean = ':' in this || IPV4_REGEX.matches(this)

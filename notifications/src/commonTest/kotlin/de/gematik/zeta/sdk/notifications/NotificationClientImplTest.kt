@@ -24,16 +24,23 @@
 
 package de.gematik.zeta.sdk.notifications
 
+import de.gematik.zeta.sdk.crypto.AesGcmCipherImpl
 import de.gematik.zeta.sdk.notifications.model.Channel
 import de.gematik.zeta.sdk.notifications.model.ChannelStatus
+import de.gematik.zeta.sdk.notifications.model.HistoricNotification
+import de.gematik.zeta.sdk.notifications.model.HistoricNotifications
 import de.gematik.zeta.sdk.notifications.model.Pusher
 import de.gematik.zeta.sdk.notifications.model.PusherConfig
 import de.gematik.zeta.sdk.notifications.model.PusherData
 import de.gematik.zeta.sdk.notifications.model.PusherEncryption
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlin.io.encoding.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -104,6 +111,43 @@ class NotificationClientImplTest {
     }
 
     @Test
+    fun registerPusher_sameLocalIdentityWithoutKeyChainReRegisters() = runTest {
+        val api = FakeNotificationApi()
+        val store = InMemoryLocalPusherStorage()
+        val keyChainStore = InMemoryPushKeyChainStorage()
+        val client = client(api, store, keyChainStore)
+        val registration = PusherConfig(pushkey = "token", appId = "app")
+        client.registerPusher(registration)
+        keyChainStore.clear()
+
+        client.registerPusher(registration)
+
+        assertEquals(null, api.setPusherCalls[1].kind)
+        assertEquals("http", api.setPusherCalls[2].kind)
+        assertEquals(encryption, api.setPusherCalls[2].encryption)
+        assertNotNull(keyChainStore.get())
+    }
+
+    @Test
+    fun registerPusher_storesKeyChainBeforeLocalPusher() = runTest {
+        val keyChainStore = InMemoryPushKeyChainStorage()
+        val failingStore = object : LocalPusherStorage by InMemoryLocalPusherStorage() {
+            override suspend fun save(pusher: LocalPusher) {
+                error("disk full")
+            }
+        }
+        val client = client(FakeNotificationApi(), failingStore, keyChainStore)
+
+        assertFailsWith<IllegalStateException> {
+            client.registerPusher(PusherConfig(pushkey = "token", appId = "app"))
+        }
+
+        val material = derivePushKeyMaterial(encryption.iss.hexToByteArray(), encryption.timeIssCreated)
+        val ciphertext = encryptLikeTheFachdienst("still decryptable", material)
+        assertEquals("still decryptable", client.decryptPushNotification(ciphertext, encryption.timeIssCreated))
+    }
+
+    @Test
     fun registerPusher_replacesPreviousLocalPusher() = runTest {
         val api = FakeNotificationApi()
         val store = InMemoryLocalPusherStorage()
@@ -162,6 +206,20 @@ class NotificationClientImplTest {
     }
 
     @Test
+    fun deletePusher_clearsKeyChainWhenItMatches() = runTest {
+        val api = FakeNotificationApi()
+        val store = InMemoryLocalPusherStorage()
+        val keyChainStore = InMemoryPushKeyChainStorage()
+        val client = client(api, store, keyChainStore)
+        client.registerPusher(PusherConfig(pushkey = "token", appId = "app"))
+
+        client.deletePusher(pushkey = "token", appId = "app")
+
+        assertFailsWith<IllegalStateException> { client.decryptPushNotification("cipher", "2026-08") }
+        assertEquals(null, keyChainStore.get())
+    }
+
+    @Test
     fun deletePusher_keepsLocalWhenAnotherDeviceIsRemoved() = runTest {
         val api = FakeNotificationApi()
         val store = InMemoryLocalPusherStorage()
@@ -212,24 +270,66 @@ class NotificationClientImplTest {
     }
 
     @Test
-    fun decryptPushNotification_isNotImplemented() = runTest {
+    fun decryptPushNotification_decryptsAMessageEncryptedForTheRegistrationMonth() = runTest {
+        val client = client(FakeNotificationApi())
+        client.registerPusher(PusherConfig(pushkey = "token", appId = "app"))
+        val material = derivePushKeyMaterial(encryption.iss.hexToByteArray(), encryption.timeIssCreated)
+
+        val ciphertext = encryptLikeTheFachdienst("hello from the guard", material)
+
+        assertEquals("hello from the guard", client.decryptPushNotification(ciphertext, encryption.timeIssCreated))
+    }
+
+    @Test
+    fun decryptPushNotification_derivesForwardWhenTheMessageIsFromALaterMonth() = runTest {
+        val client = client(FakeNotificationApi())
+        client.registerPusher(PusherConfig(pushkey = "token", appId = "app"))
+        val nextMonth = nextYearMonth(encryption.timeIssCreated)
+        val material = derivePushKeyMaterial(encryption.iss.hexToByteArray(), encryption.timeIssCreated)
+        val nextMaterial = derivePushKeyMaterial(material.sharedSecret, nextMonth)
+        val ciphertext = encryptLikeTheFachdienst("next month's message", nextMaterial)
+
+        assertEquals("next month's message", client.decryptPushNotification(ciphertext, nextMonth))
+    }
+
+    @Test
+    fun decryptPushNotification_failsWhenNoPusherHasBeenRegistered() = runTest {
         assertFailsWith<IllegalStateException> {
             client(FakeNotificationApi()).decryptPushNotification("cipher", "2026-08")
         }
     }
 
     @Test
-    fun getNotification_isNotImplemented() = runTest {
-        assertFailsWith<IllegalStateException> {
-            client(FakeNotificationApi()).getNotification("550e8400-e29b-41d4-a716-446655440000")
+    fun decryptPushNotification_rejectsAMalformedMonth() = runTest {
+        val client = client(FakeNotificationApi())
+        client.registerPusher(PusherConfig(pushkey = "token", appId = "app"))
+
+        assertFailsWith<IllegalArgumentException> {
+            client.decryptPushNotification("cipher", "not-a-month")
         }
     }
 
     @Test
-    fun getNotifications_isNotImplemented() = runTest {
-        assertFailsWith<IllegalStateException> {
-            client(FakeNotificationApi()).getNotifications()
-        }
+    fun getNotification_delegatesToApi() = runTest {
+        val notification = HistoricNotification("550e8400-e29b-41d4-a716-446655440000", buildJsonObject { put("event", "new") })
+        val api = FakeNotificationApi(history = mapOf("token" to listOf(notification)))
+
+        assertEquals(notification, client(api).getNotification(notification.identifier))
+    }
+
+    @Test
+    fun getNotifications_usesStoredPushkey() = runTest {
+        val own = HistoricNotification("id-1")
+        val api = FakeNotificationApi(history = mapOf("token" to listOf(own), "other-device" to listOf(HistoricNotification("id-2"))))
+        val client = client(api)
+        client.registerPusher(PusherConfig(pushkey = "token", appId = "app"))
+
+        assertEquals(HistoricNotifications(listOf(own)), client.getNotifications())
+    }
+
+    @Test
+    fun getNotifications_failsWhenNoLocalPusher() = runTest {
+        assertFailsWith<IllegalStateException> { client(FakeNotificationApi()).getNotifications() }
     }
 
     @Test
@@ -245,13 +345,33 @@ class NotificationClientImplTest {
     private fun client(
         api: NotificationApiClient,
         store: LocalPusherStorage = InMemoryLocalPusherStorage(),
-    ) = NotificationClientImpl(api, store) { encryption }
+        keyChainStorage: PushKeyChainStorage = InMemoryPushKeyChainStorage(),
+    ) = NotificationClientImpl(api, store, { encryption }, keyChainStorage)
+}
+
+/** Builds a push payload the way the Fachdienst would (`A_27610` padding, then AES/GCM). */
+private fun encryptLikeTheFachdienst(message: String, material: PushKeyMaterial): String {
+    val padded = padPushMessageForTest(message)
+    val packed = AesGcmCipherImpl().encrypt(material.aesKey, padded)
+    return Base64.encode(packed)
+}
+
+private fun padPushMessageForTest(message: String): ByteArray {
+    val messageBytes = message.encodeToByteArray()
+    val paddedSize = 1024
+    val headerLen = 6
+    val padLength = paddedSize - headerLen - messageBytes.size
+    return "PNM1".encodeToByteArray() +
+        byteArrayOf((padLength shr 8).toByte(), (padLength and 0xFF).toByte()) +
+        ByteArray(padLength) { ' '.code.toByte() } +
+        messageBytes
 }
 
 private class FakeNotificationApi(
     var pushers: List<Pusher> = emptyList(),
     var availableChannels: List<Channel> = emptyList(),
     var deviceChannels: Map<String, List<Channel>> = emptyMap(),
+    var history: Map<String, List<HistoricNotification>> = emptyMap(),
 ) : NotificationApiClient {
     val setPusherCalls = mutableListOf<Pusher>()
     val setChannelCalls = mutableListOf<Pair<String, List<Channel>>>()
@@ -269,4 +389,9 @@ private class FakeNotificationApi(
     override suspend fun setChannel(pushkey: String, channels: List<Channel>) {
         setChannelCalls += pushkey to channels
     }
+
+    override suspend fun getHistoricNotification(notificationId: String): HistoricNotification =
+        history.values.flatten().single { it.identifier == notificationId }
+
+    override suspend fun getHistoricNotifications(pushkey: String): List<HistoricNotification> = history[pushkey].orEmpty()
 }

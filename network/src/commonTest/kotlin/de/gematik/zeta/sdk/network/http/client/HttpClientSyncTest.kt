@@ -28,14 +28,20 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
+import io.ktor.client.plugins.api.createClientPlugin
+import io.ktor.client.request.get
+import io.ktor.client.statement.HttpResponsePipeline
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.util.pipeline.PipelinePhase
+import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class HttpClientSyncTest {
@@ -292,6 +298,136 @@ class HttpClientSyncTest {
             assertEquals(200, client.options(testUrl, emptyMap()).status)
             assertEquals(200, client.head(testUrl, emptyMap()).status)
             assertEquals(200, client.delete(testUrl, emptyMap()).status)
+        }
+    }
+
+    @Test
+    fun httpResponseWrapper_usesInnerHeaders_whenInnerHeadersKeyPresent() {
+        val innerHeaders = mapOf("etag" to "\"abc123\"", "vsdm-pz" to "some-pz-value")
+        val result = with(HttpClientSync) {
+            buildClientWithInnerAttributes(innerHeaders = innerHeaders).get(testUrl, emptyMap())
+        }
+
+        assertEquals("\"abc123\"", result.headers["etag"])
+        assertEquals("some-pz-value", result.headers["vsdm-pz"])
+        assertTrue(!result.headers.containsKey("X-Response-Header"))
+    }
+
+    @Test
+    fun httpResponseWrapper_fallsBackToRawHeaders_whenInnerHeadersKeyAbsent() {
+        val result = with(HttpClientSync) {
+            buildClientWithInnerAttributes(innerHeaders = null).get(testUrl, emptyMap())
+        }
+        assertTrue(result.headers.containsKey("X-Response-Header"))
+        assertEquals("response-value", result.headers["X-Response-Header"])
+    }
+
+    @Test
+    fun httpResponseWrapper_usesInnerStatus_whenInnerStatusKeyPresent() {
+        val result = with(HttpClientSync) {
+            buildClientWithInnerAttributes(status = HttpStatusCode.OK, innerStatus = 404)
+                .get(testUrl, emptyMap())
+        }
+        assertEquals(404, result.status)
+    }
+
+    @Test
+    fun httpResponseWrapper_fallsBackToRawStatus_whenInnerStatusKeyAbsent() {
+        val result = with(HttpClientSync) {
+            buildClientWithInnerAttributes(status = HttpStatusCode.OK, innerStatus = null)
+                .get(testUrl, emptyMap())
+        }
+        assertEquals(200, result.status)
+    }
+
+    @Test
+    fun httpResponseWrapper_usesInnerStatusAndHeadersTogether_matchingAslDecryptionScenario() {
+        val innerHeaders = mapOf("etag" to "\"xyz\"", "vsdm-pz" to "pz-token")
+        val result = with(HttpClientSync) {
+            buildClientWithInnerAttributes(
+                status = HttpStatusCode.OK,
+                innerStatus = 200,
+                innerHeaders = innerHeaders,
+            ).get(testUrl, emptyMap())
+        }
+        assertEquals(200, result.status)
+        assertEquals("\"xyz\"", result.headers["etag"])
+        assertEquals("pz-token", result.headers["vsdm-pz"])
+        assertTrue(!result.headers.containsKey("X-Response-Header"))
+    }
+
+    @Test
+    fun httpResponseWrapper_bodyUnaffectedByInnerAttributes() {
+        val result = with(HttpClientSync) {
+            buildClientWithInnerAttributes(
+                body = responseBody,
+                innerStatus = 404,
+                innerHeaders = mapOf("etag" to "\"abc\""),
+            ).get(testUrl, emptyMap())
+        }
+        assertEquals(responseBody, result.body)
+    }
+
+    @Test
+    fun toZetaResponse_usesInnerStatus_whenPresent() = runTest {
+        val client = buildClientWithInnerAttributes(status = HttpStatusCode.OK, innerStatus = 404)
+        val httpResponse = client.get(testUrl)
+
+        val result = toZetaResponse(httpResponse)
+
+        assertEquals(HttpStatusCode.NotFound, result.status)
+    }
+
+    @Test
+    fun toZetaResponse_usesInnerHeaders_whenPresent() = runTest {
+        val innerHeaders = mapOf("etag" to "\"abc123\"")
+        val client = buildClientWithInnerAttributes(innerHeaders = innerHeaders)
+        val httpResponse = client.get(testUrl)
+
+        val result = toZetaResponse(httpResponse)
+
+        assertEquals("\"abc123\"", result.headers["etag"])
+        assertFalse(result.headers.containsKey("X-Response-Header"))
+    }
+
+    @Test
+    fun toZetaResponse_fallsBackToRawStatusAndHeaders_whenInnerAttributesAbsent() = runTest {
+        val client = buildClientWithInnerAttributes(status = HttpStatusCode.OK, innerStatus = null, innerHeaders = null)
+        val httpResponse = client.get(testUrl)
+
+        val result = toZetaResponse(httpResponse)
+
+        assertEquals(HttpStatusCode.OK, result.status)
+        assertEquals("response-value", result.headers["X-Response-Header"])
+    }
+
+    private fun buildClientWithInnerAttributes(
+        body: String = responseBody,
+        status: HttpStatusCode = HttpStatusCode.OK,
+        innerStatus: Int? = null,
+        innerHeaders: Map<String, String>? = null,
+    ): HttpClient {
+        val engine = MockEngine { request ->
+            captured += CapturedRequest(
+                method = request.method.value,
+                url = request.url.toString(),
+                headers = request.headers,
+                body = request.body.toByteArray().decodeToString(),
+                contentType = request.body.contentType,
+            )
+            respond(body, status, responseHeaders)
+        }
+        return HttpClient(engine) {
+            install(
+                createClientPlugin("TestInnerAttributesPlugin") {
+                    val phase = PipelinePhase("TestInnerAttributes")
+                    client.responsePipeline.insertPhaseBefore(HttpResponsePipeline.Receive, phase)
+                    client.responsePipeline.intercept(phase) {
+                        if (innerStatus != null) context.attributes.put(InnerStatusKey, innerStatus)
+                        if (innerHeaders != null) context.attributes.put(InnerHeadersKey, innerHeaders)
+                    }
+                },
+            )
         }
     }
 }

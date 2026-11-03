@@ -31,7 +31,12 @@ import de.gematik.zeta.sdk.flow.ResponseEvaluator.Companion.ZETA_ERROR_ORIGIN
 import de.gematik.zeta.sdk.network.http.client.InnerHeadersKey
 import de.gematik.zeta.sdk.network.http.client.InnerStatusKey
 import io.ktor.client.call.HttpClientCall
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class AslResponseEvaluator : ResponseEvaluator {
     override suspend fun evaluate(
@@ -39,70 +44,92 @@ class AslResponseEvaluator : ResponseEvaluator {
         ctx: FlowContext,
         retryState: FlowOrchestrator.RetryState,
     ): FlowDirective {
-        return when (call.response.status.value) {
-            200 -> {
-                val attributes = call.response.call.attributes
-                val innerStatus = attributes.getOrNull(InnerStatusKey)
-                val innerHeaders = attributes.getOrNull(InnerHeadersKey)
-                val errorOrigin = innerHeaders
-                    ?.entries
-                    ?.firstOrNull {
-                        it.key.equals(
-                            ZETA_ERROR_ORIGIN,
-                            ignoreCase = true,
-                        )
-                    }
-                    ?.value
+        val status = call.response.status.value
+        return when {
+            status == 200 -> evaluateInner(call, ctx, retryState)
 
-                Log.d { "ASL: 200 transport response. " + "InnerStatus=${innerStatus ?: "none"}" }
-
-                when (innerStatus) {
-                    401 -> handle(
-                        call = call,
-                        ctx = ctx,
-                        retryState = retryState,
-                        statusCode = HttpStatusCode.Unauthorized,
-                        errorOrigin = errorOrigin,
-                    )
-
-                    403 -> handle(
-                        call = call,
-                        ctx = ctx,
-                        retryState = retryState,
-                        statusCode = HttpStatusCode.Forbidden,
-                        errorOrigin = errorOrigin,
-                    )
-
-                    404 -> handle(
-                        call = call,
-                        ctx = ctx,
-                        retryState = retryState,
-                        statusCode = HttpStatusCode.NotFound,
-                        errorOrigin = errorOrigin,
-                    )
-
-                    else -> FlowDirective.Proceed(call.response)
-                }
+            isPepAslSessionExpired(call.response) -> {
+                Log.w { "ASL: PEP reports AslSessionExpired. Re-establishing channel" }
+                reestablishAsl(call, ctx, retryState, "ASL session expired or unknown")
             }
-            500 -> {
-                Log.w { "ASL: 500 response. Retrying handshake" }
-                ctx.aslStorage.clear()
-                FlowDirective.Perform(FlowNeed.Asl)
+
+            status == 500 -> {
+                val error = runCatching { decodeAslError(call.response) }.getOrNull()
+                Log.w { "ASL: 500 response [${error?.errorCode}] ${error?.errorMessage}. Re-establishing channel" }
+                reestablishAsl(call, ctx, retryState, error?.errorMessage ?: "HTTP 500 from server")
             }
 
             else -> {
                 val error = runCatching { decodeAslError(call.response) }
                     .getOrElse { cause ->
-                        Log.e(cause) { "Failed to decode ASL error body (status=${call.response.status.value})" }
+                        Log.e(cause) { "Failed to decode ASL error body (status=$status)" }
                         AslErrorMessage(
                             messageType = "Error",
                             errorCode = -1,
-                            errorMessage = "Unparseable ASL error response (HTTP ${call.response.status.value})",
+                            errorMessage = "Unparseable ASL error response (HTTP $status)",
                         )
                     }
                 Log.e { "Establishing ASL error [${error.errorCode}] ${error.errorMessage}" }
                 FlowDirective.Abort(call.response, ZetaClientError.AslError(error.errorCode, error.errorMessage))
             }
         }
+    }
+
+    private suspend fun evaluateInner(
+        call: HttpClientCall,
+        ctx: FlowContext,
+        retryState: FlowOrchestrator.RetryState,
+    ): FlowDirective {
+        val attributes = call.response.call.attributes
+        val innerStatus = attributes.getOrNull(InnerStatusKey)
+        val innerHeaders = attributes.getOrNull(InnerHeadersKey)
+        val errorOrigin = innerHeaders
+            ?.entries
+            ?.firstOrNull { it.key.equals(ZETA_ERROR_ORIGIN, ignoreCase = true) }
+            ?.value
+
+        Log.d { "ASL: 200 transport response. InnerStatus=${innerStatus ?: "none"}" }
+
+        return when (innerStatus) {
+            401 -> handle(call, ctx, retryState, HttpStatusCode.Unauthorized, errorOrigin)
+            403 -> handle(call, ctx, retryState, HttpStatusCode.Forbidden, errorOrigin)
+            404 -> handle(call, ctx, retryState, HttpStatusCode.NotFound, errorOrigin)
+            else -> FlowDirective.Proceed(call.response)
+        }
+    }
+
+    private suspend fun isPepAslSessionExpired(response: HttpResponse): Boolean {
+        if (response.status.value != 403) return false
+        val origin = response.headers[ZETA_ERROR_ORIGIN]
+        if (!origin.equals(PEP_ERROR_ORIGIN, ignoreCase = true)) return false
+
+        val error = runCatching {
+            Json.parseToJsonElement(response.bodyAsText())
+                .jsonObject["error"]
+                ?.jsonPrimitive
+                ?.content
+        }.getOrNull()
+
+        return error == ASL_SESSION_EXPIRED
+    }
+
+    private suspend fun reestablishAsl(
+        call: HttpClientCall,
+        ctx: FlowContext,
+        retryState: FlowOrchestrator.RetryState,
+        reason: String,
+    ): FlowDirective {
+        if (retryState.hasAttemptedAslReestablish) {
+            Log.e { "ASL: $reason, but channel was already re-established once. Giving up" }
+            return FlowDirective.Abort(call.response, ZetaClientError.AslError(-1, reason))
+        }
+        retryState.hasAttemptedAslReestablish = true
+        ctx.aslStorage.clear()
+        return FlowDirective.Perform(FlowNeed.Asl)
+    }
+
+    private companion object {
+        const val PEP_ERROR_ORIGIN = "pep"
+        const val ASL_SESSION_EXPIRED = "AslSessionExpired"
     }
 }

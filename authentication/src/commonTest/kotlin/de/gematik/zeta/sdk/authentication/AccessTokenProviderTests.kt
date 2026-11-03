@@ -27,6 +27,7 @@ package de.gematik.zeta.sdk.authentication
 import Jwk
 import PublicKeyOut
 import de.gematik.zeta.sdk.attestation.AttestationApi
+import de.gematik.zeta.sdk.attestation.AttestationStateStorage
 import de.gematik.zeta.sdk.attestation.model.AttestationConfig
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.model.AccessTokenRequest
@@ -38,6 +39,7 @@ import de.gematik.zeta.sdk.authentication.oidc.OidcTokenIssuance
 import de.gematik.zeta.sdk.authentication.oidc.OtpVerifyRequest
 import de.gematik.zeta.sdk.authentication.oidc.ParResponse
 import de.gematik.zeta.sdk.authentication.oidc.VerifyOtpResponse
+import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.client.call.HttpClientCall
 import io.ktor.client.statement.HttpResponse
@@ -54,6 +56,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.uuid.Uuid
 
@@ -150,6 +153,45 @@ class AccessTokenProviderImplTest {
     }
 
     @Test
+    fun getValidToken_storesZetaAttestationToken_whenPresentInRefreshResponse() = runTest {
+        // Arrange
+        val fakeStorage = FakeAuthStorage(
+            accessToken = "old_token",
+            refreshToken = "valid_refresh_token",
+            expiration = "500",
+        )
+        val fakeApi = FakeAuthApi(tokenResponse = buildTokenResponse("refreshed_token", zetaAttestationToken = "zat"))
+        val attestationState = AttestationStateStorage(InMemoryStorage())
+        val (sut, _) = buildSut(clock = { 1000L }, fakeAuthStorage = fakeStorage, fakeAuthApi = fakeApi, attestationState = attestationState)
+
+        // Act
+        sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
+
+        // Assert
+        assertEquals("zat", attestationState.getZetaAttestationToken())
+    }
+
+    @Test
+    fun getValidToken_keepsExistingZetaAttestationToken_whenRefreshResponseHasNone() = runTest {
+        // Arrange
+        val fakeStorage = FakeAuthStorage(
+            accessToken = "old_token",
+            refreshToken = "valid_refresh_token",
+            expiration = "500",
+        )
+        val fakeApi = FakeAuthApi(tokenResponse = buildTokenResponse("refreshed_token"))
+        val attestationState = AttestationStateStorage(InMemoryStorage())
+        attestationState.setZetaAttestationToken("old")
+        val (sut, _) = buildSut(clock = { 1000L }, fakeAuthStorage = fakeStorage, fakeAuthApi = fakeApi, attestationState = attestationState)
+
+        // Act
+        sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
+
+        // Assert
+        assertEquals("old", attestationState.getZetaAttestationToken())
+    }
+
+    @Test
     fun getValidToken_fallsBackToNewToken_whenRefreshFails() = runTest {
         val notRequired = "Not required for the test"
         // Arrange
@@ -202,6 +244,30 @@ class AccessTokenProviderImplTest {
     }
 
     @Test
+    fun getValidToken_propagatesNonAuthenticationFailure_fromRefresh() = runTest {
+        // Arrange
+        val fakeStorage = FakeAuthStorage(
+            accessToken = "old_token",
+            refreshToken = "expired_refresh_token",
+            expiration = "500",
+        )
+        val fakeApi = FakeAuthApi()
+        val fakeAttestationApi = FakeAttestationApi(throwOnAssertion = IllegalStateException("assertion failed"))
+        val (sut, _) = buildSut(
+            clock = { 1000L },
+            fakeAuthStorage = fakeStorage,
+            fakeAuthApi = fakeApi,
+            fakeAttestationApi = fakeAttestationApi,
+        )
+
+        // Act & Assert
+        assertFailsWith<IllegalStateException> {
+            sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
+        }
+        assertEquals(0, fakeApi.requestAccessTokenCallCount)
+    }
+
+    @Test
     fun getValidToken_throwsAuthenticationException_whenBothRefreshAndNewTokenFail() = runTest {
         // Arrange
         val fakeStorage = FakeAuthStorage(
@@ -243,8 +309,22 @@ class AccessTokenProviderImplTest {
 
         // Assert
         assertEquals(1, storage.savedTokens.size)
-        assertEquals("new_token", storage.savedTokens[0].first)
-        assertEquals(1000L + 3600, storage.savedTokens[0].third)
+        assertEquals("new_token", storage.savedTokens[0].accessToken)
+        assertEquals(1000L + 3600, storage.savedTokens[0].expiresAt)
+    }
+
+    @Test
+    fun getValidToken_savesRefreshTokenExpiration_afterSuccessfulFetch() = runTest {
+        // Arrange
+        val fakeStorage = FakeAuthStorage()
+        val fakeApi = FakeAuthApi(tokenResponse = buildTokenResponse("new_token"))
+        val (sut, storage) = buildSut(clock = { 1000L }, fakeAuthStorage = fakeStorage, fakeAuthApi = fakeApi)
+
+        // Act
+        sut.getValidToken("https://token.endpoint", "https://nonce.endpoint", defaultParams, "")
+
+        // Assert
+        assertEquals(1000L + 7200, storage.savedTokens[0].refreshExpiresAt)
     }
 
     @Test
@@ -342,6 +422,71 @@ class AccessTokenProviderImplTest {
         assertEquals("oidc", describe(AuthMode.OIDC))
     }
 
+    @Test
+    fun computesAccessExpiresAt_fromNowPlusExpiresIn() {
+        // Act
+        val result = computeTokenExpirations(now = 1000L, expiresIn = 300, refreshExpiresIn = null)
+
+        // Assert
+        assertEquals(1300L, result.accessExpiresAt)
+    }
+
+    @Test
+    fun computesRefreshExpiresAt_whenRefreshExpiresInIsPositive() {
+        // Act
+        val result = computeTokenExpirations(now = 1000L, expiresIn = 300, refreshExpiresIn = 7200)
+
+        // Assert
+        assertEquals(8200L, result.refreshExpiresAt)
+    }
+
+    @Test
+    fun refreshExpiresAtIsNull_whenRefreshExpiresInIsNull() {
+        // Act
+        val result = computeTokenExpirations(now = 1000L, expiresIn = 300, refreshExpiresIn = null)
+
+        // Assert
+        assertNull(result.refreshExpiresAt)
+    }
+
+    @Test
+    fun refreshExpiresAtIsNull_whenRefreshExpiresInIsZero() {
+        // Arrange
+        // Act
+        val result = computeTokenExpirations(now = 1000L, expiresIn = 300, refreshExpiresIn = 0)
+
+        // Assert
+        assertNull(result.refreshExpiresAt)
+    }
+
+    @Test
+    fun refreshExpiresAtIsNull_whenRefreshExpiresInIsNegative() {
+        // Arrange
+        // Act
+        val result = computeTokenExpirations(now = 1000L, expiresIn = 300, refreshExpiresIn = -1)
+
+        // Assert
+        assertNull(result.refreshExpiresAt)
+    }
+
+    @Test
+    fun accessExpiresAt_isIndependentOfRefreshExpiresIn() {
+        // Act
+        val result = computeTokenExpirations(now = 1000L, expiresIn = 300, refreshExpiresIn = 0)
+
+        // Assert
+        assertEquals(1300L, result.accessExpiresAt)
+    }
+
+    @Test
+    fun handlesZeroExpiresIn() {
+        // Act
+        val result = computeTokenExpirations(now = 1000L, expiresIn = 0, refreshExpiresIn = 3600)
+
+        // Assert
+        assertEquals(1000L, result.accessExpiresAt)
+    }
+
     class FakeTpmProvider : TpmProvider {
         override suspend fun isHardwareBacked(): Boolean = false
         override suspend fun getOrGenerateClientInstancePublicKey(): PublicKeyOut = PublicKeyOut(
@@ -382,7 +527,7 @@ class AccessTokenProviderImplTest {
         override suspend fun forget(resource: String?) {}
     }
 
-    private class FakeAttestationApi : AttestationApi {
+    private class FakeAttestationApi(private val throwOnAssertion: Throwable? = null) : AttestationApi {
         override suspend fun createClientAssertion(
             productId: String,
             productVersion: String,
@@ -391,13 +536,17 @@ class AccessTokenProviderImplTest {
             exp: Long,
             aud: String,
             platformProductId: PlatformProductId,
-        ): String = "fake_client_assertion"
+        ): String {
+            throwOnAssertion?.let { throw it }
+            return "fake_client_assertion"
+        }
     }
 
     private fun buildTokenResponse(
         accessToken: String = "access_token",
         refreshToken: String = "refresh_token",
         expiresIn: Int = 3600,
+        zetaAttestationToken: String? = null,
     ) = AccessTokenResponse(
         accessToken = accessToken,
         expiresIn = expiresIn,
@@ -408,6 +557,7 @@ class AccessTokenProviderImplTest {
         scope = "scope1",
         issuedTokenType = "urn:ietf:params:oauth:token-type:access_token",
         refreshToken = refreshToken,
+        zetaAttestationToken = zetaAttestationToken,
     )
 
     private class FakeAuthApi(
@@ -464,19 +614,32 @@ class AccessTokenProviderImplTest {
         private var accessToken: String? = null,
         private var refreshToken: String? = null,
         private var expiration: String? = null,
+        private var refreshExpiration: String? = null,
     ) : AuthenticationStorage {
-        val savedTokens = mutableListOf<Triple<String, String, Long>>()
+        data class SavedTokens(
+            val accessToken: String,
+            val refreshToken: String,
+            val expiresAt: Long,
+            val refreshExpiresAt: Long?,
+        )
+
+        val savedTokens = mutableListOf<SavedTokens>()
 
         override suspend fun getAccessToken(): String? = accessToken
         override suspend fun getRefreshToken(): String? = refreshToken
-        override suspend fun getTokenExpiration(): String? = expiration
+        override suspend fun getAccessTokenExpiration(): String? = expiration
+        override suspend fun getRefreshTokenExpiration(): String? = refreshExpiration
         override suspend fun saveAccessTokens(
             accessToken: String,
             refreshToken: String,
             expiresAt: Long,
+            refreshExpiresAt: Long?,
         ) {
-            savedTokens.add(Triple(accessToken, refreshToken, expiresAt))
+            savedTokens.add(SavedTokens(accessToken, refreshToken, expiresAt, refreshExpiresAt))
             this.accessToken = accessToken
+            this.refreshToken = refreshToken
+            this.expiration = expiresAt.toString()
+            this.refreshExpiration = refreshExpiresAt?.toString()
         }
         override suspend fun clearAccessToken() {
             accessToken = null
@@ -533,6 +696,7 @@ class AccessTokenProviderImplTest {
         fakeAuthStorage: FakeAuthStorage = FakeAuthStorage(),
         fakeTpmProvider: TpmProvider = FakeTpmProvider(),
         fakeAttestationApi: FakeAttestationApi = FakeAttestationApi(),
+        attestationState: AttestationStateStorage? = null,
     ): Pair<AccessTokenProviderImpl, FakeAuthStorage> {
         val sut = object : AccessTokenProviderImpl(
             resource = resource,
@@ -541,6 +705,7 @@ class AccessTokenProviderImplTest {
             authStorage = fakeAuthStorage,
             clock = clock,
             tpmProvider = fakeTpmProvider,
+            attestationState = attestationState,
         ) {
             override val attestationApi: AttestationApi = fakeAttestationApi
         }

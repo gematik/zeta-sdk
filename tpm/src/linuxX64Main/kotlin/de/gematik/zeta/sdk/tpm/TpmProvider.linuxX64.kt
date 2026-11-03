@@ -24,5 +24,5 @@
 
 package de.gematik.zeta.sdk.tpm
 
-actual fun platformDefaultProvider(storage: TpmStorage, appAttestSupported: Boolean): TpmProvider =
+actual fun platformDefaultProvider(storage: TpmStorage, isHardwareAttestationSupported: Boolean): TpmProvider =
     createDesktopSoftwareProvider(storage)

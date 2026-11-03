@@ -92,25 +92,6 @@ public class ZetaHttpResponse(
     }
 }
 
-public suspend fun toZetaResponse(response: HttpResponse): ZetaHttpResponse {
-    response.body<ByteArray>()
-    val attrs = response.call.attributes
-    Log.d { "Available attributes: ${attrs.allKeys}" }
-    Log.d { "Has InnerStatusKey? ${attrs.contains(InnerStatusKey)}" }
-    val effectiveStatus: Int =
-        attrs.getOrNull(InnerStatusKey) ?: response.status.value
-    Log.d { "Effective status: $effectiveStatus, Raw status: ${response.status.value}" }
-    val effectiveHeaders: Map<String, String> =
-        attrs.getOrNull(InnerHeadersKey)
-            ?: response.headers.entries().associate { (k, values) ->
-                k to values.joinToString(",")
-            }
-    return ZetaHttpResponse(
-        response,
-        effectiveHeaders,
-        HttpStatusCode.fromValue(effectiveStatus),
-    )
-}
 public val zetaJson: Json = Json {
     ignoreUnknownKeys = true
     isLenient = true

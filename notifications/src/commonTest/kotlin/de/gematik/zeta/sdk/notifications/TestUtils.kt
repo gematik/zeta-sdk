@@ -24,13 +24,15 @@
 
 package de.gematik.zeta.sdk.notifications
 
+import de.gematik.zeta.sdk.authentication.DpopProvider
+
 /** Base URL shared by the [NotificationApiClientImpl] tests; must match the mock client's base URL. */
 internal const val TEST_SERVICE_BASE_URL = "http://notification-service.example"
 
 /**
- * Stand-in [NotificationDpopProvider] for tests that don't inspect the proof itself.
+ * Stand-in [DpopProvider] for tests that don't inspect the proof itself.
  * Proof construction is covered by `ZetaDpopNotificationProviderTest`; header wiring by
  * `NotificationApiClientImplDpopTest`.
  */
-internal val testDpopProvider: NotificationDpopProvider =
-    NotificationDpopProvider { _, _, _ -> "test-dpop-proof" }
+internal val testDpopProvider: DpopProvider =
+    DpopProvider { _, _, _ -> "test-dpop-proof" }

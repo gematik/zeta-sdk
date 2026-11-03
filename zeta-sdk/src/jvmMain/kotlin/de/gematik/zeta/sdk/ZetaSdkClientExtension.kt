@@ -27,6 +27,8 @@ package de.gematik.zeta.sdk
 import de.gematik.zeta.sdk.ZetaSdk.clearRegistration
 import de.gematik.zeta.sdk.ZetaSdk.forget
 import de.gematik.zeta.sdk.authentication.identity.ChangeEmailResponse
+import de.gematik.zeta.sdk.authentication.identity.EmailChallenge
+import de.gematik.zeta.sdk.authentication.identity.models.RegisteredClient
 import kotlinx.coroutines.runBlocking
 
 object ZetaSdkClientExtension {
@@ -90,6 +92,34 @@ object ZetaSdkClientExtension {
     fun changeEmail(client: ZetaSdkClient, newEmail: String): ChangeEmailResponse {
         return runBlocking {
             client.changeEmail(newEmail).getOrThrow()
+        }
+    }
+
+    @JvmStatic
+    fun resendEmailChangeCode(client: ZetaSdkClient): EmailChallenge {
+        return runBlocking {
+            client.resendEmailChangeCode().getOrThrow()
+        }
+    }
+
+    @JvmStatic
+    fun verifyEmailChange(client: ZetaSdkClient, code: String) {
+        runBlocking {
+            client.verifyEmailChange(code).getOrThrow()
+        }
+    }
+
+    @JvmStatic
+    fun listClients(client: ZetaSdkClient): List<RegisteredClient> {
+        return runBlocking {
+            client.listClients().getOrThrow()
+        }
+    }
+
+    @JvmStatic
+    fun deleteClient(client: ZetaSdkClient, id: String) {
+        runBlocking {
+            client.deleteClient(id).getOrThrow()
         }
     }
 }

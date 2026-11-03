@@ -3,19 +3,19 @@
 > **Preview:** push notifications are part of the ZETA 2.0 specification and still in preview — APIs and flows may change.
 
 Client for the ZETA Notification Service (NS) that is co-deployed with the guard.
-It manages pushers (push registrations of a device) and notification channels.
+It manages pushers (push registrations of a device) and notification channels, and reads the notification history.
 Receiving and displaying the actual push messages (FCM/APNs) is the job of the embedding app, not of this module.
 
 ## Design
 
-- **NotificationClient**: Public interface the app uses. Operations: `getPushers`, `registerPusher`, `updatePusher`, `deletePusher`, `getAvailableChannels`, `getLocalChannels`, `setLocalChannels`.
-- **NotificationApiClient / NotificationApiClientImpl**: HTTP contract to the NS device API (`GET /pushers`, `POST /pushers/set`, `GET /channels`, `GET`/`POST /channels/{pushkey}`). Adds per request:
+- **NotificationClient**: Public interface the app uses. Operations: `getPushers`, `registerPusher`, `updatePusher`, `deletePusher`, `getAvailableChannels`, `getLocalChannels`, `setLocalChannels`, `decryptPushNotification`, `getNotification`, `getNotifications`.
+- **NotificationApiClient / NotificationApiClientImpl**: HTTP contract to the NS device API (`GET /pushers`, `POST /pushers/set`, `GET /channels`, `GET`/`POST /channels/{pushkey}`, `GET /history/{notification_id}`, `GET /history/device/{pushkey}`). Adds per request:
   * a service-specific access token (`Authorization: dpop <token>`) with least-privilege scope per operation (`NotificationScopes`),
   * a fresh DPoP proof (`NotificationDpopProvider`).
-  * On 401: invalidates the token and retries once. On 429: bounded backoff retry (`RateLimitRetryPolicy`). Errors map to `NotificationApiException` subtypes (400/401/403/429/other).
+  * On 401: invalidates the token and retries once. On 429: bounded backoff retry (`RateLimitRetryPolicy`). Errors map to `NotificationApiException` subtypes (400/401/403/429/other; on the history endpoints also 404/501 → `NotificationHistoryNotFoundException`).
 - **NotificationTokenProvider / ReauthNotificationTokenProvider**: Obtains the NS-specific access token (own `resource`/scopes, separate from the resource-server token).
-- **LocalPusherStorage**: Remembers the pusher registered from this device, so channel operations don't need an explicit `pushkey`.
-- **Models**: `Pusher`, `PusherConfig`, `PusherEncryption`, `Channel`.
+- **LocalPusherStorage**: Remembers the pusher registered from this device, so channel and history operations don't need an explicit `pushkey`.
+- **Models**: `Pusher`, `PusherConfig`, `PusherEncryption`, `Channel`, `HistoricNotification`, `HistoricNotifications`.
 - **NotificationConfig**: Enables and configures the integration (see Usage).
 
 NS endpoints and their scopes (A_29979, normative scope table):
@@ -27,7 +27,7 @@ NS endpoints and their scopes (A_29979, normative scope table):
 | `/channels`           | GET    | `notification.channel.read`                                      |
 | `/channels/{pushkey}` | GET    | `notification.channel.read`                                      |
 | `/channels/{pushkey}` | POST   | `notification.channel.write`                                     |
-| `/history/*`          | GET    | `notification.history.read` (optional NS feature; not yet implemented in this module) |
+| `/history/*`          | GET    | `notification.history.read` (optional NS feature, A_29974)       |
 
 ## How it works ?
 
@@ -53,7 +53,7 @@ API->>NS: POST /channels/{pushkey}
 
 1. The app registers the platform push token (e.g. FCM token) as `pushkey` via `registerPusher`. If a different pusher was registered from this device before, it is deregistered first (`kind = null`).
 2. The SDK generates the ISS encryption key material and attaches it to the registration.
-3. Channel operations (`getLocalChannels`, `setLocalChannels`) use the locally stored pushkey automatically.
+3. Channel operations (`getLocalChannels`, `setLocalChannels`) and `getNotifications` use the locally stored pushkey automatically.
 4. Every NS call fetches a valid NS access token and signs a fresh DPoP proof. Discovery of the NS (well-known metadata) happens lazily on the first operation, not when the client is obtained.
 
 ## Usage
@@ -87,7 +87,20 @@ Platform availability:
 - `ZetaSdkClient.notifications()` exists on **Android and iOS** only (push transport is a mobile feature).
 - JVM has an internal `notificationsForTesting()` used by the test driver.
 
-Not implemented yet (calls throw):
-- `decryptPushNotification`, `getNotification`, `getNotifications` (notification history).
+### Notification history
 
-Push transport (receiving messages) is not part of this module. The Android demo app in `zeta-client` shows an FCM integration (`ZetaFirebaseMessagingService`); there is no APNs integration yet.
+If the NS operator has enabled the history (A_29974), the app can read the notifications sent to this device after delivery:
+
+```kotlin
+val history = notifications.getNotifications().notifications   // this device, via the stored pushkey
+val one = notifications.getNotification(history.first().identifier)
+```
+
+- `identifier` is the Notification ID generated by the NS. It is **not** the `identifier` of a received push, which carries the resource server's `reference`, so a push cannot be looked up in the history directly.
+- `payload` is returned as the `JsonObject` the NS sent; its properties are defined by the Fachdienst.
+- The history is not cached or stored locally; every call goes to the NS.
+- A malformed list item is skipped (only the count is logged); the rest of the list is returned.
+- `404`/`501` throw `NotificationHistoryNotFoundException` with the NS `errorCode` (e.g. `NOTIFICATION_NOT_FOUND`, `PUSHER_NOT_FOUND`). The NS gives the same answer for an unknown ID, another user's data and a deactivated history, so a deactivated history surfaces either as this exception or as an empty list.
+- The `notification.history.read` scope is only requested when the NS advertises it in `scopes_supported`. Without it, a PEP enforcing the scope rejects the history calls with `403` (`NotificationApiForbiddenException`).
+
+Push transport (receiving messages) is not part of this module. The demo app in `zeta-client` shows an FCM integration on Android (`ZetaFirebaseMessagingService`) and an APNs integration on iOS (`AppDelegate.swift` with `IosPushBridge`); on iOS it decrypts pushes only while the app is in the foreground.

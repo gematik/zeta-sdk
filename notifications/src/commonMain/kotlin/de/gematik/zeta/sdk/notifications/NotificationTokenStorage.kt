@@ -46,15 +46,18 @@ import de.gematik.zeta.sdk.authentication.AuthenticationStorage
 internal class NotificationTokenStorage : AuthenticationStorage {
     private var accessToken: String? = null
     private var expiresAt: Long? = null
+    private var refreshExpiresAt: Long? = null
 
-    override suspend fun saveAccessTokens(accessToken: String, refreshToken: String, expiresAt: Long) {
+    override suspend fun saveAccessTokens(accessToken: String, refreshToken: String, expiresAt: Long, refreshExpiresAt: Long?) {
         this.accessToken = accessToken
         this.expiresAt = expiresAt
+        this.refreshExpiresAt = refreshExpiresAt
     }
 
     override suspend fun getAccessToken(): String? = accessToken
     override suspend fun getRefreshToken(): String? = null
-    override suspend fun getTokenExpiration(): String? = expiresAt?.toString()
+    override suspend fun getAccessTokenExpiration(): String? = expiresAt?.toString()
+    override suspend fun getRefreshTokenExpiration(): String? = refreshExpiresAt?.toString()
     override suspend fun clearAccessToken() = clear()
     override suspend fun clear() {
         accessToken = null

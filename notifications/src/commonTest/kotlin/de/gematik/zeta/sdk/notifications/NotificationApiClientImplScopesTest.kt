@@ -58,7 +58,13 @@ class NotificationApiClientImplScopesTest {
 
         init {
             val engine = MockEngine { request ->
-                val body = if (request.url.encodedPath.contains("/pushers")) """{"pushers":[]}""" else """{"channels":[]}"""
+                val path = request.url.encodedPath
+                val body = when {
+                    path.contains("/pushers") -> """{"pushers":[]}"""
+                    path.contains("/history/device/") -> """{"messages":[]}"""
+                    path.contains("/history/") -> """{"identifier":"id-1","payload":{}}"""
+                    else -> """{"channels":[]}"""
+                }
                 respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
             }
             val httpClient = ZetaHttpClientBuilder(TEST_SERVICE_BASE_URL).build(engine)
@@ -109,5 +115,23 @@ class NotificationApiClientImplScopesTest {
         fixture.client.setChannel("pushkey", listOf(Channel("chat", ChannelStatus.ENABLED)))
 
         assertEquals(listOf(setOf(NotificationScopes.CHANNEL_WRITE)), fixture.tokenProvider.scopesSeen)
+    }
+
+    @Test
+    fun getHistoricNotification_requestsHistoryReadScope() = runTest {
+        val fixture = Fixture()
+
+        fixture.client.getHistoricNotification("id-1")
+
+        assertEquals(listOf(setOf(NotificationScopes.HISTORY_READ)), fixture.tokenProvider.scopesSeen)
+    }
+
+    @Test
+    fun getHistoricNotifications_requestsHistoryReadScope() = runTest {
+        val fixture = Fixture()
+
+        fixture.client.getHistoricNotifications("pushkey")
+
+        assertEquals(listOf(setOf(NotificationScopes.HISTORY_READ)), fixture.tokenProvider.scopesSeen)
     }
 }

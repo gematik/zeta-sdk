@@ -34,8 +34,6 @@ import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsBytes
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.runBlocking
@@ -77,16 +75,5 @@ public object HttpClientSync {
 
     public fun HttpClient.delete(url: String, header: Map<String, String>): HttpResponseWrapper = runBlocking {
         HttpResponseWrapper.from(delete(url) { applyHeaders(header) })
-    }
-}
-
-public data class HttpResponseWrapper(val status: Int, val headers: Map<String, String>, val body: String) {
-    public companion object {
-        public suspend fun from(response: HttpResponse): HttpResponseWrapper =
-            HttpResponseWrapper(
-                status = response.status.value,
-                headers = response.headers.entries().associate { it.key to it.value.joinToString(",") },
-                body = response.bodyAsBytes().decodeToString(),
-            )
     }
 }

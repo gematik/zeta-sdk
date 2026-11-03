@@ -29,6 +29,21 @@ static const char* ktor_general_name_dns(GENERAL_NAME *name) {
     return NULL;
 }
 
+static const char* ktor_x509_common_name(X509 *cert) {
+    X509_NAME *subject = X509_get_subject_name(cert);
+    if (subject == NULL) return NULL;
+    int last = -1;
+    for (int i = -1; (i = X509_NAME_get_index_by_NID(subject, NID_commonName, i)) >= 0;) {
+        last = i;
+    }
+    if (last < 0) return NULL;
+    ASN1_STRING *data = X509_NAME_ENTRY_get_data(X509_NAME_get_entry(subject, last));
+    if (data == NULL) return NULL;
+    const char *cn = (const char *)ASN1_STRING_get0_data(data);
+    if ((size_t)ASN1_STRING_length(data) != strlen(cn)) return NULL;
+    return cn;
+}
+
 static int ktor_ssl_ctx_callback(void *curl, void *ssl_ctx, const char *groups) {
     if (ssl_ctx == NULL || groups == NULL) return 0;
     return 1 - SSL_CTX_set1_groups_list((SSL_CTX *)ssl_ctx, groups);

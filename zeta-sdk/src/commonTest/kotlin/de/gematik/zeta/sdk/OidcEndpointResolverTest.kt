@@ -24,17 +24,15 @@
 package de.gematik.zeta.sdk
 
 import de.gematik.zeta.sdk.authentication.OidcTokenProvider
-import de.gematik.zeta.sdk.authentication.oidc.AuthenticationCallback
+import de.gematik.zeta.sdk.authentication.oidc.AuthorizationLauncher
 import de.gematik.zeta.sdk.authentication.oidc.OidcConfig
 import de.gematik.zeta.sdk.authentication.oidc.OtpCallback
 import de.gematik.zeta.sdk.authentication.oidc.OtpSubmission
 import de.gematik.zeta.sdk.configuration.models.AuthorizationServerMetadata
-import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertSame
 
 private fun fakeAuthServer(
     issuer: String = "https://zeta-kind.local/auth/realms/zeta-guard",
@@ -61,95 +59,59 @@ private val fakeOtpCallback = object : OtpCallback {
         OtpSubmission.Otp("123456")
 }
 
-private class FakeAuthenticationCallback :
-    AuthenticationCallback,
-    OidcEndpointAware,
-    HttpClientBuilderAware {
+private val unusedLauncher = AuthorizationLauncher { error("not used in these tests") }
 
-    override lateinit var resolveAuthorizationEndpoint: suspend () -> String
-    override lateinit var resolveBrokerEndpoint: suspend () -> String
-    override lateinit var httpClientBuilder: ZetaHttpClientBuilder
-
-    override suspend fun authenticationCb(clientId: String, requestUri: String): AuthenticationCallback.AuthInfo =
-        error("not used in these tests")
-}
-
-private fun oidcProvider(callback: AuthenticationCallback?): OidcTokenProvider =
+private fun oidcProvider(): OidcTokenProvider =
     OidcTokenProvider(
         OidcConfig(
+            redirectUri = "http://localhost:8090/cb/demo/app",
+            oidcRedirectUri = "http://localhost:8090/cb/demo/oidc",
             idpIss = "https://sekidp.example.org",
             idpAlias = "zeta-sekidp-oidc",
-            requestUri = "http://localhost:8090/cb/demo",
-            authenticationCallback = callback,
+            authorizationLauncher = unusedLauncher,
             otpCallback = fakeOtpCallback,
         ),
     )
 
 class OidcEndpointResolverTest {
-    @Test
-    fun configure_shallSetHttpClientBuilder_onAuthenticationCallback_whenHttpClientBuilderAware() {
-        val callback = FakeAuthenticationCallback()
-        val provider = oidcProvider(callback)
-        val builder = ZetaHttpClientBuilder()
-        val configurer = OidcEndpointResolver(
-            getAuthServer = { fakeAuthServer() },
-            httpClientBuilder = builder,
-        )
-
-        configurer.resolve(provider)
-
-        assertSame(builder, callback.httpClientBuilder)
-    }
 
     @Test
-    fun configure_shallSetResolveAuthorizationEndpoint_toValueFromAuthServer() = runTest {
-        val callback = FakeAuthenticationCallback()
-        val provider = oidcProvider(callback)
+    fun resolve_shallSetResolveAuthorizationEndpoint_toValueFromAuthServer() = runTest {
+        val provider = oidcProvider()
         val authServer = fakeAuthServer(
             authorizationEndpoint = "https://zeta-kind.local/auth/realms/zeta-guard/protocol/openid-connect/auth",
         )
-        val configurer = OidcEndpointResolver(
-            getAuthServer = { authServer },
-            httpClientBuilder = ZetaHttpClientBuilder(),
-        )
+        val resolver = OidcEndpointResolver(getAuthServer = { authServer })
 
-        configurer.resolve(provider)
+        resolver.resolve(provider)
 
         assertEquals(
             "https://zeta-kind.local/auth/realms/zeta-guard/protocol/openid-connect/auth",
-            callback.resolveAuthorizationEndpoint(),
+            provider.resolveAuthorizationEndpoint(),
         )
     }
 
     @Test
-    fun configure_shallSetResolveBrokerEndpoint_derivedFromIssuerAndIdpAlias() = runTest {
-        val callback = FakeAuthenticationCallback()
-        val provider = oidcProvider(callback)
+    fun resolve_shallSetResolveBrokerEndpoint_derivedFromIssuerAndIdpAlias() = runTest {
+        val provider = oidcProvider()
         val authServer = fakeAuthServer(issuer = "https://zeta-kind.local/auth/realms/zeta-guard")
-        val configurer = OidcEndpointResolver(
-            getAuthServer = { authServer },
-            httpClientBuilder = ZetaHttpClientBuilder(),
-        )
+        val resolver = OidcEndpointResolver(getAuthServer = { authServer })
 
-        configurer.resolve(provider)
+        resolver.resolve(provider)
 
         assertEquals(
             "https://zeta-kind.local/auth/realms/zeta-guard/broker/zeta-sekidp-oidc/endpoint",
-            callback.resolveBrokerEndpoint(),
+            provider.resolveBrokerEndpoint(),
         )
     }
 
     @Test
-    fun configure_shallSetParBindVerifyResendEndpoints_derivedFromIssuer() = runTest {
-        val callback = FakeAuthenticationCallback()
-        val provider = oidcProvider(callback)
+    fun resolve_shallSetParBindVerifyResendEndpoints_derivedFromIssuer() = runTest {
+        val provider = oidcProvider()
         val authServer = fakeAuthServer(issuer = "https://zeta-kind.local/auth/realms/zeta-guard")
-        val configurer = OidcEndpointResolver(
-            getAuthServer = { authServer },
-            httpClientBuilder = ZetaHttpClientBuilder(),
-        )
+        val resolver = OidcEndpointResolver(getAuthServer = { authServer })
 
-        configurer.resolve(provider)
+        resolver.resolve(provider)
 
         assertEquals(
             "https://zeta-kind.local/auth/realms/zeta-guard/protocol/openid-connect/ext/par/request",
@@ -170,46 +132,29 @@ class OidcEndpointResolverTest {
     }
 
     @Test
-    fun configure_resolvers_shallThrow_whenDiscoveryNotCompleted() = runTest {
-        val callback = FakeAuthenticationCallback()
-        val provider = oidcProvider(callback)
-        val configurer = OidcEndpointResolver(
-            getAuthServer = { null },
-            httpClientBuilder = ZetaHttpClientBuilder(),
-        )
+    fun resolve_resolvers_shallThrow_whenDiscoveryNotCompleted() = runTest {
+        val provider = oidcProvider()
+        val resolver = OidcEndpointResolver(getAuthServer = { null })
 
-        configurer.resolve(provider)
+        resolver.resolve(provider)
 
         assertFailsWith<IllegalStateException> { provider.resolveParEndpoint() }
-        assertFailsWith<IllegalStateException> { callback.resolveAuthorizationEndpoint() }
-        assertFailsWith<IllegalStateException> { callback.resolveBrokerEndpoint() }
+        assertFailsWith<IllegalStateException> { provider.resolveAuthorizationEndpoint() }
+        assertFailsWith<IllegalStateException> { provider.resolveBrokerEndpoint() }
     }
 
     @Test
-    fun configure_shallNotSetAnything_whenAuthenticationCallbackDoesNotImplementAwareInterfaces() {
-        val plainCallback = AuthenticationCallback { _, _ -> error("not used") }
-        val provider = oidcProvider(plainCallback)
-        val configurer = OidcEndpointResolver(
-            getAuthServer = { fakeAuthServer() },
-            httpClientBuilder = ZetaHttpClientBuilder(),
-        )
+    fun resolve_shallReadAuthServerLazily_whenResolverIsInvoked() = runTest {
+        var authServer: AuthorizationServerMetadata? = null
+        val provider = oidcProvider()
+        val resolver = OidcEndpointResolver(getAuthServer = { authServer })
 
-        configurer.resolve(provider)
-    }
-
-    @Test
-    fun configure_shallNotThrow_whenAuthenticationCallbackIsNull() = runTest {
-        val provider = oidcProvider(callback = null)
-        val configurer = OidcEndpointResolver(
-            getAuthServer = { fakeAuthServer() },
-            httpClientBuilder = ZetaHttpClientBuilder(),
-        )
-
-        configurer.resolve(provider)
+        resolver.resolve(provider)
+        authServer = fakeAuthServer()
 
         assertEquals(
-            "https://zeta-kind.local/auth/realms/zeta-guard/protocol/openid-connect/ext/par/request",
-            provider.resolveParEndpoint(),
+            "https://zeta-kind.local/auth/realms/zeta-guard/protocol/openid-connect/auth",
+            provider.resolveAuthorizationEndpoint(),
         )
     }
 }

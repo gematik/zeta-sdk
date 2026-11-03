@@ -30,6 +30,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 
 private val fakeOtpCallback = object : OtpCallback {
     override suspend fun awaitEmail(): String = "test@example.com"
@@ -40,103 +41,100 @@ private val fakeOtpCallback = object : OtpCallback {
     ): OtpSubmission = OtpSubmission.Otp("123456")
 }
 
+private val fakeLauncher = AuthorizationLauncher { request -> "${request.redirectUri}?code=test-code&state=test-state" }
+
+private fun oidcConfig(
+    redirectUri: String = "http://localhost:8090/cb/demo/app",
+    oidcRedirectUri: String = "http://localhost:8090/cb/demo/oidc",
+    authorizationLauncher: AuthorizationLauncher = fakeLauncher,
+) = OidcConfig(
+    redirectUri = redirectUri,
+    oidcRedirectUri = oidcRedirectUri,
+    idpIss = "https://sekidp.example.org",
+    idpAlias = "sekidp-oidc",
+    authorizationLauncher = authorizationLauncher,
+    otpCallback = fakeOtpCallback,
+)
+
 class OidcTests {
 
     private val json = Json { ignoreUnknownKeys = true }
 
     @Test
-    fun requestUriApp_shallAppendAppSuffixToRequestUri() {
-        val config = OidcConfig(
-            idpIss = "https://sekidp.example.org",
-            idpAlias = "sekidp-oidc",
-            requestUri = "http://localhost:8090/cb/demo",
-            otpCallback = fakeOtpCallback,
-        )
+    fun oidcConfig_shallKeepRedirectUrisUnchanged() {
+        val config = oidcConfig()
 
-        assertEquals("http://localhost:8090/cb/demo/app", config.requestUriApp)
+        assertEquals("http://localhost:8090/cb/demo/app", config.redirectUri)
+        assertEquals("http://localhost:8090/cb/demo/oidc", config.oidcRedirectUri)
     }
 
     @Test
-    fun requestUriOidc_shallAppendOidcSuffixToRequestUri() {
-        val config = OidcConfig(
-            idpIss = "https://sekidp.example.org",
-            idpAlias = "sekidp-oidc",
-            requestUri = "http://localhost:8090/cb/demo",
-            otpCallback = fakeOtpCallback,
-        )
+    fun oidcConfig_redirectUriAndOidcRedirectUri_shallBeDistinct() {
+        val config = oidcConfig()
 
-        assertEquals("http://localhost:8090/cb/demo/oidc", config.requestUriOidc)
+        assertNotEquals(config.redirectUri, config.oidcRedirectUri)
     }
 
     @Test
-    fun requestUriApp_and_requestUriOidc_shallNeverBeEqual() {
-        val config = OidcConfig(
-            idpIss = "https://sekidp.example.org",
-            idpAlias = "sekidp-oidc",
-            requestUri = "http://localhost:8090/cb/demo",
-            otpCallback = fakeOtpCallback,
+    fun oidcConfig_shallKeepRedirectUris_forDifferentInstances() {
+        val configA = oidcConfig()
+        val configB = oidcConfig(
+            redirectUri = "https://my.client.local/cb/otherapp/app",
+            oidcRedirectUri = "https://my.client.local/cb/otherapp/oidc",
         )
 
-        assertNotEquals(config.requestUriApp, config.requestUriOidc)
+        assertEquals("http://localhost:8090/cb/demo/app", configA.redirectUri)
+        assertEquals("https://my.client.local/cb/otherapp/app", configB.redirectUri)
     }
 
     @Test
-    fun requestUriApp_shallReflectChangesToRequestUri_forDifferentInstances() {
-        val configA = OidcConfig(
-            idpIss = "https://sekidp.example.org",
-            idpAlias = "sekidp-oidc",
-            requestUri = "http://localhost:8090/cb/demo",
-            otpCallback = fakeOtpCallback,
-        )
-        val configB = OidcConfig(
-            idpIss = "https://sekidp.example.org",
-            idpAlias = "sekidp-oidc",
-            requestUri = "https://my.client.local/cb/otherapp",
-            otpCallback = fakeOtpCallback,
-        )
+    fun oidcConfig_shallKeepProvidedAuthorizationLauncher() {
+        val launcher = AuthorizationLauncher { "de.gematik.zeta://app?code=c&state=s" }
 
-        assertEquals("http://localhost:8090/cb/demo/app", configA.requestUriApp)
-        assertEquals("https://my.client.local/cb/otherapp/app", configB.requestUriApp)
-    }
+        val config = oidcConfig(authorizationLauncher = launcher)
 
-    @Test
-    fun authenticationCallback_shallDefaultToNull_whenNotProvided() {
-        val config = OidcConfig(
-            idpIss = "https://sekidp.example.org",
-            idpAlias = "sekidp-oidc",
-            requestUri = "http://localhost:8090/cb/demo",
-            otpCallback = fakeOtpCallback,
-        )
-
-        assertNull(config.authenticationCallback)
+        assertSame(launcher, config.authorizationLauncher)
     }
 
     @Test
     fun equals_shallHoldForDataClassWithIdenticalConstructorArgs() {
-        val configA = OidcConfig(
-            idpIss = "https://sekidp.example.org",
-            idpAlias = "sekidp-oidc",
-            requestUri = "http://localhost:8090/cb/demo",
-            otpCallback = fakeOtpCallback,
-        )
+        val configA = oidcConfig()
         val configB = configA.copy()
 
         assertEquals(configA, configB)
-        assertEquals(configA.requestUriApp, configB.requestUriApp)
-        assertEquals(configA.requestUriOidc, configB.requestUriOidc)
+        assertEquals(configA.redirectUri, configB.redirectUri)
+        assertEquals(configA.oidcRedirectUri, configB.oidcRedirectUri)
     }
 
     @Test
-    fun requestUri_withTrailingSlash_shallProduceDoubleSlashInDerivedUris() {
-        val config = OidcConfig(
-            idpIss = "https://sekidp.example.org",
-            idpAlias = "sekidp-oidc",
-            requestUri = "http://localhost:8090/cb/demo/",
-            otpCallback = fakeOtpCallback,
+    fun authorizationRequest_shallExposeAllUrls() {
+        val request = AuthorizationRequest(
+            authorizationUrl = "https://kc.example.org/realms/zeta/protocol/openid-connect/auth?client_id=c&request_uri=r",
+            redirectUri = "http://localhost:8090/cb/demo/app",
+            oidcRedirectUri = "http://localhost:8090/cb/demo/oidc",
+            brokerEndpoint = "https://kc.example.org/realms/zeta/broker/sekidp-oidc/endpoint",
         )
 
-        assertEquals("http://localhost:8090/cb/demo//app", config.requestUriApp)
+        assertEquals("http://localhost:8090/cb/demo/app", request.redirectUri)
+        assertEquals("http://localhost:8090/cb/demo/oidc", request.oidcRedirectUri)
+        assertEquals("https://kc.example.org/realms/zeta/broker/sekidp-oidc/endpoint", request.brokerEndpoint)
     }
+
+    @Test
+    fun authorizationLauncher_shallReturnFinalRedirectUrl() = kotlinx.coroutines.test.runTest {
+        val request = AuthorizationRequest(
+            authorizationUrl = "https://kc.example.org/auth",
+            redirectUri = "http://localhost:8090/cb/demo/app",
+            oidcRedirectUri = "http://localhost:8090/cb/demo/oidc",
+            brokerEndpoint = "https://kc.example.org/broker/endpoint",
+        )
+
+        val finalUrl = fakeLauncher.open(request)
+
+        assertEquals("http://localhost:8090/cb/demo/app?code=test-code&state=test-state", finalUrl)
+    }
+
+    // VerifyOtpResponse
 
     @Test
     fun decodeFromString_shallParseStatusField() {

@@ -24,8 +24,8 @@
 
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
-import de.gematik.zeta.sdk.tpm.Tpm
 import de.gematik.zeta.sdk.tpm.TpmStorageImpl
+import de.gematik.zeta.sdk.tpm.platformDefaultProvider
 import de.gematik.zeta.time.SystemZetaClock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
@@ -37,7 +37,7 @@ class TpmProviderTest {
     @Test
     fun generateClientInstanceKey_returnSameKeys() = runTest {
         val storage = InMemoryStorage()
-        val provider = Tpm.provider(TpmStorageImpl(storage, ResourceScope("", emptyList()), clock = SystemZetaClock))
+        val provider = platformDefaultProvider(TpmStorageImpl(storage, ResourceScope("", emptyList()), clock = SystemZetaClock), isHardwareAttestationSupported = false)
 
         val key1 = provider.getOrGenerateClientInstancePublicKey()
         delay(1000)

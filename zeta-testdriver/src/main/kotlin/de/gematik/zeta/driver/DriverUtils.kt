@@ -24,10 +24,10 @@
 
 package de.gematik.zeta.driver
 
+import de.gematik.zeta.driver.core.oidc.MailCatcherOtpClient
+import de.gematik.zeta.driver.core.oidc.TestDriverAuthorizationLauncher
 import de.gematik.zeta.driver.model.SdkInstanceConfig
 import de.gematik.zeta.driver.model.toKtorLogLevel
-import de.gematik.zeta.driver.oidc.MailCatcherOtpClient
-import de.gematik.zeta.driver.oidc.TestDriverAuthenticator
 import de.gematik.zeta.driver.oidc.TestDriverOtpCallback
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.platform.Platform
@@ -312,7 +312,7 @@ public fun newSdk(
         resource = fachdienstUrl,
         BuildConfig(
             "test-proxy",
-            "1.3.2",
+            "2.0.1",
             "sdk-client",
             StorageConfig.Custom(storage),
             object : TpmConfig {},
@@ -356,18 +356,21 @@ private fun buildOidcTokenProvider(
     val mailCatcherHttpClient = ZetaHttpClientBuilder()
         .disableServerValidation(config.disableTlsVerification)
         .logging(Log.logLevel.toKtorLogLevel())
-        .build()
 
     CoroutineScope(Dispatchers.Default).launch {
-        autoFulfillOtpFromMailCatcher(otpCallback, mailCatcherOtpClient, mailCatcherHttpClient)
+        autoFulfillOtpFromMailCatcher(otpCallback, mailCatcherOtpClient, mailCatcherHttpClient.build())
     }
+
+    val redirectUri = "$baseUri/app"
+    val oidcRedirectUri = "$baseUri/oidc"
 
     return OidcTokenProvider(
         OidcConfig(
-            requestUri = baseUri,
+            redirectUri = redirectUri,
+            oidcRedirectUri = oidcRedirectUri,
             idpIss = idpIss,
             idpAlias = idpAlias,
-            authenticationCallback = TestDriverAuthenticator(appBaseUri = baseUri, testKvnr = testKvnr),
+            authorizationLauncher = TestDriverAuthorizationLauncher(mailCatcherHttpClient, testKvnr),
             otpCallback = otpCallback,
         ),
     )

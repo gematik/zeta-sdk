@@ -38,8 +38,7 @@ fun p256CoordinatesToJwk(x: ByteArray, y: ByteArray): Jwk {
     val encoder = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
     val xEncoded = encoder.encode(x)
     val yEncoded = encoder.encode(y)
-    val jwkJson = """{"crv":"P-256","kty":"EC","x":"$xEncoded","y":"$yEncoded"}"""
-    val kid = encoder.encode(hashWithSha256(jwkJson.encodeToByteArray()))
+    val kid = encoder.encode(hashWithSha256(canonicalJwkJson(xEncoded, yEncoded).encodeToByteArray()))
 
     return Jwk(
         kid = kid,
@@ -68,3 +67,5 @@ fun sha256PublicKeyPoint(point: ByteArray): ByteArray {
     require(point.size == 65 && point[0] == 0x04.toByte()) { "Invalid P-256 public key point" }
     return hashWithSha256(point)
 }
+
+private fun canonicalJwkJson(x: String, y: String) = """{"crv":"P-256","kty":"EC","x":"$x","y":"$y"}"""

@@ -83,6 +83,8 @@ interface AuthenticationApi {
     suspend fun requestPar(endpoint: String, parameters: Parameters): ParResponse
 }
 
+private const val VERIFY_TYPE_EMAIL_OTP = "email_otp"
+
 class AuthenticationApiImpl(
     private val zetaHttpClient: ZetaHttpClient,
     private val clock: ZetaClock,
@@ -159,6 +161,7 @@ class AuthenticationApiImpl(
     ): VerifyOtpResponse {
         val parameters = Parameters.build {
             append("code", body.otp)
+            append("verify_type", VERIFY_TYPE_EMAIL_OTP)
         }
         val response = submitFormRequest(endpoint, accessToken, dpop, parameters)
 
@@ -269,6 +272,7 @@ class AuthenticationApiImpl(
         scope = json["scope"]?.jsonPrimitive?.content ?: "",
         issuedTokenType = json["issued_token_type"]?.jsonPrimitive?.content ?: "",
         refreshToken = json["refresh_token"]?.jsonPrimitive?.content ?: "",
+        zetaAttestationToken = json["zeta_attestation_token"]?.jsonPrimitive?.content,
     )
 
     private fun parseOidcAccessTokenResponse(json: JsonObject): OidcAccessTokenResponse = OidcAccessTokenResponse(
@@ -280,6 +284,7 @@ class AuthenticationApiImpl(
         refreshToken = json["refresh_token"]?.jsonPrimitive?.content,
         emailHint = json["email_hint"]?.jsonPrimitive?.content,
         bindingMode = json["binding_mode"]?.jsonPrimitive?.content,
+        zetaAttestationToken = json["zeta_attestation_token"]?.jsonPrimitive?.content,
     )
 }
 

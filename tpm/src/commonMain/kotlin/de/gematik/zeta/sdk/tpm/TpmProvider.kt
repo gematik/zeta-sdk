@@ -76,14 +76,5 @@ interface TpmProvider {
     suspend fun forget(resource: String? = null)
 }
 
-/** Platform chooses the best default provider (HW if available, otherwise software). */
-expect fun platformDefaultProvider(storage: TpmStorage, appAttestSupported: Boolean = false): TpmProvider
-
-/** Singleton facade */
-object Tpm {
-    @Volatile
-    private var provider: TpmProvider? = null
-
-    fun provider(storage: TpmStorage): TpmProvider =
-        provider ?: platformDefaultProvider(storage).also { provider = it }
-}
+/** Platform default provider; [isHardwareAttestationSupported] asks for a hardware-backed client instance key where the platform has one. */
+expect fun platformDefaultProvider(storage: TpmStorage, isHardwareAttestationSupported: Boolean): TpmProvider

@@ -254,6 +254,27 @@ class EnsureAccessTokenHandlerTest {
     }
 
     @Test
+    fun handle_returnsRegistrationError_andSkipsTokenRequest_whenStepUpRegistrationFails() = runTest {
+        // Arrange
+        val tokenProvider = FakeAccessTokenProvider(
+            failFirstWith = InvalidClientException(fakeHttpResponse(), "invalid_client"),
+        )
+        val registrationHandler = FakeClientRegistrationHandler(
+            CapabilityResult.Error("REGISTRATION_FAILED_ERROR", "registration failed", null),
+        )
+        val ctx = createContext(clientRegistrationStorage = ClearTrackingClientRegistrationStorage())
+
+        // Act
+        val result = createHandler(tokenProvider, registrationHandler).handle(FlowNeed.Authentication, ctx)
+
+        // Assert
+        assertEquals(1, registrationHandler.handleCalls)
+        assertEquals("REGISTRATION_FAILED_ERROR", (result as CapabilityResult.Error).internalCode)
+        assertEquals("registration failed", result.internalMessage)
+        assertEquals(1, tokenProvider.callCount)
+    }
+
+    @Test
     fun handle_doesNotClearClientRegistrationStorage_onSuccess() = runTest {
         // Arrange
         val tokenProvider = FakeAccessTokenProvider()
@@ -388,7 +409,8 @@ private class FakeAccessTokenProvider(
 ) : AccessTokenProvider {
     val hashCalls = mutableListOf<String>()
     val createDpopCalls = mutableListOf<CreateDpopCall>()
-    private var callCount = 0
+    var callCount = 0
+        private set
 
     override suspend fun getValidToken(
         tokenEndpoint: String,
@@ -529,15 +551,23 @@ fun createContext(
     clientRegistrationStorage = clientRegistrationStorage,
 )
 
-private class FakeClientRegistrationHandler : ClientRegistrationHandler(
+private class FakeClientRegistrationHandler(private val result: CapabilityResult = CapabilityResult.Done) : ClientRegistrationHandler(
     clientName = "test",
     regApi = object : ClientRegistrationApi {
         override suspend fun register(
             endpoint: String,
             request: ClientRegistrationRequest,
         ): ClientRegistrationResponse = ClientRegistrationResponse(clientId = "fake-id")
+
+        override suspend fun fetchNonce(endpoint: String): String = "fake-nonce"
     },
     tpmProvider = FakeTpmProvider(false),
 ) {
-    override suspend fun handle(need: FlowNeed, ctx: FlowContext): CapabilityResult = CapabilityResult.Done
+    var handleCalls = 0
+        private set
+
+    override suspend fun handle(need: FlowNeed, ctx: FlowContext): CapabilityResult {
+        handleCalls++
+        return result
+    }
 }

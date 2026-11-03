@@ -164,7 +164,7 @@ TI->>TI: save tokens
    * `GET {requestUri}/app` (outer callback, Guard's final code): completes `launchAndAwaitCallback()` and returns the raw request URI. Timeout: 5 minutes.
 3. `authorize()` verifies the returned `state` and extracts the final `code`.
 4. The code is exchanged at the token endpoint (`grant_type=authorization_code`, `code_verifier`, DPoP header, client assertion). Tokens are persisted via `AuthenticationStorage`.
-5. If the token response scope contains `zeta:email-verify`, no refresh token is issued yet — the email binding flow runs first (see below).
+5. If the token response scope contains `zeta:email-binding`, the registration is still `pending_user_binding`: the response is a reduced E-Mail-Binding token without refresh token, and the email binding flow runs first (see below).
 
 All endpoints (PAR, authorization, broker, bind-email) are resolved lazily from the discovered
 `issuer` by `OidcEndpointResolver` in the SDK core (`zeta-sdk/.../ZetaSdk.kt`), so discovery must
@@ -172,15 +172,16 @@ have run before the OIDC flow starts.
 
 **Email binding (first authentication)**
 
-For mobile clients the email address is bound on first use (TOFU). Trigger: the OIDC token
-response contains the scope `zeta:email-verify` instead of a refresh token.
+For mobile clients the email address (F1) is bound after the first OIDC authentication
+(Abb-ZETA-OIDC-Token-Bezug-mit-Identitaetsbindung, steps 15–34). Trigger: the OIDC token response
+contains the scope `zeta:email-binding` and no refresh token.
 `OidcTokenIssuance.completeEmailBinding()` then runs:
 
 1. If `binding_mode == "collect_email"`: ask the app for the email via `otpCallback.awaitEmail()` and `POST {issuer}/zeta/identity/bind-email` (response: `challenge_type=email_otp`, `email_hint`). Otherwise an email is already known and the OTP was sent.
 2. OTP loop via `otpCallback.awaitOtp(emailHint, rejected)`:
-   * `OtpSubmission.Otp(code)` -> `POST .../bind-email/verify`; on `status=bound` the loop ends, on a recoverable error the user is re-prompted with `rejected=true`.
+   * `OtpSubmission.Otp(code)` -> `POST .../bind-email/verify` with `code` and `verify_type=email_otp`; on `status=bound` the loop ends, on a recoverable error the user is re-prompted with `rejected=true`.
    * `OtpSubmission.Resend` -> `POST .../bind-email/resend`.
-3. The binding token is exchanged (`grant_type=token-exchange`) for the final access + refresh token, which are persisted.
+3. The binding token is exchanged (`grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, `subject_token_type=access_token`, same DPoP key) for the final access + refresh token, which are persisted.
 
 The app supplies the interaction via `OtpCallback`:
 
@@ -194,18 +195,34 @@ interface OtpCallback {
 Reference implementations: `GuiOtpCallback` (Compose UI, `zeta-client`) and
 `TestDriverOtpCallback` (`zeta-testdriver`).
 
-**Change email**
+**Client management**
 
-`ZetaSdkClient.changeEmail(newEmail)` changes the bound email address:
+`ClientManagementApiClientImpl` implements the guard API `zeta-guard-client-management` 2.0.0 at the PEP
+of the guard, `https://{guardHost}/zeta` (same host as the Fachdienst routes):
 
-```kotlin
-val result: Result<ChangeEmailResponse> = sdk.changeEmail("new@example.com")
-```
+| Call                      | Request                                                   | Success                       |
+|---------------------------|-----------------------------------------------------------|-------------------------------|
+| `changeEmail(newEmail)`   | `POST /identity/email`, JSON `{"new_email": ...}`         | `202` `ChangeEmailResponse`   |
+| `resendEmailChangeCode()` | `POST /identity/email/resend`, form `verify_type`         | `202` `EmailChallenge`        |
+| `verifyEmailChange(code)` | `POST /identity/email/verify`, form `code`, `verify_type` | `200` `{"status":"verified"}` |
+| `listClients()`           | `GET /clients`                                            | `200` `[RegisteredClient]`    |
+| `deleteClient(id)`        | `DELETE /clients/{client_id}`                             | `204`                         |
 
-It runs `discover()` and `register()` if needed, then `ChangeEmailClient` sends
-`POST {issuer}/zeta/identity/email` with body `{"new_email": ...}`, authenticated by a TPM-signed
-`Client-Assertion` header (`IdentityClientAssertionFactory`). Expected response: `202 Accepted`
-with a `status` field; errors are RFC 7807 problem details, thrown as `ChangeEmailException`.
+Errors are thrown as `ClientManagementException` subclasses with the error body in `pepError` (rejected by the PEP) or `problem` (rejected by the authorization server).
+
+Schema → model mapping (`components.schemas`):
+
+| Schema                                    | Model                                       | Fields (required unless `?`)                                  |
+|-------------------------------------------|---------------------------------------------|---------------------------------------------------------------|
+| `EmailChangeRequest`                      | `ChangeEmailRequest`                        | `new_email`; `idp_step_up` is not sent                        |
+| `oneOf [EmailChangePending, EmailStatus]` | `ChangeEmailResponse` (sealed, by `status`) |                                                               |
+| `EmailChangePending` (`status: pending`)  | `ChangeEmailResponse.Pending`               | `challenge_type: ChallengeType`, `email_hint`                 |
+| `EmailStatus` (`status: verified`)        | `ChangeEmailResponse.Verified`              | —                                                             |
+| `ChallengeInfo`                           | `EmailChallenge`                            | `challenge_type: ChallengeType`, `email_hint?`                |
+| `ClientSummary`                           | `models.RegisteredClient`                   | `client_id`, `name`                                           |
+| `PepError`                                | `PepError`                                  | `error`, `error_description`, `error_uri?`                    |
+| `Problem`                                 | `ProblemDetails`                            | `status?`, `code?: ProblemCode`, `title?`, `detail?` (nullable on purpose so an incomplete error body is not lost) |
+| form `verify_type`                        | `VerifyType`                                | `email_otp`                                                   |
 
 # TODOs:
 

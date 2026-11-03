@@ -99,6 +99,14 @@ class NotificationApiClientImplErrorMappingTest {
     }
 
     @Test
+    fun notFound_outsideHistory_staysUnexpectedNotificationApiException() = runTest {
+        // The history-specific 404 mapping must not relabel a 404 of another endpoint.
+        val client = clientRespondingWith(HttpStatusCode.NotFound, """{"errorCode":"PUSHER_NOT_FOUND"}""")
+
+        assertFailsWith<UnexpectedNotificationApiException> { client.getChannel("device-1") }
+    }
+
+    @Test
     fun badRequest_withoutErrorDetail_mapsWithNullDetail() = runTest {
         val client = clientRespondingWith(HttpStatusCode.BadRequest, """{"errorCode":"M_MISSING_PARAM"}""")
 

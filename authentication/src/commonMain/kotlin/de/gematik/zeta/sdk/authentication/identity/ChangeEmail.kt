@@ -24,36 +24,83 @@
 
 package de.gematik.zeta.sdk.authentication.identity
 
-import io.ktor.client.statement.HttpResponse
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonClassDiscriminator
 
-internal const val CHANGE_EMAIL_PATH = "/zeta/identity/email"
+internal const val CHANGE_EMAIL_PATH = "/identity/email"
+internal const val RESEND_EMAIL_CODE_PATH = "$CHANGE_EMAIL_PATH/resend"
+internal const val VERIFY_EMAIL_CODE_PATH = "$CHANGE_EMAIL_PATH/verify"
 
 @Serializable
 data class ChangeEmailRequest(
     @SerialName("new_email") val newEmail: String,
 )
 
-/** Response of a successful (202) email change; [status] reports the server-side state. */
 @Serializable
-data class ChangeEmailResponse(
-    val status: String,
+enum class ChallengeType {
+    @SerialName("email_otp") EMAIL_OTP,
+}
+
+@Serializable
+enum class VerifyType {
+    @SerialName("email_otp") EMAIL_OTP,
+}
+
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
+@JsonClassDiscriminator("status")
+sealed interface ChangeEmailResponse {
+
+    @Serializable
+    @SerialName("pending")
+    data class Pending(
+        @SerialName("challenge_type") val challengeType: ChallengeType,
+        @SerialName("email_hint") val emailHint: String,
+    ) : ChangeEmailResponse
+
+    @Serializable
+    @SerialName("verified")
+    data object Verified : ChangeEmailResponse
+}
+
+/** Schema `ChallengeInfo`. */
+@Serializable
+data class EmailChallenge(
+    @SerialName("challenge_type") val challengeType: ChallengeType,
+    @SerialName("email_hint") val emailHint: String? = null,
 )
 
 @Serializable
-internal data class ProblemDetails(
+enum class ProblemCode {
+    @SerialName("invalidRequest") INVALID_REQUEST,
+
+    @SerialName("unauthorized") UNAUTHORIZED,
+
+    @SerialName("notFound") NOT_FOUND,
+
+    @SerialName("internal") INTERNAL,
+
+    @SerialName("invalidCode") INVALID_CODE,
+
+    @SerialName("noPendingChallenge") NO_PENDING_CHALLENGE,
+
+    @SerialName("unsupportedVerifyType") UNSUPPORTED_VERIFY_TYPE,
+}
+
+@Serializable
+data class PepError(
+    val error: String,
+    @SerialName("error_description") val errorDescription: String,
+    @SerialName("error_uri") val errorUri: String? = null,
+)
+
+/** Schema `Problem`; nullable so a partial error body is kept. */
+@Serializable
+data class ProblemDetails(
     val status: Int? = null,
-    val code: String? = null,
+    val code: ProblemCode? = null,
     val title: String? = null,
     val detail: String? = null,
 )
-
-/** Failed email change; carries the HTTP status and the RFC 7807 problem details, if any. */
-class ChangeEmailException(
-    val response: HttpResponse?,
-    val httpStatus: Int,
-    val code: String?,
-    val title: String?,
-    val detail: String?,
-) : Exception(detail ?: title ?: code ?: "Email change failed with HTTP $httpStatus")

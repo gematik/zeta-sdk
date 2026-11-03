@@ -23,6 +23,7 @@
  */
 package de.gematik.zeta.sdk.authentication.oidc
 
+import de.gematik.zeta.sdk.attestation.AttestationStateStorage
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AccessTokenParams
 import de.gematik.zeta.sdk.authentication.AuthenticationApiImpl
@@ -41,6 +42,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
+import io.ktor.http.Url
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -89,6 +91,25 @@ class OidcTokenIssuanceTests {
     }
 
     @Test
+    fun exchangeEmailBindingToken_toleratesMissingRefreshToken() = runTest {
+        // Arrange
+        val engine = MockEngine {
+            jsonResponse(
+                """{"access_token":"exchanged-token","expires_in":300,"token_type":"DPoP","scope":"openid"}""",
+            )
+        }
+        val storage = newAuthStorage()
+        val sut = issuance(engine, storage)
+
+        // Act
+        val result = sut.exchangeEmailBindingToken("binding-token", fakeRequest())
+
+        // Assert
+        assertEquals("exchanged-token", result)
+        assertEquals("", storage.getRefreshToken())
+    }
+
+    @Test
     fun completeEmailBinding_collectEmail_bindsThenVerifiesThenExchanges() = runTest {
         // Arrange
         val engine = MockEngine { request ->
@@ -115,7 +136,7 @@ class OidcTokenIssuanceTests {
         }
         val pending = TokenIssuanceResult.EmailBindingRequired(
             bindingToken = "binding-token",
-            scope = "zeta:email-verify",
+            scope = "zeta:email-binding",
             emailHint = null,
             bindingMode = "collect_email",
         )
@@ -225,7 +246,7 @@ class OidcTokenIssuanceTests {
         }
         val pending = TokenIssuanceResult.EmailBindingRequired(
             bindingToken = "binding-token",
-            scope = "zeta:email-verify",
+            scope = "zeta:email-binding",
             emailHint = null,
             bindingMode = "collect_email",
         )
@@ -264,23 +285,24 @@ class OidcTokenIssuanceTests {
         }
     }
 
+    // authorize()
+
     @Test
-    fun authorize_returnsCode_whenCallbackReturnsMatchingState() = runTest {
+    fun authorize_returnsCode_whenLauncherReturnsMatchingState() = runTest {
         // Arrange
-        val callback = AuthenticationCallback { clientId, requestUri ->
-            assertEquals("test-client", clientId)
-            assertEquals("urn:ietf:params:oauth:request_uri:abc", requestUri)
-            AuthenticationCallback.AuthInfo(
-                finalUrl = "http://localhost:8090/cb/demo/app?code=auth-code-123&state=expected-state",
-            )
+        val launcher = AuthorizationLauncher {
+            "$REDIRECT_URI?code=auth-code-123&state=expected-state"
         }
-        val sut = issuanceWithCallback(callback)
+        val sut = authorizeSut()
 
         // Act
         val code = sut.authorize(
+            provider = oidcProvider(launcher),
             clientId = "test-client",
             requestUri = "urn:ietf:params:oauth:request_uri:abc",
             expectedState = "expected-state",
+            authorizationEndpoint = AUTHORIZATION_ENDPOINT,
+            brokerEndpoint = BROKER_ENDPOINT,
         )
 
         // Assert
@@ -288,89 +310,148 @@ class OidcTokenIssuanceTests {
     }
 
     @Test
-    fun authorize_throws_whenAuthenticationCallbackIsNull() = runTest {
+    fun authorize_throws_whenFinalRedirectHasError() = runTest {
         // Arrange
-        val sut = issuanceWithCallback(callback = null)
+        val launcher = AuthorizationLauncher {
+            "$REDIRECT_URI?error=access_denied&error_description=User+cancelled&state=expected-state"
+        }
+        val sut = authorizeSut()
 
         // Act & Assert
-        val exception = assertFailsWith<IllegalArgumentException> {
-            sut.authorize(clientId = "test-client", requestUri = "urn:...", expectedState = "state")
-        }
-        assertEquals("authenticationCallback has to be setup", exception.message)
-    }
-
-    @Test
-    fun authorize_throws_whenCallbackReturnsNullFinalUrl() = runTest {
-        // Arrange
-        val callback = AuthenticationCallback { _, _ -> AuthenticationCallback.AuthInfo(finalUrl = null) }
-        val sut = issuanceWithCallback(callback)
-
-        // Act & Assert
-        assertFailsWith<IllegalStateException> {
-            sut.authorize(clientId = "test-client", requestUri = "urn:...", expectedState = "state")
-        }
-    }
-
-    @Test
-    fun authorize_throws_whenRedirectUrlHasNoCode() = runTest {
-        // Arrange
-        val callback = AuthenticationCallback { _, _ ->
-            AuthenticationCallback.AuthInfo(
-                finalUrl = "http://localhost:8090/cb/demo/app?error=access_denied&error_description=User+cancelled&state=expected-state",
+        val exception = assertFailsWith<AuthorizationFailedException> {
+            sut.authorize(
+                provider = oidcProvider(launcher),
+                clientId = "test-client",
+                requestUri = "urn:...",
+                expectedState = "expected-state",
+                authorizationEndpoint = AUTHORIZATION_ENDPOINT,
+                brokerEndpoint = BROKER_ENDPOINT,
             )
         }
-        val sut = issuanceWithCallback(callback)
+        assertEquals("access_denied", exception.error)
+        assertEquals("User cancelled", exception.description)
+    }
+
+    @Test
+    fun authorize_throws_whenFinalRedirectHasNoCode() = runTest {
+        // Arrange
+        val launcher = AuthorizationLauncher { "$REDIRECT_URI?state=expected-state" }
+        val sut = authorizeSut()
 
         // Act & Assert
-        val exception = assertFailsWith<IllegalStateException> {
-            sut.authorize(clientId = "test-client", requestUri = "urn:...", expectedState = "expected-state")
+        assertFailsWith<IllegalArgumentException> {
+            sut.authorize(
+                provider = oidcProvider(launcher),
+                clientId = "test-client",
+                requestUri = "urn:...",
+                expectedState = "expected-state",
+                authorizationEndpoint = AUTHORIZATION_ENDPOINT,
+                brokerEndpoint = BROKER_ENDPOINT,
+            )
         }
-        assertEquals("authorization failed: access_denied - User cancelled", exception.message)
     }
 
     @Test
     fun authorize_throws_whenReturnedStateDoesNotMatchExpectedState() = runTest {
         // Arrange
-        val callback = AuthenticationCallback { _, _ ->
-            AuthenticationCallback.AuthInfo(
-                finalUrl = "http://localhost:8090/cb/demo/app?code=auth-code-123&state=wrong-state",
-            )
+        val launcher = AuthorizationLauncher {
+            "$REDIRECT_URI?code=auth-code-123&state=wrong-state"
         }
-        val sut = issuanceWithCallback(callback)
+        val sut = authorizeSut()
 
         // Act & Assert
-        val exception = assertFailsWith<IllegalArgumentException> {
-            sut.authorize(clientId = "test-client", requestUri = "urn:...", expectedState = "expected-state")
+        assertFailsWith<IllegalStateException> {
+            sut.authorize(
+                provider = oidcProvider(launcher),
+                clientId = "test-client",
+                requestUri = "urn:...",
+                expectedState = "expected-state",
+                authorizationEndpoint = AUTHORIZATION_ENDPOINT,
+                brokerEndpoint = BROKER_ENDPOINT,
+            )
         }
-        assertEquals("state mismatch: expected expected-state but got wrong-state", exception.message)
     }
 
     @Test
-    fun authorize_passesClientIdAndRequestUriToCallback() = runTest {
+    fun authorize_propagatesLauncherFailure() = runTest {
         // Arrange
-        var capturedClientId: String? = null
-        var capturedRequestUri: String? = null
-        val callback = AuthenticationCallback { clientId, requestUri ->
-            capturedClientId = clientId
-            capturedRequestUri = requestUri
-            AuthenticationCallback.AuthInfo(finalUrl = "http://localhost:8090/cb/demo/app?code=c&state=s")
+        val launcher = AuthorizationLauncher {
+            throw AuthorizationFailedException("access_denied", "User cancelled the login")
         }
-        val sut = issuanceWithCallback(callback)
+        val sut = authorizeSut()
 
-        // Act
-        sut.authorize(clientId = "my-client-id", requestUri = "urn:my-request-uri", expectedState = "s")
-
-        // Assert
-        assertEquals("my-client-id", capturedClientId)
-        assertEquals("urn:my-request-uri", capturedRequestUri)
+        // Act & Assert
+        assertFailsWith<AuthorizationFailedException> {
+            sut.authorize(
+                provider = oidcProvider(launcher),
+                clientId = "test-client",
+                requestUri = "urn:...",
+                expectedState = "state",
+                authorizationEndpoint = AUTHORIZATION_ENDPOINT,
+                brokerEndpoint = BROKER_ENDPOINT,
+            )
+        }
     }
 
-    private fun issuanceWithCallback(callback: AuthenticationCallback?): OidcTokenIssuance {
+    @Test
+    fun authorize_buildsAuthorizationUrlWithClientIdAndRequestUri() = runTest {
+        // Arrange
+        var captured: AuthorizationRequest? = null
+        val launcher = AuthorizationLauncher { request ->
+            captured = request
+            "$REDIRECT_URI?code=c&state=s"
+        }
+        val sut = authorizeSut()
+
+        // Act
+        sut.authorize(
+            provider = oidcProvider(launcher),
+            clientId = "my-client-id",
+            requestUri = "urn:ietf:params:oauth:request_uri:xyz",
+            expectedState = "s",
+            authorizationEndpoint = AUTHORIZATION_ENDPOINT,
+            brokerEndpoint = BROKER_ENDPOINT,
+        )
+
+        // Assert
+        val authorizationUrl = Url(requireNotNull(captured).authorizationUrl)
+        assertTrue(authorizationUrl.toString().startsWith(AUTHORIZATION_ENDPOINT))
+        assertEquals("my-client-id", authorizationUrl.parameters["client_id"])
+        assertEquals("urn:ietf:params:oauth:request_uri:xyz", authorizationUrl.parameters["request_uri"])
+    }
+
+    @Test
+    fun authorize_passesRedirectUrisAndBrokerEndpointToLauncher() = runTest {
+        // Arrange
+        var captured: AuthorizationRequest? = null
+        val launcher = AuthorizationLauncher { request ->
+            captured = request
+            "$REDIRECT_URI?code=c&state=s"
+        }
+        val sut = authorizeSut()
+
+        // Act
+        sut.authorize(
+            provider = oidcProvider(launcher),
+            clientId = "my-client-id",
+            requestUri = "urn:...",
+            expectedState = "s",
+            authorizationEndpoint = AUTHORIZATION_ENDPOINT,
+            brokerEndpoint = BROKER_ENDPOINT,
+        )
+
+        // Assert
+        val request = requireNotNull(captured)
+        assertEquals(REDIRECT_URI, request.redirectUri)
+        assertEquals(OIDC_REDIRECT_URI, request.oidcRedirectUri)
+        assertEquals(BROKER_ENDPOINT, request.brokerEndpoint)
+    }
+
+    private fun authorizeSut(): OidcTokenIssuance {
         val neverCalledEngine = MockEngine { error("authorize() must not perform any HTTP request") }
         return OidcTokenIssuance(
             authApi = AuthenticationApiImpl(ZetaHttpClient(HttpClient(neverCalledEngine)), clock = SystemZetaClock),
             authStorage = AuthenticationStorageImpl(InMemoryStorage(), resourceScope = ResourceScope("", emptyList())),
-            authenticationCallback = callback,
             resolveParEndpoint = { error("not used") },
             resolveBindEmailEndpoint = { error("not used") },
             resolveResendEmailEndpoint = { error("not used") },
@@ -378,6 +459,8 @@ class OidcTokenIssuanceTests {
             clock = { 1000L },
         )
     }
+
+    // PAR
 
     @Test
     fun requestPar_returnsParResponse_onSuccess() = runTest {
@@ -522,6 +605,27 @@ class OidcTokenIssuanceTests {
             )
         }
     }
+
+    // Attestation token
+
+    @Test
+    fun exchangeEmailBindingToken_storesZetaAttestationToken() = runTest {
+        val engine = MockEngine {
+            jsonResponse("""{"access_token":"t","expires_in":300,"token_type":"DPoP","scope":"openid","refresh_token":"r","zeta_attestation_token":"zat"}""")
+        }
+        val state = AttestationStateStorage(InMemoryStorage())
+        issuance(engine, newAuthStorage(), state).exchangeEmailBindingToken("binding-token", fakeRequest())
+        assertEquals("zat", state.getZetaAttestationToken())
+    }
+
+    @Test
+    fun exchangeEmailBindingToken_keepsExistingToken_whenResponseHasNone() = runTest {
+        val engine = MockEngine { jsonResponse("""{"access_token":"t","expires_in":300,"token_type":"DPoP","scope":"openid","refresh_token":"r"}""") }
+        val state = AttestationStateStorage(InMemoryStorage())
+        state.setZetaAttestationToken("old")
+        issuance(engine, newAuthStorage(), state).exchangeEmailBindingToken("binding-token", fakeRequest())
+        assertEquals("old", state.getZetaAttestationToken())
+    }
 }
 
 private const val BIND_EMAIL_ENDPOINT = "https://zeta-kind.local/zeta/identity/bind-email"
@@ -529,23 +633,50 @@ private const val RESEND_ENDPOINT = "https://zeta-kind.local/zeta/identity/bind-
 private const val VERIFY_ENDPOINT = "https://zeta-kind.local/zeta/identity/bind-email/verify"
 private const val TOKEN_ENDPOINT = "https://zeta-kind.local/token"
 private const val PAR_ENDPOINT = "https://zeta-kind.local/protocol/openid-connect/ext/par/request"
+private const val AUTHORIZATION_ENDPOINT = "https://zeta-kind.local/protocol/openid-connect/auth"
+private const val BROKER_ENDPOINT = "https://zeta-kind.local/broker/zeta-sekidp-oidc/endpoint"
+private const val REDIRECT_URI = "http://localhost:8090/cb/demo/app"
+private const val OIDC_REDIRECT_URI = "http://localhost:8090/cb/demo/oidc"
+
+private val unusedOtpCallback = object : OtpCallback {
+    override suspend fun awaitEmail(): String = error("not used")
+    override suspend fun awaitOtp(emailHint: String?, rejected: Boolean): OtpSubmission = error("not used")
+}
+
+private val unusedLauncher = AuthorizationLauncher { error("not used") }
+
+private fun oidcConfig(
+    launcher: AuthorizationLauncher = unusedLauncher,
+    idpIss: String = "https://sekidp.example.org",
+): OidcConfig = OidcConfig(
+    redirectUri = REDIRECT_URI,
+    oidcRedirectUri = OIDC_REDIRECT_URI,
+    idpIss = idpIss,
+    idpAlias = "zeta-sekidp-oidc",
+    authorizationLauncher = launcher,
+    otpCallback = unusedOtpCallback,
+)
 
 private fun createClient(engine: MockEngine): ZetaHttpClient = ZetaHttpClient(HttpClient(engine))
 
 private fun newAuthStorage(): AuthenticationStorage =
     AuthenticationStorageImpl(InMemoryStorage(), resourceScope = ResourceScope("", emptyList()))
 
-private fun issuance(engine: MockEngine, storage: AuthenticationStorage = newAuthStorage()): OidcTokenIssuance {
+private fun issuance(
+    engine: MockEngine,
+    storage: AuthenticationStorage = newAuthStorage(),
+    attestationState: AttestationStateStorage? = null,
+): OidcTokenIssuance {
     val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
     return OidcTokenIssuance(
         authApi = api,
         authStorage = storage,
-        authenticationCallback = null,
         resolveParEndpoint = { PAR_ENDPOINT },
         resolveBindEmailEndpoint = { BIND_EMAIL_ENDPOINT },
         resolveResendEmailEndpoint = { RESEND_ENDPOINT },
         resolveVerifyEmailEndpoint = { VERIFY_ENDPOINT },
         clock = { 1000L },
+        attestationState = attestationState,
     )
 }
 
@@ -575,17 +706,9 @@ private fun MockRequestHandleScope.jsonResponse(
 )
 
 private fun oidcProvider(
+    launcher: AuthorizationLauncher = unusedLauncher,
     idpIss: String = "https://sekidp.example.org",
-    requestUri: String = "http://localhost:8090/cb/demo",
-): OidcTokenProvider = OidcTokenProvider(
-    OidcConfig(
-        idpIss = idpIss,
-        idpAlias = "zeta-sekidp-oidc",
-        requestUri = requestUri,
-        authenticationCallback = null,
-        otpCallback = object : OtpCallback {
-            override suspend fun awaitEmail(): String = error("not used")
-            override suspend fun awaitOtp(emailHint: String?, rejected: Boolean): OtpSubmission = error("not used")
-        },
-    ),
-)
+): OidcTokenProvider = OidcTokenProvider(oidcConfig(launcher = launcher, idpIss = idpIss)).apply {
+    resolveAuthorizationEndpoint = { AUTHORIZATION_ENDPOINT }
+    resolveBrokerEndpoint = { BROKER_ENDPOINT }
+}

@@ -57,6 +57,7 @@ import io.ktor.client.engine.curl.ktor_sk_GENERAL_NAME_num
 import io.ktor.client.engine.curl.ktor_sk_GENERAL_NAME_value
 import io.ktor.client.engine.curl.ktor_sk_X509_num
 import io.ktor.client.engine.curl.ktor_sk_X509_value
+import io.ktor.client.engine.curl.ktor_x509_common_name
 import io.ktor.http.Url
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.COpaquePointerVar
@@ -158,8 +159,9 @@ private fun inspectCertChain(ssl: CPointer<SSL>): LeafCertInfo? {
         val (sigAlgSn, subjectDN, notBefore, notAfter) = inspectCertMeta(cert)
         val (keyTypeName, keyBits, curveName) = inspectCertKey(cert)
         val san = extractSan(cert)
+        val commonName = ktor_x509_common_name(cert)?.toKString()
 
-        chainMeta.add(ChainCertMeta(keyTypeName, keyBits, sigAlgSn, subjectDN, notBefore, notAfter, curveName, san))
+        chainMeta.add(ChainCertMeta(keyTypeName, keyBits, sigAlgSn, subjectDN, notBefore, notAfter, curveName, san, commonName))
 
         if (i == 0) {
             leafCertInfo = LeafCertInfo(
@@ -172,7 +174,8 @@ private fun inspectCertChain(ssl: CPointer<SSL>): LeafCertInfo? {
                 curveName = curveName,
                 certDer = extractDer(cert),
                 issuerDer = ktor_sk_X509_value(certChain, 1)?.let { extractDer(it) },
-                san = extractSan(cert),
+                san = san,
+                commonName = commonName,
             )
         }
     }
@@ -260,6 +263,7 @@ data class LeafCertInfo(
     val certDer: ByteArray? = null,
     val issuerDer: ByteArray? = null,
     val san: List<String>? = null,
+    val commonName: String? = null,
     val fullChain: List<ChainCertMeta>? = null,
 )
 
@@ -272,6 +276,7 @@ data class ChainCertMeta(
     val notAfter: Long?,
     val curveName: String?,
     val san: List<String>?,
+    val commonName: String? = null,
 )
 
 private data class CertMeta(

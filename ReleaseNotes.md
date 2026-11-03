@@ -1,7 +1,7 @@
 
 # RELEASE NOTES
 
-## Version: v1.3.2
+## Version: v2.0.1
 
 This version implements the ZETA protocol for the ZETA client SDK.
 
@@ -60,6 +60,77 @@ runtime environments.
 - TLS validation is not fully implemented on iOS
 - The SDK does not fully handle paths parts in the AS well-known URL. The AS well-known is defined
   as on the root path, so this is WONTFIX.
+
+## Changes in 2.0.1 (from 2.0.0)
+
+### Security
+
+Updated third-party dependencies to fix vulnerabilities reported by Dependency-Track:
+
+- Bouncy Castle (`bcprov-jdk18on`, `bcpkix-jdk18on`): 1.85.2 / 1.85 -> 1.86
+  - CVE-2026-17508, CVE-2026-18036, CVE-2026-18040, CVE-2026-71888,
+    CVE-2026-71889, CVE-2026-71891, CVE-2026-71892, CVE-2026-97873
+- Netty (`netty-codec-http`, `netty-codec-http2`): 4.2.17.Final -> 4.2.19
+  - CVE-2026-89044, CVE-2026-93488, CVE-2026-93491, CVE-2026-93492,
+    CVE-2026-93558, CVE-2026-93562, CVE-2026-93565, CVE-2026-93566,
+    CVE-2026-93567, CVE-2026-93568, CVE-2026-93573, CVE-2026-93574,
+    CVE-2026-93579
+
+### Breaking Changes
+
+- N/A
+
+### New Features
+
+- N/A
+
+### Behavioural Changes
+
+- N/A
+
+### Bug Fixes
+
+- N/A
+
+## Changes in 2.0.0 (from 1.3.2)
+
+### Breaking Changes
+
+- `OidcConfig`: `requestUri` has been replaced by two explicit fields. Previously both redirect URIs were derived from `requestUri` (`{requestUri}/app` and `{requestUri}/oidc`):
+  - `redirectUri`: final app redirect where Keycloak returns the authorization code.
+  - `oidcRedirectUri`: intermediate redirect where the SekIDP returns its `code` and `state`, which are relayed to the Keycloak broker.
+
+  Both must be registered as redirect URIs during client registration.
+- `OidcConfig`: the optional `authenticationCallback` has been replaced by the required `authorizationLauncher: AuthorizationLauncher`. The application implements `open(request)`, which shows the login in the system browser, relays the SekIDP `code`/`state` to the broker endpoint in the same browser, and returns the final redirect URL.
+The SDK handles PKCE, `state`, PAR, validation and the token exchange. See the README section "AuthorizationLauncher".
+- `ZetaSdkClient.changeEmail` only starts the e-mail change and returns `ChangeEmailResponse.Pending` or `ChangeEmailResponse.Verified`; call `verifyEmailChange(code)` to complete it. Errors are thrown as `ClientManagementException` subclasses.
+- TestDriver: `GET /oidc/change-email` has been replaced by `POST /testdriver-api/client-management/identity/email`.
+
+### New Features
+
+- Hardware-based device attestation for Android and iOS
+- Push notifications, including key persistence, notification history
+- Authentication at token exchange according to A_25338-01
+- C# SDK on NuGet: the C# SDK is now packaged for release via NuGet
+- Android TestDriver: test driver app for running the automated SDK tests on Android devices
+- Client management API: the SDK can list the clients registered for the current identity, de-register a client, change the identity e-mail, and show the registration access log (provided by the server).
+- Hardware attestation tests on real devices: the Android and iOS demo apps can now be tested automatically on real devices via BrowserStack
+- TestDriver: new endpoint `hellozeta/ios` and `hellozeta/android` to run the Hello ZETA flow on a real Android/iOS device
+- TestDriver: client-management endpoints `POST /testdriver-api/client-management/identity/email`, `.../identity/email/resend`, `.../identity/email/verify`, `GET .../clients` and `DELETE .../clients/{client_id}`
+
+### Behavioural Changes
+
+- ANFTI2-997: The SDK now calls the authorization endpoint after the PAR request, fixing an incompatibility in the OIDC flow between ZETA versions. This requires changes to `OidcConfig` (see Breaking Changes).
+- When the ASL session has expired on the server, the SDK now automatically re-does the ASL handshake
+- Discovery, client registration and authentication are now serialized in the Java client, so parallel requests (e.g. parallel WebSocket connections) no longer trigger them concurrently
+- Server certificate validation falls back to the Common Name (CN) when the certificate has no Subject Alternative Name
+
+### Bug Fixes
+
+- ANFTI2-708: An expired refresh token no longer results in a 400 error
+- ANFTI2-753: ASL responses now return the inner decrypted response status and headers instead of the outer ASL ones
+- ANFTI2-928: Build: `jvmCommonTest` dependencies are now guarded
+- TestDriver adjustments for the OIDC no-cookie flow
 
 
 ## Changes in 1.3.2 (from 1.3.0)
