@@ -24,6 +24,8 @@
 
 package de.gematik.zeta.sdk.notifications
 
+import de.gematik.zeta.sdk.crypto.AesGcmCipher
+import de.gematik.zeta.sdk.crypto.AesGcmCipherImpl
 import de.gematik.zeta.sdk.notifications.model.Channel
 import de.gematik.zeta.sdk.notifications.model.HistoricNotification
 import de.gematik.zeta.sdk.notifications.model.HistoricNotifications
@@ -33,27 +35,44 @@ import de.gematik.zeta.sdk.notifications.model.PusherEncryption
 import de.gematik.zeta.time.SystemZetaClock
 import randomUUID
 import secureRandom
+import kotlin.io.encoding.Base64
 
 class NotificationClientImpl internal constructor(
     private val api: NotificationApiClient,
     private val localPusherStorage: LocalPusherStorage,
     private val createEncryption: () -> PusherEncryption,
+    private val keyChainStorage: PushKeyChainStorage = InMemoryPushKeyChainStorage(),
+    private val aesGcmCipher: AesGcmCipher = AesGcmCipherImpl(),
 ) : NotificationClient {
     constructor(
         api: NotificationApiClient,
     ) : this(api, InMemoryLocalPusherStorage(), ::defaultPusherEncryption)
 
+    /** Full production wiring: persistent [localPusherStorage]/[keyChainStorage] (e.g. [LocalPusherStorageImpl]/[PushKeyChainStorageImpl]). */
+    constructor(
+        api: NotificationApiClient,
+        localPusherStorage: LocalPusherStorage,
+        keyChainStorage: PushKeyChainStorage,
+    ) : this(api, localPusherStorage, ::defaultPusherEncryption, keyChainStorage)
+
     override suspend fun getPushers(): List<Pusher> = api.getPushers()
 
     override suspend fun registerPusher(registration: PusherConfig) {
         val local = localPusherStorage.get()
-        if (local != null && local.pushkey == registration.pushkey && local.appId == registration.appId) {
+        if (local != null && local.pushkey == registration.pushkey && local.appId == registration.appId &&
+            keyChainStorage.get() != null
+        ) {
             return
         }
         if (local != null) {
             api.setPusher(deletion(local.pushkey, local.appId))
         }
-        api.setPusher(registration.toPusher(createEncryption()))
+        val encryption = createEncryption()
+        api.setPusher(registration.toPusher(encryption))
+        // Key chain first: decryption only needs the key chain, so a lost pusher save still leaves pushes
+        // decryptable. A stored pusher without a key chain fails the guard above and is re-registered.
+        val initial = derivePushKeyMaterial(encryption.iss.hexToByteArray(), encryption.timeIssCreated)
+        keyChainStorage.save(PushKeyChain(listOf(initial)))
         localPusherStorage.save(LocalPusher(registration.pushkey, registration.appId))
     }
 
@@ -67,6 +86,7 @@ class NotificationClientImpl internal constructor(
         val local = localPusherStorage.get()
         if (local != null && local.pushkey == pushkey && local.appId == appId) {
             localPusherStorage.clear()
+            keyChainStorage.clear()
         }
     }
 
@@ -79,16 +99,21 @@ class NotificationClientImpl internal constructor(
     }
 
     override suspend fun decryptPushNotification(ciphertext: String, timeMessageEncrypted: String): String {
-        error("decryptPushNotification is not implemented")
+        requireYearMonth(timeMessageEncrypted)
+        val chain = keyChainStorage.get()
+            ?: error("No push encryption key material is stored; register a pusher before decrypting")
+        val (resolved, material) = chain.resolve(timeMessageEncrypted)
+
+        val padded = aesGcmCipher.decrypt(material.aesKey, Base64.decode(ciphertext))
+        keyChainStorage.save(resolved)
+        return unpadPushMessage(padded)
     }
 
-    override suspend fun getNotification(notificationId: String): HistoricNotification {
-        error("getNotification is not implemented")
-    }
+    override suspend fun getNotification(notificationId: String): HistoricNotification =
+        api.getHistoricNotification(notificationId)
 
-    override suspend fun getNotifications(): HistoricNotifications {
-        error("getNotifications is not implemented")
-    }
+    override suspend fun getNotifications(): HistoricNotifications =
+        HistoricNotifications(api.getHistoricNotifications(requireLocalPushkey()))
 
     private suspend fun requireLocalPushkey(): String =
         localPusherStorage.get()?.pushkey ?: error("No local pusher is registered")

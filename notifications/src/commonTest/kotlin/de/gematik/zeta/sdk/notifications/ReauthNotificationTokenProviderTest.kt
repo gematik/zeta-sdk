@@ -149,7 +149,7 @@ class ReauthNotificationTokenProviderTest {
 
         // Assert - refresh token is dropped so getValidToken always full-issues on expiry
         assertEquals("ns_token", store.getAccessToken())
-        assertEquals("4242", store.getTokenExpiration())
+        assertEquals("4242", store.getAccessTokenExpiration())
         assertNull(store.getRefreshToken())
     }
 
@@ -164,7 +164,7 @@ class ReauthNotificationTokenProviderTest {
 
         // Assert
         assertNull(store.getAccessToken())
-        assertNull(store.getTokenExpiration())
+        assertNull(store.getAccessTokenExpiration())
     }
 
     // ---- fixtures ----
@@ -194,7 +194,7 @@ class ReauthNotificationTokenProviderTest {
 
         override suspend fun getValidToken(tokenEndpoint: String, nonceEndpoint: String, params: AccessTokenParams, dpopKey: String): String {
             val cached = store.getAccessToken()
-            val exp = store.getTokenExpiration()?.toLongOrNull()
+            val exp = store.getAccessTokenExpiration()?.toLongOrNull()
             if (cached != null && exp != null && exp - clock() > 10) return cached
 
             if (delayMs > 0) delay(delayMs)
@@ -202,7 +202,7 @@ class ReauthNotificationTokenProviderTest {
             if (throwOnIssue.isNotEmpty()) throw throwOnIssue.removeFirst()
             issueCount++
             paramsSeen += params
-            store.saveAccessTokens("ns_token", "unused_refresh", clock() + 3600)
+            store.saveAccessTokens("ns_token", "unused_refresh", clock() + 3600, clock() + 3600)
             return "ns_token"
         }
 

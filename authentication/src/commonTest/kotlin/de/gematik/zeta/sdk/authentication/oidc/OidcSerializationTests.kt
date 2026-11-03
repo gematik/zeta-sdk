@@ -1,27 +1,25 @@
 /*
+ * #%L
+ * ZETA-Client
+ * %%
+ * (C) EY Strategy & Transactions GmbH, 2025, licensed for gematik GmbH
+ * %%
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *  * #%L
- *  * ZETA-Client
- *  * %%
- *  * (C) EY Strategy & Transactions GmbH, 2025, licensed for gematik GmbH
- *  * %%
- *  * Licensed under the Apache License, Version 2.0 (the "License");
- *  * you may not use this file except in compliance with the License.
- *  * You may obtain a copy of the License at
- *  *
- *  *     http://www.apache.org/licenses/LICENSE-2.0
- *  *
- *  * Unless required by applicable law or agreed to in writing, software
- *  * distributed under the License is distributed on an "AS IS" BASIS,
- *  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  * See the License for the specific language governing permissions and
- *  * limitations under the License.
- *  *
- *  * ******
- *  *
- *  * For additional notes and disclaimer from gematik and in case of changes by gematik find details in the "Readme" file.
- *  * #L%
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * ******
+ *
+ * For additional notes and disclaimer from gematik and in case of changes by gematik find details in the "Readme" file.
+ * #L%
  */
 
 package de.gematik.zeta.sdk.authentication.oidc
@@ -172,7 +170,7 @@ class OidcSerializationTests {
     fun oidcAccessTokenResponse_deserializesEverySpecName_whenAllFieldsPresent() {
         val body = """
             {"access_token":"at","expires_in":300,"refresh_expires_in":1800,"token_type":"DPoP",
-             "scope":"openid zeta:email-verify","refresh_token":"rt","email_hint":"t*@e*.com",
+             "scope":"openid zeta:email-binding","refresh_token":"rt","email_hint":"t*@e*.com",
              "binding_mode":"collect_email"}
         """.trimIndent()
 
@@ -184,7 +182,7 @@ class OidcSerializationTests {
         assertEquals(300, decoded.expiresIn)
         assertEquals(1800, decoded.refreshExpires)
         assertEquals("DPoP", decoded.tokenType)
-        assertEquals("openid zeta:email-verify", decoded.scope)
+        assertEquals("openid zeta:email-binding", decoded.scope)
         assertEquals("rt", decoded.refreshToken)
         assertEquals("t*@e*.com", decoded.emailHint)
         assertEquals("collect_email", decoded.bindingMode)

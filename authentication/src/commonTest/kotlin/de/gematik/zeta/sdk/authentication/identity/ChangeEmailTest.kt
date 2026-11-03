@@ -44,6 +44,11 @@ class ChangeEmailTest {
     private val json = Json { encodeDefaults = true }
     private val jsonOmitDefaults = Json { encodeDefaults = false }
 
+    private val challenge = ChangeEmailResponse.Pending(
+        challengeType = ChallengeType.EMAIL_OTP,
+        emailHint = "m***@example.de",
+    )
+
     @Test
     fun changeEmailRequest_equalsHashCodeCopyAndComponents() {
         val request = ChangeEmailRequest(newEmail = "new@example.de")
@@ -69,45 +74,91 @@ class ChangeEmailTest {
         assertEquals(request, decoded)
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
     @Test
-    fun changeEmailResponse_equalsHashCodeCopyAndComponents() {
-        val response = ChangeEmailResponse(status = "verified")
-        val same = response.copy()
-
-        assertEquals(response, response)
-        assertEquals(response, same)
-        assertEquals(response.hashCode(), same.hashCode())
-        assertEquals("verified", response.component1())
-        assertNotEquals(response, response.copy(status = "pending"))
-        assertFalse(response.equals("response"))
-        assertNotNull(response.toString())
+    fun changeEmailRequest_requiresNewEmailField() {
+        assertFailsWith<MissingFieldException> {
+            json.decodeFromString<ChangeEmailRequest>("{}")
+        }
     }
 
     @Test
-    fun changeEmailResponse_roundTripsThroughJson() {
-        val response = ChangeEmailResponse(status = "verified")
+    fun changeEmailResponse_decodesPendingChallenge() {
+        val response = json.decodeFromString<ChangeEmailResponse>(
+            """{"status":"pending","challenge_type":"email_otp","email_hint":"m***@example.de"}""",
+        )
 
-        val encoded = json.encodeToString(response)
-        val decoded = json.decodeFromString<ChangeEmailResponse>(encoded)
+        assertEquals(challenge, response)
+    }
 
-        assertEquals("""{"status":"verified"}""", encoded)
-        assertEquals(response, decoded)
+    @Test
+    fun changeEmailResponse_decodesVerifiedAsEmailStatus() {
+        assertEquals(ChangeEmailResponse.Verified, json.decodeFromString<ChangeEmailResponse>("""{"status":"verified"}"""))
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    @Test
+    fun changeEmailResponse_pendingRequiresChallengeTypeAndEmailHint() {
+        assertFailsWith<MissingFieldException> {
+            json.decodeFromString<ChangeEmailResponse>("""{"status":"pending","challenge_type":"email_otp"}""")
+        }
+        assertFailsWith<MissingFieldException> {
+            json.decodeFromString<ChangeEmailResponse>("""{"status":"pending","email_hint":"m***@example.de"}""")
+        }
+    }
+
+    @Test
+    fun changeEmailResponse_encodesStatusAsDiscriminator() {
+        assertEquals(
+            """{"status":"pending","challenge_type":"email_otp","email_hint":"m***@example.de"}""",
+            json.encodeToString<ChangeEmailResponse>(challenge),
+        )
+        assertEquals("""{"status":"verified"}""", json.encodeToString<ChangeEmailResponse>(ChangeEmailResponse.Verified))
+    }
+
+    @Test
+    fun changeEmailResponse_rejectsStatusOutsideSchema() {
+        assertFailsWith<SerializationException> {
+            json.decodeFromString<ChangeEmailResponse>("""{"status":"done"}""")
+        }
+    }
+
+    @Test
+    fun changeEmailResponse_requiresStatus() {
+        assertFailsWith<SerializationException> {
+            json.decodeFromString<ChangeEmailResponse>("""{"challenge_type":"email_otp"}""")
+        }
+    }
+
+    @Test
+    fun problemCode_decodesAllSchemaValues() {
+        val codes = listOf("invalidRequest", "unauthorized", "notFound", "internal", "invalidCode", "noPendingChallenge", "unsupportedVerifyType")
+            .map { json.decodeFromString<ProblemDetails>("""{"code":"$it"}""").code }
+
+        assertEquals(ProblemCode.entries, codes)
+    }
+
+    @Test
+    fun problemCode_rejectsCodesRemovedFromSchema() {
+        listOf("insufficientScope", "factorRequired", "forbiddenTarget").forEach { code ->
+            assertFailsWith<SerializationException> { json.decodeFromString<ProblemDetails>("""{"code":"$code"}""") }
+        }
     }
 
     @Test
     fun problemDetails_equalsHashCodeCopyAndComponents() {
-        val problem = ProblemDetails(status = 400, code = "invalidRequest", title = "Invalid", detail = "bad email")
+        val problem = ProblemDetails(status = 400, code = ProblemCode.INVALID_REQUEST, title = "Invalid", detail = "bad email")
         val same = problem.copy()
 
         assertEquals(problem, problem)
         assertEquals(problem, same)
         assertEquals(problem.hashCode(), same.hashCode())
         assertEquals(400, problem.component1())
-        assertEquals("invalidRequest", problem.component2())
+        assertEquals(ProblemCode.INVALID_REQUEST, problem.component2())
         assertEquals("Invalid", problem.component3())
         assertEquals("bad email", problem.component4())
         assertNotEquals(problem, problem.copy(status = 401))
-        assertNotEquals(problem, problem.copy(code = "other"))
+        assertNotEquals(problem, problem.copy(code = ProblemCode.NOT_FOUND))
         assertNotEquals(problem, problem.copy(title = "other"))
         assertNotEquals(problem, problem.copy(detail = "other"))
         assertNotEquals(problem, problem.copy(status = null))
@@ -120,14 +171,14 @@ class ChangeEmailTest {
         assertNotEquals(problem.copy(detail = null), problem)
         assertEquals(
             problem,
-            problem.copy(status = 400, code = "invalidRequest", title = "Invalid", detail = "bad email"),
+            problem.copy(status = 400, code = ProblemCode.INVALID_REQUEST, title = "Invalid", detail = "bad email"),
         )
         assertFalse(problem.equals("problem"))
         assertNotNull(problem.toString())
         assertEquals(ProblemDetails().hashCode(), ProblemDetails(status = null, code = null, title = null, detail = null).hashCode())
         assertNotEquals(problem.hashCode(), ProblemDetails().hashCode())
         assertNotEquals(ProblemDetails(status = 400).hashCode(), ProblemDetails().hashCode())
-        assertNotEquals(ProblemDetails(code = "x").hashCode(), ProblemDetails().hashCode())
+        assertNotEquals(ProblemDetails(code = ProblemCode.UNAUTHORIZED).hashCode(), ProblemDetails().hashCode())
         assertNotEquals(ProblemDetails(title = "x").hashCode(), ProblemDetails().hashCode())
         assertNotEquals(ProblemDetails(detail = "x").hashCode(), ProblemDetails().hashCode())
     }
@@ -146,9 +197,7 @@ class ChangeEmailTest {
 
     @Test
     fun problemDetails_decodesMissingFieldsAsNull() {
-        val problem = json.decodeFromString<ProblemDetails>("{}")
-
-        assertEquals(ProblemDetails(), problem)
+        assertEquals(ProblemDetails(), json.decodeFromString<ProblemDetails>("{}"))
     }
 
     @Test
@@ -162,96 +211,85 @@ class ChangeEmailTest {
 
     @Test
     fun problemDetails_decodesPartialFields() {
-        val problem = json.decodeFromString<ProblemDetails>("""{"code":"popRequired"}""")
+        val problem = json.decodeFromString<ProblemDetails>("""{"code":"unauthorized"}""")
 
-        assertEquals(ProblemDetails(code = "popRequired"), problem)
-        assertNull(problem.status)
-        assertNull(problem.title)
-        assertNull(problem.detail)
+        assertEquals(ProblemDetails(code = ProblemCode.UNAUTHORIZED), problem)
+    }
+
+    @Test
+    fun problemDetails_ignoresRfc7807FieldsItDoesNotModel_whenUnknownKeysIgnored() {
+        val lenient = Json { ignoreUnknownKeys = true }
+
+        val problem = lenient.decodeFromString<ProblemDetails>(
+            """{"type":"about:blank","instance":"/zeta/clients/c1","status":404,"code":"notFound"}""",
+        )
+
+        assertEquals(ProblemDetails(status = 404, code = ProblemCode.NOT_FOUND), problem)
     }
 
     @Test
     fun problemDetails_encodesAllFieldsWhenDefaultsEnabled() {
         val encoded = json.encodeToString(
-            ProblemDetails(status = 401, code = "popRequired", title = "Required", detail = "missing"),
+            ProblemDetails(status = 401, code = ProblemCode.UNAUTHORIZED, title = "Required", detail = "missing"),
         )
 
         assertEquals(
-            """{"status":401,"code":"popRequired","title":"Required","detail":"missing"}""",
+            """{"status":401,"code":"unauthorized","title":"Required","detail":"missing"}""",
             encoded,
         )
     }
 
     @Test
     fun problemDetails_encodesNullDefaultsWhenDefaultsEnabled() {
-        val encoded = json.encodeToString(ProblemDetails())
-
-        assertEquals("""{"status":null,"code":null,"title":null,"detail":null}""", encoded)
+        assertEquals("""{"status":null,"code":null,"title":null,"detail":null}""", json.encodeToString(ProblemDetails()))
     }
 
     @Test
     fun problemDetails_omitsNullDefaultsWhenDefaultsDisabled() {
-        val encoded = jsonOmitDefaults.encodeToString(ProblemDetails())
-
-        assertEquals("{}", encoded)
+        assertEquals("{}", jsonOmitDefaults.encodeToString(ProblemDetails()))
     }
 
     @Test
     fun problemDetails_encodesOnlyPresentFieldsWhenDefaultsDisabled() {
-        assertEquals("""{"code":"conflict"}""", jsonOmitDefaults.encodeToString(ProblemDetails(code = "conflict")))
+        assertEquals("""{"code":"notFound"}""", jsonOmitDefaults.encodeToString(ProblemDetails(code = ProblemCode.NOT_FOUND)))
         assertEquals("""{"status":400}""", jsonOmitDefaults.encodeToString(ProblemDetails(status = 400)))
         assertEquals("""{"title":"Invalid"}""", jsonOmitDefaults.encodeToString(ProblemDetails(title = "Invalid")))
         assertEquals("""{"detail":"bad email"}""", jsonOmitDefaults.encodeToString(ProblemDetails(detail = "bad email")))
     }
 
-    @OptIn(ExperimentalSerializationApi::class)
-    @Test
-    fun changeEmailRequest_requiresNewEmailField() {
-        assertFailsWith<MissingFieldException> {
-            json.decodeFromString<ChangeEmailRequest>("{}")
-        }
-    }
-
-    @OptIn(ExperimentalSerializationApi::class)
-    @Test
-    fun changeEmailResponse_requiresStatusField() {
-        assertFailsWith<MissingFieldException> {
-            json.decodeFromString<ChangeEmailResponse>("{}")
-        }
-    }
+    // ---------------------------------------------------------------- generated serializers
 
     @Test
     fun serializers_areUsedExplicitly() {
         val request = ChangeEmailRequest("new@example.de")
-        val response = ChangeEmailResponse("verified")
-        val problem = ProblemDetails(400, "invalidRequest", "Invalid", "bad email")
+        val problem = ProblemDetails(400, ProblemCode.INVALID_REQUEST, "Invalid", "bad email")
 
         val encodedRequest = json.encodeToString(ChangeEmailRequest.serializer(), request)
-        val encodedResponse = json.encodeToString(ChangeEmailResponse.serializer(), response)
+        val encodedResponse = json.encodeToString(ChangeEmailResponse.serializer(), challenge as ChangeEmailResponse)
         val encodedProblem = json.encodeToString(ProblemDetails.serializer(), problem)
 
         assertEquals(request, json.decodeFromString(ChangeEmailRequest.serializer(), encodedRequest))
-        assertEquals(response, json.decodeFromString(ChangeEmailResponse.serializer(), encodedResponse))
+        assertEquals(challenge, json.decodeFromString(ChangeEmailResponse.serializer(), encodedResponse))
         assertEquals(problem, json.decodeFromString(ProblemDetails.serializer(), encodedProblem))
-        assertEquals("/zeta/identity/email", CHANGE_EMAIL_PATH)
+        assertEquals("/identity/email", CHANGE_EMAIL_PATH)
     }
 
     @OptIn(ExperimentalSerializationApi::class)
     @Test
     fun serializers_decodeSequentially() {
-        val request = ChangeEmailRequest.serializer().deserialize(SequentialStringDecoder("new@example.de"))
-        val response = ChangeEmailResponse.serializer().deserialize(SequentialStringDecoder("verified"))
-        val filled = ProblemDetails.serializer().deserialize(
-            SequentialProblemDecoder(status = 400, code = "invalidRequest", title = "Invalid", detail = "bad email"),
+        val request = ChangeEmailRequest.serializer().deserialize(SequentialFieldsDecoder("new@example.de"))
+        val fullResponse = ChangeEmailResponse.Pending.serializer().deserialize(
+            SequentialFieldsDecoder("email_otp", "m***@example.de"),
         )
-        val empty = ProblemDetails.serializer().deserialize(
-            SequentialProblemDecoder(status = null, code = null, title = null, detail = null),
+        val filledProblem = ProblemDetails.serializer().deserialize(
+            SequentialFieldsDecoder(400, "invalidRequest", "Invalid", "bad email"),
         )
+        val emptyProblem = ProblemDetails.serializer().deserialize(SequentialFieldsDecoder(null, null, null, null))
 
         assertEquals(ChangeEmailRequest("new@example.de"), request)
-        assertEquals(ChangeEmailResponse("verified"), response)
-        assertEquals(ProblemDetails(400, "invalidRequest", "Invalid", "bad email"), filled)
-        assertEquals(ProblemDetails(), empty)
+        assertEquals(challenge, fullResponse)
+        assertEquals(ProblemDetails(400, ProblemCode.INVALID_REQUEST, "Invalid", "bad email"), filledProblem)
+        assertEquals(ProblemDetails(), emptyProblem)
     }
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -261,91 +299,16 @@ class ChangeEmailTest {
             ChangeEmailRequest.serializer().deserialize(UnknownIndexDecoder())
         }
         assertFailsWith<SerializationException> {
-            ChangeEmailResponse.serializer().deserialize(UnknownIndexDecoder())
+            ChangeEmailResponse.Pending.serializer().deserialize(UnknownIndexDecoder())
         }
         assertFailsWith<SerializationException> {
             ProblemDetails.serializer().deserialize(UnknownIndexDecoder())
         }
     }
-
-    @Test
-    fun changeEmailException_messageUsesDetailWhenPresent() {
-        val exception = ChangeEmailException(
-            response = null,
-            httpStatus = 400,
-            code = "invalidRequest",
-            title = "Invalid request",
-            detail = "new_email is not a valid email",
-        )
-
-        assertEquals("new_email is not a valid email", exception.message)
-        assertEquals(400, exception.httpStatus)
-        assertEquals("invalidRequest", exception.code)
-        assertEquals("Invalid request", exception.title)
-        assertEquals("new_email is not a valid email", exception.detail)
-        assertNull(exception.response)
-    }
-
-    @Test
-    fun changeEmailException_messageUsesTitleWhenDetailMissing() {
-        val exception = ChangeEmailException(
-            response = null,
-            httpStatus = 401,
-            code = "popRequired",
-            title = "Client assertion required",
-            detail = null,
-        )
-
-        assertEquals("Client assertion required", exception.message)
-    }
-
-    @Test
-    fun changeEmailException_messageUsesCodeWhenDetailAndTitleMissing() {
-        val exception = ChangeEmailException(
-            response = null,
-            httpStatus = 409,
-            code = "conflict",
-            title = null,
-            detail = null,
-        )
-
-        assertEquals("conflict", exception.message)
-    }
-
-    @Test
-    fun changeEmailException_messageUsesHttpFallbackWhenAllMissing() {
-        val exception = ChangeEmailException(
-            response = null,
-            httpStatus = 500,
-            code = null,
-            title = null,
-            detail = null,
-        )
-
-        assertEquals("Email change failed with HTTP 500", exception.message)
-        assertNull(exception.code)
-        assertNull(exception.title)
-        assertNull(exception.detail)
-    }
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-private class SequentialStringDecoder(private val value: String) : AbstractDecoder() {
-    override val serializersModule = EmptySerializersModule()
-    override fun decodeSequentially() = true
-    override fun decodeElementIndex(descriptor: SerialDescriptor) = CompositeDecoder.DECODE_DONE
-    override fun decodeString() = value
-    override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder = this
-}
-
-@OptIn(ExperimentalSerializationApi::class)
-private class SequentialProblemDecoder(
-    private val status: Int?,
-    private val code: String?,
-    private val title: String?,
-    private val detail: String?,
-) : AbstractDecoder() {
-    private val fields = listOf(status, code, title, detail)
+private class SequentialFieldsDecoder(private vararg val fields: Any?) : AbstractDecoder() {
     private var index = 0
 
     override val serializersModule = EmptySerializersModule()
@@ -357,7 +320,9 @@ private class SequentialProblemDecoder(
         return null
     }
     override fun decodeInt(): Int = fields[index++] as Int
+    override fun decodeLong(): Long = fields[index++] as Long
     override fun decodeString(): String = fields[index++] as String
+    override fun decodeEnum(enumDescriptor: SerialDescriptor): Int = enumDescriptor.getElementIndex(fields[index++] as String)
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder = this
 }
 

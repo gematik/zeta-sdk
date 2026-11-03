@@ -51,9 +51,11 @@ setupBuildLogic {
             }
         }
 
-        sourceSets["jvmCommonTest"].dependencies {
-            implementation(kotlin("test"))
-            implementation(libs.coroutines.test)
+        if (project.isJvmEnabled || project.isAndroidEnabled) {
+            sourceSets["jvmCommonTest"].dependencies {
+                implementation(kotlin("test"))
+                implementation(libs.coroutines.test)
+            }
         }
 
         cinterops(libs.nativebuilds.openssl.headers) {

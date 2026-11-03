@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(ZetaSdkVersion)' == ''">
+    <ProjectReference Include="../ZetaSdk.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(ZetaSdkVersion)' != '' And '$(ZetaSdkPackage)' == ''">
+    <ZetaSdkPackage Condition="$(RuntimeIdentifier.StartsWith('win'))">Zeta.Sdk.Windows</ZetaSdkPackage>
+    <ZetaSdkPackage Condition="$(RuntimeIdentifier.StartsWith('linux'))">Zeta.Sdk.Linux</ZetaSdkPackage>
+    <ZetaSdkPackage Condition="$(RuntimeIdentifier.StartsWith('osx'))">Zeta.Sdk.MacOS</ZetaSdkPackage>
+    <ZetaSdkPackage Condition="'$(ZetaSdkPackage)' == '' And '$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">Zeta.Sdk.Windows</ZetaSdkPackage>
+    <ZetaSdkPackage Condition="'$(ZetaSdkPackage)' == '' And '$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Linux'))">Zeta.Sdk.Linux</ZetaSdkPackage>
+    <ZetaSdkPackage Condition="'$(ZetaSdkPackage)' == '' And '$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('OSX'))">Zeta.Sdk.MacOS</ZetaSdkPackage>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(ZetaSdkVersion)' != '' And '$(ZetaSdkPackage)' != ''">
+    <PackageReference Include="$(ZetaSdkPackage)" Version="$(ZetaSdkVersion)" />
+  </ItemGroup>
+
+  <Target Name="CheckZetaPlatform" BeforeTargets="Restore;CollectPackageReferences"
+          Condition="'$(ZetaSdkVersion)' != '' And '$(ZetaSdkPackage)' == ''">
+    <Error Text="No Zeta.Sdk package for this platform. Supported: linux-x64, win-x64, osx-arm64 (or pass -p:ZetaSdkPackage=...)." />
+  </Target>
+</Project>

@@ -25,18 +25,21 @@
 package de.gematik.zeta.sdk.tpm
 
 import PublicKeyOut
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
 
 /**
- * Apple [TpmProvider] that resolves the Client Instance Key implementation on demand,
- * preferring Secure Enclave when available.
+ * Apple [TpmProvider]: Secure Enclave client instance key when [useHardwareClientKey] is set and the key is available, software key otherwise.
  */
 internal class AppleTpmProvider(
     private val hardwareClientKey: SecureEnclaveClientInstanceKey,
     private val softwareDelegate: SoftwareCryptoProvider,
-    private val appAttestSupported: Boolean,
+    private val useHardwareClientKey: Boolean,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : TpmProvider by softwareDelegate, ClientKeyPoPSigner {
 
     private sealed interface ClientKeyMode {
@@ -59,13 +62,13 @@ internal class AppleTpmProvider(
 
     override suspend fun signWithClientKey(input: ByteArray): ByteArray =
         when (resolveClientKeyMode()) {
-            is ClientKeyMode.Hardware -> hardwareClientKey.signWithClientKey(input)
+            is ClientKeyMode.Hardware -> withContext(dispatcher) { hardwareClientKey.signWithClientKey(input) }
             is ClientKeyMode.Software -> softwareDelegate.signWithClientKey(input)
         }
 
     override suspend fun signProofOfPossession(): ByteArray =
         when (resolveClientKeyMode()) {
-            is ClientKeyMode.Hardware -> hardwareClientKey.signProofOfPossession()
+            is ClientKeyMode.Hardware -> withContext(dispatcher) { hardwareClientKey.signProofOfPossession() }
             is ClientKeyMode.Software ->
                 error(
                     "Proof-of-Possession is only available for hardware-attested (Secure Enclave) " +
@@ -76,16 +79,14 @@ internal class AppleTpmProvider(
     private suspend fun resolveClientKeyMode(): ClientKeyMode {
         clientKeyMode?.let { return it }
         return resolveMutex.withLock {
-            clientKeyMode ?: run {
-                val point = if (appAttestSupported) hardwareClientKey.resolvePublicKeyPoint() else null
-                val resolved = if (point != null) {
+            clientKeyMode ?: withContext(dispatcher) {
+                val point = if (useHardwareClientKey) hardwareClientKey.resolvePublicKeyPoint() else null
+                if (point != null) {
                     ClientKeyMode.Hardware(hardwareClientKey.toPublicKeyOut(point))
                 } else {
                     ClientKeyMode.Software(softwareDelegate.getOrGenerateClientInstancePublicKey())
                 }
-                clientKeyMode = resolved
-                resolved
-            }
+            }.also { clientKeyMode = it }
         }
     }
 

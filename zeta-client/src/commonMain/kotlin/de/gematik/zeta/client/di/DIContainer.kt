@@ -89,6 +89,9 @@ public object DIContainer {
     )
 
     public val PUSH_GATEWAY_URL: String = getConfig("PUSH_GATEWAY_URL") ?: ""
+
+    /** iOS only: register a stable fake APNs token instead of a real one, for a mock APNs without an Apple team. */
+    public val APNS_MOCK: Boolean = "true".contentEquals((getConfig("APNS_MOCK") ?: "").lowercase())
     public val OIDC_BASE_URI: String = getConfig("OIDC_BASE_URI") ?: ""
     public val OIDC_IDP_ISS: String = getConfig("OIDC_IDP_ISS") ?: ""
     public val OIDC_IDP_ALIAS: String = getConfig("OIDC_IDP_ALIAS") ?: ""
@@ -96,6 +99,9 @@ public object DIContainer {
     public val POPP_TOKEN: String? = getConfig("POPP_TOKEN")
     public val ASL_PROD: Boolean = "true".contentEquals((getConfig("ASL_PROD") ?: "true").lowercase())
     public val REQUIRED_OID: String? = getConfig("REQUIRED_ROLE_OID")
+
+    public val APP_BUNDLE_IDS: List<String> =
+        getConfig("APP_BUNDLE_IDS")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
     private fun getUrlEnvironments(): List<String> {
         return getConfig("ENVIRONMENTS")
             ?.trim()

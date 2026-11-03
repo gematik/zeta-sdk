@@ -25,6 +25,7 @@ package de.gematik.zeta.sdk.attestation
 
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.platform.getPlatformInfo
+import de.gematik.zeta.sdk.attestation.assertion.HardwarePostureBuilder
 import de.gematik.zeta.sdk.attestation.model.AttestationConfig
 import de.gematik.zeta.sdk.attestation.model.ClientAssertionJwt
 import de.gematik.zeta.sdk.attestation.model.ClientStatement
@@ -87,6 +88,7 @@ class AttestationApiImpl(
     private val uuidGen: () -> String = { randomUUID() },
     private val clockEpochSeconds: () -> Long,
     private val attestationConfig: AttestationConfig = AttestationConfig.software(),
+    private val hardwarePostureBuilder: HardwarePostureBuilder? = null,
 ) : AttestationApi {
     val json = Json {
         encodeDefaults = true
@@ -124,26 +126,29 @@ class AttestationApiImpl(
         val thumbprint = getThumbprint(clientInstanceKeys.jwk.kid)
         val attChallenge = calculateAttestationChallenge(nonce, thumbprint)
 
-        val statementJson = when (attestationConfig) {
+        val hardwareStatement: ClientStatement? = hardwarePostureBuilder
+            ?.build(clientInstanceKeys.encoded, nonce, platformProductId, productId, productVersion)
+            ?.let { hardware ->
+                Log.i { "Using hardware runtime attestation statement (${hardware.postureType})" }
+                ClientStatement(
+                    sub = clientId,
+                    platform = getPlatform(),
+                    postureType = hardware.postureType,
+                    posture = hardware.posture,
+                    attestationTimestamp = clockEpochSeconds(),
+                )
+            }
+
+        val statementJson = hardwareStatement ?: when (attestationConfig) {
             is AttestationConfig.Software -> {
                 Log.i { "Getting software client statement" }
-
-                // Temporary Fix for ZETAP-1146
-                var actualPlatformProductId: PlatformProductId?
-                actualPlatformProductId = platformProductId
-                if (platformProductId is PlatformProductId.AppleProductId) {
-                    // Temporary workaround for backend schema/validation issue.
-                    // ApplePosture requires a non-null platformProductId
-                    actualPlatformProductId = PlatformProductId.WindowsProductId("windows", "", "")
-                }
-
                 getSoftwareStatement(
                     attChallenge,
                     clientInstanceKeys.encoded,
                     productId,
                     productVersion,
                     clientId,
-                    actualPlatformProductId,
+                    platformProductId,
                 )
             }
 

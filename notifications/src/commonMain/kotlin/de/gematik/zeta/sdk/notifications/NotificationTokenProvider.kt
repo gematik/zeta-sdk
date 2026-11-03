@@ -27,7 +27,7 @@ package de.gematik.zeta.sdk.notifications
 /**
  * Supplies a valid, service-specific, DPoP-bound access token for calls to the Notification
  * Service. The matching per-request DPoP proof is supplied separately via
- * [NotificationDpopProvider].
+ * [de.gematik.zeta.sdk.authentication.DpopProvider].
  *
  * Callers of [NotificationApiClientImpl] depend only on this interface and must not know whether
  * [StaticNotificationTokenProvider] (injected/static token) or [ReauthNotificationTokenProvider]

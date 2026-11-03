@@ -29,12 +29,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,6 +46,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -52,12 +56,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import de.gematik.zeta.client.notification.notificationTestAction
 import de.gematik.zeta.client.ui.otp.EmailEntryScreen
+import de.gematik.zeta.client.ui.otp.OtpEntryScreen
+import de.gematik.zeta.sdk.notifications.model.HistoricNotification
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 @Composable
 private fun LoadingButton(
@@ -118,12 +129,78 @@ public fun ResultCard(text: String) {
 }
 
 @Composable
+private fun HistoryRow(notification: HistoricNotification, onClick: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Text(
+            text = notification.previewText(),
+            modifier = Modifier.padding(12.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun HistoryDetailDialog(detail: HelloZetaViewModel.HistoryDetail, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(12.dp)) {
+            Column(
+                modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                when (detail) {
+                    HelloZetaViewModel.HistoryDetail.Loading -> CircularProgressIndicator()
+
+                    is HelloZetaViewModel.HistoryDetail.Loaded -> {
+                        val notification = detail.notification
+                        Text(notification.message() ?: "(no message)", style = MaterialTheme.typography.bodyLarge)
+                        SectionLabel("Payload")
+                        Text(
+                            text = prettyJson.encodeToString(JsonObject.serializer(), notification.payload),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                        Text(
+                            text = "ID ${notification.identifier}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    is HelloZetaViewModel.HistoryDetail.Failed ->
+                        Text("Error: ${detail.message}", color = MaterialTheme.colorScheme.error)
+                }
+                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                    Text("Close")
+                }
+            }
+        }
+    }
+}
+
+private val prettyJson = Json { prettyPrint = true }
+
+/** The payload is Fachdienst-defined; `message` is what the demo Fachdienst sends. */
+private fun HistoricNotification.message(): String? = (payload["message"] as? JsonPrimitive)?.contentOrNull
+
+private fun HistoricNotification.previewText(): String {
+    message()?.let { return it }
+    val first = payload.entries.firstOrNull() ?: return "(empty payload)"
+    return "${first.key}: ${first.value}"
+}
+
+@Composable
 public fun HelloZetaComponent(viewModel: HelloZetaViewModel) {
     val lastResult by viewModel.lastResult.collectAsState()
     val loadingAction by viewModel.loadingAction.collectAsState()
     val pusherConfigured by viewModel.pusherConfigured.collectAsState()
+    val history by viewModel.history.collectAsState()
+    val historyDetail by viewModel.historyDetail.collectAsState()
     val pushTestAvailable = remember { notificationTestAction() != null }
     var showChangeEmail by remember { mutableStateOf(false) }
+    val clients by viewModel.registeredClients.collectAsState()
+    val emailOtpPrompt by viewModel.emailOtpPrompt.collectAsState()
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -194,12 +271,71 @@ public fun HelloZetaComponent(viewModel: HelloZetaViewModel) {
                     enabled = pusherConfigured,
                 )
             }
+
+            SectionLabel("History")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LoadingButton(
+                    "Load History",
+                    HelloZetaViewModel.SdkAction.LOAD_HISTORY,
+                    loadingAction,
+                    viewModel::loadHistory,
+                    enabled = pusherConfigured,
+                )
+                history.forEach { notification ->
+                    HistoryRow(notification) { viewModel.openHistoricNotification(notification.identifier) }
+                }
+            }
+        }
+
+        SectionLabel("Clients")
+        LoadingButton("List clients", HelloZetaViewModel.SdkAction.LIST_CLIENTS, loadingAction, viewModel::listClients)
+
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            clients.forEach { client ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = client.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = client.id,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        LoadingButton(
+                            "Delete",
+                            HelloZetaViewModel.SdkAction.DELETE_CLIENT,
+                            loadingAction,
+                            { viewModel.deleteClient(client.id) },
+                        )
+                    }
+                }
+            }
         }
 
         if (lastResult.isNotBlank()) {
             ResultCard(lastResult)
         }
     }
+
+    historyDetail?.let { HistoryDetailDialog(it, onDismiss = viewModel::closeHistoricNotification) }
 
     if (showChangeEmail) {
         Dialog(
@@ -222,6 +358,29 @@ public fun HelloZetaComponent(viewModel: HelloZetaViewModel) {
                             viewModel.changeEmail(email)
                         },
                         onCancel = { showChangeEmail = false },
+                    )
+                }
+            }
+        }
+    }
+
+    emailOtpPrompt?.let { prompt ->
+        Dialog(
+            onDismissRequest = viewModel::cancelEmailChange,
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Surface(
+                    color = Color.White,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(0.6f).fillMaxHeight(0.6f),
+                ) {
+                    OtpEntryScreen(
+                        emailHint = prompt.emailHint,
+                        rejected = prompt.rejected,
+                        onSubmit = viewModel::verifyEmailChange,
+                        onResend = viewModel::resendEmailChangeCode,
+                        onCancel = viewModel::cancelEmailChange,
                     )
                 }
             }

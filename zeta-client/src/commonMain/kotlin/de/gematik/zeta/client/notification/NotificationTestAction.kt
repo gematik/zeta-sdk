@@ -26,6 +26,7 @@ package de.gematik.zeta.client.notification
 
 import de.gematik.zeta.sdk.ZetaSdkClient
 import de.gematik.zeta.sdk.notifications.model.Channel
+import de.gematik.zeta.sdk.notifications.model.HistoricNotification
 
 internal interface NotificationTestAction {
     suspend fun run(sdkClient: ZetaSdkClient): String
@@ -33,12 +34,15 @@ internal interface NotificationTestAction {
     fun reset()
     suspend fun subscribeAllChannels(sdkClient: ZetaSdkClient): List<Channel>
     suspend fun unsubscribeAllChannels(sdkClient: ZetaSdkClient): String
+    suspend fun getHistory(sdkClient: ZetaSdkClient): List<HistoricNotification>
+    suspend fun getHistoricNotification(sdkClient: ZetaSdkClient, identifier: String): HistoricNotification
 }
 
 /**
  * The platform's notification test action, or `null` where push registration is not
- * meaningful — desktop platforms, iOS until an APNs integration exists, and Android builds
- * without the push-notification feature. The UI renders the test button only when non-null.
+ * meaningful — desktop platforms and Android builds without the push-notification feature.
+ * Android (FCM) and iOS (APNs) share [PusherNotificationTestAction]. The UI renders the test
+ * button only when non-null.
  *
  * Note: this is deliberately a compile-time (source-set/flavor) capability switch. Runtime
  * checks via `Platform.current` cannot gate this — on Android the shared JVM actual reports

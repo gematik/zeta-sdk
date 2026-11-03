@@ -31,6 +31,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -186,8 +187,14 @@ class PostureTest {
     }
 
     @Test
-    fun mapPostureType_returnsAndroid_forAndroid() {
-        assertEquals(PostureType.ANDROID, mapPostureType(de.gematik.zeta.platform.Platform.Android))
+    fun mapPostureType_returnsSoftware_forAndroid() {
+        assertEquals(PostureType.SOFTWARE, mapPostureType(de.gematik.zeta.platform.Platform.Android))
+    }
+
+    @Test
+    fun mapPlatform_andPostureType_throw_forNonJvmPlatform() {
+        assertFailsWith<IllegalStateException> { mapPlatform(de.gematik.zeta.platform.Platform.IOS) }
+        assertFailsWith<IllegalStateException> { mapPostureType(de.gematik.zeta.platform.Platform.IOS) }
     }
 }
 

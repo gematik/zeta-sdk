@@ -26,9 +26,9 @@ package de.gematik.zeta.sdk.tpm
 
 import de.gematik.zeta.sdk.crypto.X509PemReader
 
-actual fun platformDefaultProvider(storage: TpmStorage, appAttestSupported: Boolean): TpmProvider =
+actual fun platformDefaultProvider(storage: TpmStorage, isHardwareAttestationSupported: Boolean): TpmProvider =
     AppleTpmProvider(
         hardwareClientKey = SecureEnclaveClientInstanceKey(SecureEnclaveKeyStoreImpl()),
         softwareDelegate = SoftwareCryptoProvider(storage, X509PemReader()),
-        appAttestSupported = appAttestSupported,
+        useHardwareClientKey = isHardwareAttestationSupported,
     )

@@ -38,4 +38,5 @@ data class AccessTokenResponse(
     @SerialName("scope") val scope: String,
     @SerialName("issued_token_type") val issuedTokenType: String,
     @SerialName("refresh_token") val refreshToken: String,
+    @SerialName("zeta_attestation_token") val zetaAttestationToken: String? = null,
 )

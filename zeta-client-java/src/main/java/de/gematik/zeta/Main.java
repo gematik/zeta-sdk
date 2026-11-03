@@ -143,7 +143,7 @@ public class Main {
             getFirstResourceUrl(props),
             new BuildConfig(
                 "ZETA-Test-Client",
-                "1.3.2",
+                "2.0.1",
                 "sdk-client",
                 new StorageConfig.Custom(new InMemoryStorage()),
                 new TpmConfig() {
@@ -382,7 +382,17 @@ public class Main {
         int sessionCount = 3;
         List<CompletableFuture<Unit>> sessions = new ArrayList<>();
 
-        ZetaSdkClientExtension.authenticate(sdkClient);
+        boolean discoverySuccess = ZetaSdkClientExtension.discover(sdkClient);
+        boolean registerSuccess = ZetaSdkClientExtension.register(sdkClient);
+        boolean authenticateSuccess = ZetaSdkClientExtension.authenticate(sdkClient);
+
+        if (!(discoverySuccess && registerSuccess && authenticateSuccess)) {
+            Log.INSTANCE.e(null, WEBSOCKETS_TAG, () ->
+                    "discovery=" + discoverySuccess +
+                    " register=" + registerSuccess +
+                    " authenticate=" + authenticateSuccess);
+            return;
+        }
 
         for (int i = 0; i < sessionCount; i++) {
             final int sessionId = i;

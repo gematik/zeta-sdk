@@ -34,7 +34,7 @@ tested with connectors (but still needs to be wrapped into a CustomSubjectTokenP
 
 ## Architecture overview
 
-The Zeta Client SDK is build with Kotlin Multiplatform (KMP) to target multiple platforms (iOS, Android and JVM),
+The Zeta Client SDK is built with Kotlin Multiplatform (KMP) to target multiple platforms (iOS, Android and JVM),
 while reducing the duplicated code.
 By sharing core logic across platforms, minimizing the maintenance overhead and ensure consistent behaviour for all
 clients.
@@ -47,21 +47,24 @@ clients.
 
 Folders for core SDK functionality and clients.
 
-| Verzeichnis           | Beschreibung                                                                                                                |
-|-----------------------|-----------------------------------------------------------------------------------------------------------------------------|
-| zeta-sdk              | Core SDK Module                                                                                                             |
-| zeta-client           | Code for the demo client                                                                                                    |
-| zeta-client-java      | Code for the Java client                                                                                                    |
-| zeta-client-cpp       | Code for the C++ client (HTTP CRUD and WebSocket demo)                                                                      |
-| zeta-nativeclient-cpp | Standalone C++ client using the SDK shared library directly. Samples can be run using a Makefile for (macOS, Linux, Windows) |
-| zeta-testdriver       | Code for the test proxy client and load test driver                                                                         |
-| attestation-service   | Code for the attestation service for Windows and Linux                                                                      |
-| docs                  | Further code-related documentation                                                                                          |
+| Verzeichnis             | Beschreibung                                                                                                                 |
+|-------------------------|------------------------------------------------------------------------------------------------------------------------------|
+| zeta-sdk                | Core SDK Module                                                                                                              |
+| zeta-client             | Code for the demo client                                                                                                     |
+| zeta-client-java        | Code for the Java client                                                                                                     |
+| zeta-client-cpp         | Code for the C++ client (HTTP CRUD and WebSocket demo)                                                                       |
+| zeta-nativeclient-cpp   | Standalone C++ client using the SDK shared library directly. Samples can be run using a Makefile for (macOS, Linux, Windows) |
+| zeta-testdriver         | Code for the test proxy client and load test driver                                                                          |
+| zeta-android-testdriver | Code for the android test driver                                                                                             |
+| zeta-csharp-nuget       | C# SDK and the per-platform NuGet packages (`Zeta.Sdk.Linux`, `Zeta.Sdk.Windows`, `Zeta.Sdk.MacOs`)                          |
+| attestation-service     | Code for the attestation service for Windows and Linux                                                                       |
+| docs                    | Further code-related documentation                                                                                           |
 
 The different clients serve different purposes:
 
 - The demo client is a pure kotlin client and running in a JVM, and features all the functions to access the test Fachdienst
 - The proxy client is running in a container and works as an HTTP proxy, to be used in testing.
+- The android test driver offers the same test API as the proxy client, but runs the SDK inside an Android app (attestation, storage and push notifications on Android).
 - The Java client is a Proof-of-concept and shows how to configure and use the client from a Java application, but only implements the hellozeta call of the test Fachdienst.
 - The C++ client demonstrates how to integrate the SDK from a C++ application.
   It implements HTTP CRUD (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS)
@@ -106,13 +109,13 @@ The different subfolders contain either commonly used code, which is at least th
 or the platform specific implementations
 
 
-| Verzeichnis | Beschreibung                                                        |
-|------------|---------------------------------------------------------------------|
-| common     | gemeinsame API                                                      |
-| jvm        | Code specific for the JVM-implementation                            |
-| desktop    | Code specific for the desktop implementations (windows, linux, mac) |
-| android    | Code specific for the Android-implementation                        |
-| ios        | Code specific for the iOS-implementation                            |
+| Folder  | Description                                                         |
+|---------|---------------------------------------------------------------------|
+| common  | common API                                                          |
+| jvm     | Code specific for the JVM-implementation                            |
+| desktop | Code specific for the desktop implementations (windows, linux, mac) |
+| android | Code specific for the Android-implementation                        |
+| ios     | Code specific for the iOS-implementation                            |
 
 ## Integrating into your own code
 
@@ -163,6 +166,24 @@ The C++ API is defined in a single generated header file:
 This header is automatically generated and enriched with the SDK type definitions
 during the SDK build process.
 
+### C#
+
+The C# SDK is published on NuGet. There is one package per platform, and each package ships only the native SDK library for that platform:
+
+| Package            | Platform |
+|--------------------|----------|
+| `Zeta.Sdk.Linux`   | Linux    |
+| `Zeta.Sdk.Windows` | Windows  |
+| `Zeta.Sdk.MacOS`   | MacOS    |
+
+Add the package for your target platform:
+
+```shell
+dotnet add package Zeta.Sdk.Windows --version 2.0.0
+```
+
+The C# API, configuration and examples are described in the [C# README](zeta-csharp-nuget/README.md).
+
 ## The clients
 
 The next sections contain information about the clients.
@@ -173,7 +194,7 @@ WebSocket STOMP communication. The C++ native client additionally implements ful
 CRUD operations (GET, POST, PUT, DELETE, HEAD, OPTIONS).
 
 The demo-client can use the functional interface of the Test Fachdienst (test resource server),
-and can thus create presciptions, show them, modify them, and delete them.
+and can thus create prescriptions, show them, modify them, and delete them.
 
 The testdriver is a proxy client that just forwards the HTTP(S) requests it receives
 to the given resource server, but using the PEP endpoint and the necessary ZETA and ASL
@@ -182,7 +203,7 @@ It can be run in a container, allowing for easy proxying of functional test clie
 through ZETA SDK and ZETA Guard to an actual resource server. A ready to use
 container image is provided.
 
-The Java and C++ clients are proof-of-technology clients that only implement the
+The Java and C++ clients are proof-of-technology clients that implement the
 "hellozeta" call, to show how the SDK can be integrated into clients with this technology.
 In addition, they use the websockets functionality to connect to the test resource server.
 
@@ -236,24 +257,28 @@ In a real client (like a practice management system) these should be provided by
 
 Here are the items you need to adapt:
 
-| Value                     | Description                                                                                                                                            | Example                                                    |
-|---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------|
-| FACHDIENST_URL            | URL of the resource server as reachable via the PEP                                                                                                    | https://fachdienst.host.example.com/pep/fachdienst_url/api |
-| SMB_KEYSTORE_FILE         | Path to the SM-B Certificate-File (in .p12 format)                                                                                                     | /smcb-certificates.p12                                     |
-| SMB_KEYSTORE_ALIAS        | Alias of the key in the SM-B Certificate file                                                                                                          |                                                            |
-| SMB_KEYSTORE_PASSWORD     | Password for the private key                                                                                                                           |                                                            |
-| SMB_KEYSTORE_B64          | base64-encoded Keystore being used in the load driver; must be present, empty string if not used.                                                      |                                                            |
-| POPP_TOKEN                | Value of a PoPP Tokens, which is given to the PEP (optional)                                                                                           | eyJhbGciOiJFUzI1NiI......                                  |
-| DISABLE_SERVER_VALIDATION | If set to "true", TLS server TLS certificate checks are disabled (for testing only!)                                                                   |                                                            |
-| WS_SERVER_CONTEXT_PATH    | Specifies the base context to target the resource server. It is used in the Java client to prefix STOMP Websockets destinations                        | /testfachdienst                                            |
-| WS_BASE_URL               | Defines the Websocket base URL (including protocol: ws/wss)                                                                                            | wss://host/resource/ws                                     |
-| ASL_PROD                  | Defines whether the client runs in Productive or Non Productive mode. If set to "false" exposes the ASL symmetric keys: K2_c2s_app_data and K2_s2c_app | by default is set to "true" (productive environment)       |
-| STORAGE_AES_KEY           | Base64-encoded AES-256 key used to encrypt session data at rest                                                                                        | 7aae7xXr8rnzVqjpYbosS0CFMrlprkD7jbVotm0fd                  |
-| REQUIRED_ROLE_OID         | Role-OID that the TI certificate must contain. Required for ASL handshake validation                                                                   | 1.2.276.0.76.4.156                                         |
-| OIDC_IDP_ISS              | Issuer identifier of the OIDC IDP used for the email-binding authentication flow                                                                       | https://fachdienst.host.example.com/sekidp                 |
-| OIDC_BASE_URI             | Base URI the client's system browser flow redirects back to (callback endpoint)                                                                        | http://localhost:8090/cb/demo                              |
-| OIDC_IDP_ALIAS            | Alias of the IDP as configured in the Keycloak broker chain                                                                                            | zeta-sekidp-oidc                                           |
-| AUTH_MODE                 | Selects the authentication mode the client uses to obtain the subject token: `SMB` for SM-B/SMC-B or `OIDC` for the OIDC                               | SMB                                                        |
+| Value                               | Description                                                                                                                                                    | Example                                                     |
+|-------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|
+| FACHDIENST_URL                      | URL of the resource server as reachable via the PEP                                                                                                            | https://fachdienst.host.example.com/pep/fachdienst_url/api  |
+| SMB_KEYSTORE_FILE                   | Path to the SM-B Certificate-File (in .p12 format)                                                                                                             | /smcb-certificates.p12                                      |
+| SMB_KEYSTORE_ALIAS                  | Alias of the key in the SM-B Certificate file                                                                                                                  |                                                             |
+| SMB_KEYSTORE_PASSWORD               | Password for the private key                                                                                                                                   |                                                             |
+| SMB_KEYSTORE_B64                    | base64-encoded Keystore being used in the load driver; must be present, empty string if not used.                                                              |                                                             |
+| POPP_TOKEN                          | Value of a PoPP Tokens, which is given to the PEP (optional)                                                                                                   | eyJhbGciOiJFUzI1NiI......                                   |
+| DISABLE_SERVER_VALIDATION           | If set to "true", TLS server TLS certificate checks are disabled (for testing only!)                                                                           |                                                             |
+| WS_SERVER_CONTEXT_PATH              | Specifies the base context to target the resource server. It is used in the Java client to prefix STOMP Websockets destinations                                | /testfachdienst                                             |
+| WS_BASE_URL                         | Defines the Websocket base URL (including protocol: ws/wss)                                                                                                    | wss://host/resource/ws                                      |
+| ASL_PROD                            | Defines whether the client runs in Productive or Non Productive mode. If set to "false" exposes the ASL symmetric keys: K2_c2s_app_data and K2_s2c_app_data    | by default is set to "true" (productive environment)        |
+| STORAGE_AES_KEY                     | Base64-encoded AES-256 key used to encrypt session data at rest                                                                                                | 7aae7xXr8rnzVqjpYbosS0CFMrlprkD7jbVotm0fd                   |
+| REQUIRED_ROLE_OID                   | Role-OID that the TI certificate must contain. Required for ASL handshake validation                                                                           | 1.2.276.0.76.4.156                                          |
+| OIDC_IDP_ISS                        | Issuer identifier of the OIDC IDP used for the email-binding authentication flow                                                                               | https://fachdienst.host.example.com/sekidp                  |
+| OIDC_BASE_URI                       | Base URI the client's system browser flow redirects back to (callback endpoint)                                                                                | http://localhost:8090/cb/demo                               |
+| OIDC_IDP_ALIAS                      | Alias of the IDP as configured in the Keycloak broker chain                                                                                                    | zeta-sekidp-oidc                                            |
+| AUTH_MODE                           | Selects the authentication mode the client uses to obtain the subject token: `SMB` for SM-B/SMC-B or `OIDC` for the OIDC                                       | SMB                                                         |
+| PUSH_GATEWAY_URL                    | Push gateway URL used when registering a pusher. Must be exactly one of the notification service’s allowed push gateway URLs (Android/iOS)	                     | https://push.example.com/_matrix/push/v1/notify             |
+| PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER | Google Cloud project number for Play Integrity (Android, optional). If empty, Play Integrity is disabled and only Key Attestation is used                      | 123456789012                                                |
+| ZETA_GOOGLE_SERVICES_JSON           | Path to a google-services.json. Enables Firebase push notifications in the Android demo client (read at build time, optional)                                  | /path/to/google-services.json                               |
+| APNS_MOCK                           | If set to “true”, the iOS app registers a fake APNs token instead of a real one (Simulator only)                                                               | false                                                       |
 
 
 ## The demo client
@@ -322,6 +347,37 @@ exposes the result.
    rotation) or evaluate `FirebaseMessaging.getInstance().token` in the debugger. Use the key
    as the target when sending a test message from the Firebase console or the notification
    service.
+
+### Push notifications (iOS, APNs)
+
+The iOS demo app receives pushes straight from APNs; Firebase is not involved. The push gateway
+routes on the `app_id` `<bundle id>.apns` (here `de.gematik.zeta.testclient.iosApp.apns`, derived
+from the app's bundle identifier) and uses the bundle id as APNs topic. The pushkey is the APNs
+device token as 64 hex characters.
+
+* `iosApp/iosApp/AppDelegate.swift` asks for notification permission, registers for remote
+  notifications and hands the device token to `IosPushBridge` (Kotlin, `zeta-client` iosMain).
+* A push that arrives while the app is in the **foreground** is decrypted in-process and shown with
+  its `message` text. In the **background**, iOS shows the push gateway's placeholder texts
+  ("title / subtitle / body"): decrypting there needs a Notification Service Extension and
+  persistent iOS SDK storage, neither of which exists yet.
+* As on Android, decryption uses the SDK session of the last **Test Push** in this process; tap it
+  again after an app restart.
+
+**How to set it up**
+
+1. Copy `iosApp/iosApp/zeta.env.template` to `zeta.env` in the same folder, fill it in and
+   set `PUSH_GATEWAY_URL` (exactly one of the notification service's allowed push gateway URLs).
+   The iOS app logs in via OIDC by default, so also add `OIDC_IDP_ISS`, `OIDC_BASE_URI` and
+   `OIDC_IDP_ALIAS`, which the template does not list (see [Client Configuration](#client-configuration)).
+2. **Real APNs:** select your Apple team in Xcode and add the Push Notifications capability.
+   Configure the push gateway with an APNs key: an `apns` entry in its push config whose
+   `bundleId` is the app's bundle id, `server` `api.sandbox.push.apple.com` for Xcode builds.
+3. **Without a paid Apple team:** set `APNS_MOCK=true`. The app then registers a fake token instead
+   of waiting for APNs; it persists until the app is reinstalled or the simulator is reset, and each
+   new one adds a pusher that stays registered. Point the push gateway's `apns` entry at a mock
+   APNs server and hand the pushes it receives to the simulator with `xcrun simctl push`.
+   Simulator only.
 
 
 ## Platform Requirements
@@ -405,11 +461,11 @@ This step does not need an Android SDK.
 
 #### Remote Maven Repository
 
-Hinweis: sollten Sie das ZETA SDK in ein eigenes Remote Repository submitten wollen, so müssen sie die folgende Konfiguration in der build-logic anpassen:
+Note: if you want to publish the ZETA SDK to your own remote repository, you need to adjust the following configuration in the build-logic:
 
-| Verzeichnis                                               | Datei                    | Zeile/Variable                     | Beschreibung                                                | Beispiel                                                     |
-|-----------------------------------------------------------|--------------------------|------------------------------------|-------------------------------------------------------------|--------------------------------------------------------------|
-| build-logic/build-logic/src/main/kotlin/com/ey/buildlogic | BuildLogicPlugin.kt      | 242<br/>URL des Maven Repositories | URL des remote Maven Repositories                           | "https://<repository-host>/api/v4/projects/3/packages/maven" |
+| Folder                                                    | File                | Variable                   | Description                       | Example                                                      |
+|-----------------------------------------------------------|---------------------|----------------------------|-----------------------------------|--------------------------------------------------------------|
+| build-logic/build-logic/src/main/kotlin/com/ey/buildlogic | BuildLogicPlugin.kt | URL des Maven Repositories | URL des remote Maven Repositories | "https://<repository-host>/api/v4/projects/3/packages/maven" |
 
 
 #### Complete Setup
@@ -448,29 +504,36 @@ setup is correct.
 The proxy client exposes a number of HTTP endpoints that allow on one side forwarding requests to
 the Fachdienst, but also control the client and extract information necessary for testing.
 
-| endpoint                                     | access type      | purpose                                                                                                                                                                                                                             |
-|----------------------------------------------|------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| /proxy/*                                     | all HTTP methods | Forward any requests path after the "/proxy/" part to the Fachdienst. According to the SDK API, includes discovery, client registration and authentication if not already done.<br/>Note this also includes the websocket protocol. |
-| /testdriver-api/discover                     | GET              | Just the discovery part of the protocol, i.e. reading the .well-known files                                                                                                                                                         |
-| /testdriver-api/register                     | GET              | Perform client registration (includes discovery if not already done)                                                                                                                                                                |
-| /testdriver-api/authenticate                 | GET              | Retrieve and store an access token (includes client registration and discovery if not already done)                                                                                                                                 |
-| /testdriver-api/storage                      | GET              | Retrieve the stored data (like client instance key, access token etc)                                                                                                                                                               |
-| /testdriver-api/reset                        | GET              | Forget all the stored information, so any call will start triggering a discovery, client registration and authentication again                                                                                                      |
-| /testdriver-api/configure                    | POST             | Configures the test driver with the provided settings, including TLS validation, resource URL, and custom CA certificate                                                                                                            |
-| /testdriver-api/notifications/pushers        | GET              | List the pushers registered for the authenticated user                                                                                                                                                                              |
-| /testdriver-api/notifications/pushers        | POST             | Register a pusher (JSON `PusherConfigRequest` body); the ISS encryption key material is derived inside the SDK                                                                                                                      |
-| /testdriver-api/notifications/pushers        | PUT              | Update the pusher identified by appId/pushkey (JSON `PusherConfigRequest` body)                                                                                                                                                     |
-| /testdriver-api/notifications/pushers        | DELETE           | Deregister the pusher identified by the `pushkey` and `appId` query parameters                                                                                                                                                      |
-| /testdriver-api/notifications/channels       | GET              | List the channels available to the authenticated user and their default status                                                                                                                                                      |
-| /testdriver-api/notifications/channels/local | GET              | Get the channel configuration of the locally registered pusher                                                                                                                                                                      |
-| /testdriver-api/notifications/channels/local | POST             | Set channels for the locally registered pusher (JSON `SetChannelsRequest` body)                                                                                                                                                     |
-| /oidc/collect-email                          | POST             | Submit the email address for the email-binding OIDC flow                                                                                                                                                                            |
-| /oidc/resend-otp                             | POST             | Trigger a resend of the OTP code for email-binding verification                                                                                                                                                                     |
-| /oidc/verify-otp                             | POST             | Submit the OTP code to complete email-binding verification                                                                                                                                                                          |
-| /oidc/change-email                           | GET              | Change the email address used for the email-binding flow                                                                                                                                                                            |
-| /oidc/status                                 | GET              | Check the current status of the OIDC email-binding flow                                                                                                                                                                             |
-| /oidc/kvnr-email                             | POST             | Sets the test KVNR and binding email for the next OIDC login (kvnr, email in body)                                                                                                                                                  |
-| /health                                      | GET              | health API for kubernetes                                                                                                                                                                                                           |
+| endpoint                                                 | access type      | purpose                                                                                                                                                                                                                             |
+|----------------------------------------------------------|------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| /proxy/*                                                 | all HTTP methods | Forward any requests path after the "/proxy/" part to the Fachdienst. According to the SDK API, includes discovery, client registration and authentication if not already done.<br/>Note this also includes the websocket protocol. |
+| /testdriver-api/discover                                 | GET              | Just the discovery part of the protocol, i.e. reading the .well-known files                                                                                                                                                         |
+| /testdriver-api/register                                 | GET              | Perform client registration (includes discovery if not already done)                                                                                                                                                                |
+| /testdriver-api/authenticate                             | GET              | Retrieve and store an access token (includes client registration and discovery if not already done)                                                                                                                                 |
+| /testdriver-api/storage                                  | GET              | Retrieve the stored data (like client instance key, access token etc)                                                                                                                                                               |
+| /testdriver-api/reset                                    | GET              | Forget all the stored information, so any call will start triggering a discovery, client registration and authentication again                                                                                                      |
+| /testdriver-api/configure                                | POST             | Configures the test driver with the provided settings, including TLS validation, resource URL, and custom CA certificate                                                                                                            |
+| /testdriver-api/notifications/pushers                    | GET              | List the pushers registered for the authenticated user                                                                                                                                                                              |
+| /testdriver-api/notifications/pushers                    | POST             | Register a pusher (JSON `PusherConfigRequest` body); the ISS encryption key material is derived inside the SDK                                                                                                                      |
+| /testdriver-api/notifications/pushers                    | PUT              | Update the pusher identified by appId/pushkey (JSON `PusherConfigRequest` body)                                                                                                                                                     |
+| /testdriver-api/notifications/pushers                    | DELETE           | Deregister the pusher identified by the `pushkey` and `appId` query parameters                                                                                                                                                      |
+| /testdriver-api/notifications/channels                   | GET              | List the channels available to the authenticated user and their default status                                                                                                                                                      |
+| /testdriver-api/notifications/channels/local             | GET              | Get the channel configuration of the locally registered pusher                                                                                                                                                                      |
+| /testdriver-api/notifications/channels/local             | POST             | Set channels for the locally registered pusher (JSON `SetChannelsRequest` body)                                                                                                                                                     |
+| /testdriver-api/client-management/identity/email         | POST             | Start an e-mail change (JSON `{"new_email": ...}`); 202 with `{"status":"pending","challenge_type":"email_otp","email_hint":...}` or `{"status":"verified"}`                                                                        |
+| /testdriver-api/client-management/identity/email/resend  | POST             | Re-send the one-time code of the pending e-mail change; 202 `{"challenge_type":"email_otp","email_hint":...}`                                                                                                                       |
+| /testdriver-api/client-management/identity/email/verify  | POST             | Submit the one-time code (JSON `{"code": "123456"}`); 200 `{"status":"verified"}`                                                                                                                                                   |
+| /testdriver-api/client-management/clients                | GET              | List the registered clients of the identity; 200 `[{"client_id":...,"name":...}]`                                                                                                                                                   |
+| /testdriver-api/client-management/clients/{client_id}    | DELETE           | De-register a client of the identity; 204                                                                                                                                                                                           |
+| /oidc/collect-email                                      | POST             | Submit the email address for the email-binding OIDC flow                                                                                                                                                                            |
+| /oidc/resend-otp                                         | POST             | Trigger a resend of the OTP code for email-binding verification                                                                                                                                                                     |
+| /oidc/verify-otp                                         | POST             | Submit the OTP code to complete email-binding verification                                                                                                                                                                          |
+| /oidc/status                                             | GET              | Check the current status of the OIDC email-binding flow                                                                                                                                                                             |
+| /oidc/kvnr-email                                         | POST             | Sets the test KVNR and binding email for the next OIDC login (kvnr, email in body)                                                                                                                                                  |
+| /health                                                  | GET              | health API for kubernetes                                                                                                                                                                                                           |
+
+The client-management routes require OIDC login (`AUTH_MODE=OIDC`).
+Errors from the guard are passed through unchanged. Errors inside the SDK return 400 or 500 with `{"message": ...}`.
 
 *Note: in coming project milestones the paths may change or be extended to accomodate for multiple client instance running in parallel*
 
@@ -648,6 +711,16 @@ Configuration is resolved in this order:
 3. **Environment variables** (fallback)
 
 
+## The Android test driver
+
+The Android test driver is an Android app that runs the test driver on Android. It embeds a Ktor server that exposes endpoints. The difference is that the SDK runs on a real Android runtime instead of the JVM.
+
+With the Android test driver, test suites can use the same API to exercise Android-specific SDK functionality:
+
+* push notifications. The app receives Firebase Cloud Messaging (FCM) pushes through the push gateway, so the `/testdriver-api/notifications/*` endpoints can be tested end-to-end.
+
+The Android test driver can be deployed in the cluster and driven from the CI pipeline.
+
 ## The Java client
 
 The Java client shows how the ZETA SDK can be integrated into a Java-based application. It implements only the "hellozeta" call of the
@@ -745,11 +818,11 @@ First build the SDK shared library:
 
 After building the SDK shared library, the output will be located at:
 
-| Platform  | Path                                                  | File                |
-|-----------|-------------------------------------------------------|---------------------|
-| macOS     | `zeta-sdk/zeta-sdk/build/bin/macosArm64/debugShared/` | `libzeta_sdk.dylib` |
-| Linux     | `zeta-sdk/zeta-sdk/build/bin/linuxX64/debugShared/`   | `libzeta_sdk.so`    |
-| Windows   | `zeta-sdk/zeta-sdk/build/bin/mingwX64/debugShared/`   | `zeta_sdk.dll`      |
+| Platform | Path                                                  | File                |
+|----------|-------------------------------------------------------|---------------------|
+| MacOS    | `zeta-sdk/zeta-sdk/build/bin/macosArm64/debugShared/` | `libzeta_sdk.dylib` |
+| Linux    | `zeta-sdk/zeta-sdk/build/bin/linuxX64/debugShared/`   | `libzeta_sdk.so`    |
+| Windows  | `zeta-sdk/zeta-sdk/build/bin/mingwX64/debugShared/`   | `zeta_sdk.dll`      |
 
 
 Then build and run the C++ client:
@@ -802,7 +875,8 @@ Notes:
 
 ## C# Client
 
-The C# client has its own [README file](zeta-client-csharp).
+The C# SDK is distributed via NuGet.
+The C# API, configuration and examples are described in its own [README file](zeta-csharp-nuget/README.md).
 
 ## The attestation service
 
@@ -988,7 +1062,11 @@ The ZETA API offers the following public API:
 | httpClient()                 | Returns an HttpClient with overloaded method that implement the ZETA specific protocol; this includes authentication etc if not already done                                           |                |             |
 | status()                     | Returns the current state of the client instance                                                                                                                                       | SdkStatus enum |             |
 | logout()                     | Clears the stored authentication tokens and deletes the DPoP keys                                                                                                                      |                |             |
-| changeEmail(newEmail)        | Changes the email address bound to this client (OIDC email-binding flow); includes discovery and registration if not already done                                                      | ChangeEmailResponse |        |
+| changeEmail(newEmail)        | Starts an e-mail change: the guard sends a one-time code to the new address. Returns `Pending` (code sent) or `Verified` (address already verified)                                    | ChangeEmailResponse |        |
+| resendEmailChangeCode()      | Re-sends the one-time code of the pending e-mail change                                                                                                                                | EmailChallenge      |        |
+| verifyEmailChange(code)      | Submits the one-time code; the new address then applies to all clients of the identity                                                                                                 | -                   |        |
+| listClients()                | Lists all registered clients (devices) of the identity at this guard, including this one                                                                                               | List<RegisteredClient>|        |
+| deleteClient(id)             | De-registers a client of the identity; deleting this client also clears its local registration                                                                                         | -                   |        |
 | clearRegistration()          | Clear the client registration without clearing the client instance key                                                                                                                 |                |             |
 | close()                      | Closing the ZETA SDK client without forgetting the cached information and cookies                                                                                                      | -              | error codes |
 
@@ -1012,46 +1090,106 @@ The `status()` method returns one of the following values:
 The configuration is done by passing the BuildConfig object to the ZetaSdkClient.
 This object contains the following attributes and sub-objects.
 
-| BuildConfig Attribute  | Description                                                                              |
-|------------------------|------------------------------------------------------------------------------------------|
-| productId              | The gematik Product-ID                                                                   |
-| productVersion         | The version of the product                                                               |
-| clientName             | The name of the client                                                                   |
-| storageConfig          | An object providing configuration for secure storage (e.g. of the auth token)            |
-| tpmConfig              | Information about the client's TPM                                                       |
-| authConfig             | Konfiguration des Authentication Prozesses, wie Token scopes, Expiry etc.                |
-| http_config            | Konfigurationsparameter für den HTTP Client wie timeouts, retries etc.                   |
-| registrationCallback   | a function that is called when a user interaction is required during client registration |
-| authenticationCallback | a function that is called when a user interaction is required during authentication      |
-| notificationConfig     | Optional `NotificationConfig` enabling the Notification Service integration; `null` (default) disables it (see [Notifications](#notifications)) |
+| BuildConfig Attribute | Description                                                                                                                                     |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| productId             | The gematik Product-ID                                                                                                                          |
+| productVersion        | The version of the product                                                                                                                      |
+| clientName            | The name of the client                                                                                                                          |
+| storageConfig         | An object providing configuration for secure storage (e.g. of the auth token)                                                                   |
+| tpmConfig             | Information about the client's TPM                                                                                                              |
+| authConfig            | Configuration for Authentication Process, e.g: Token scopes, Expiry etc.                                                                        |
+| platformProductId     | Platform-specific product id (MacOS, Win, Linux Android, Apple), used for attestation                                                           |
+| httpClientBuilder     | Configuration for the HTTP Client, e.g.: timeouts, retries etc.                                                                                 |
+| registrationCallback  | Deprecated, not called by the SDK. Will be removed in a future major version                                                                    |
+| notificationConfig    | Optional `NotificationConfig` enabling the Notification Service integration; `null` (default) disables it (see [Notifications](#notifications)) |
 
-Note: in implementation phase 1 callbacks are not expected. In implementation phase 2
-callbacks may be added e.g. for pushed authentication requests to the IDP.
-Details are still to be determined.
+Note: user interaction during authentication is not configured in `BuildConfig`.
+
+For the OIDC flow (ZETA 2.0, preview), the browser login is handled by the `authorizationLauncher` and the email/OTP prompts by the `otpCallback`, both part of
+`OidcConfig` (see [OIDC Authentication](#oidc-authentication)). The SM(C)-B flow requires no user interaction.
 
 ### AuthConfig
 
 The AuthConfig object configures the authentication process:
 
-| Attribute            | Description                                                                                                       |
-|----------------------|-------------------------------------------------------------------------------------------------------------------|
-| scopes               | Scope-values for the Access Tokens                                                                                |
-| exp                  | The expiration time of the JWT as lifetime duration in seconds                                                    |
-| aslProdEnvironment   | Determines if the client runs non/production environment. The ASL keys can be accessed if it is set to false      |
+| Attribute            | Description                                                                                                                                                                                                                             |
+|----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| scopes               | Scope-values for the Access Tokens                                                                                                                                                                                                      |
+| exp                  | The expiration time of the JWT as lifetime duration in seconds                                                                                                                                                                          |
+| aslProdEnvironment   | Determines if the client runs non/production environment. The ASL keys can be accessed if it is set to false                                                                                                                            |
 | subjectTokenProvider | An `AuthTokenProvider` that supplies the subject token. Either a `SubjectTokenProvider` (functional interface for SM-B/SMC-B), or an `OidcTokenProvider` configured with an `OidcConfig` for the OIDC email-binding authentication flow |
-| attestation          | Configures the attestation mode and connection to the attestation service. Defaults to `AttestationConfig.software` |
-| requiredRoleOid      | Role-OID the TI certificate must contain (e.g. `1.2.276.0.76.4.156` for `oid_epa_vau`)                            |
+| attestation          | Configures software or TPM attestation (see [AttestationConfig](#attestationconfig)). Defaults to `AttestationConfig.software()`. On Android and iOS, hardware attestation is used automatically                                        |
+| requiredRoleOid      | Role-OID the TI certificate must contain (e.g. `1.2.276.0.76.4.156` for `oid_epa_vau`)                                                                                                                                                  |
 
 
 #### AttestationConfig
 
-The attestation config allows three attestation modes:
+The SDK uses two kinds of attestation, depending on the platform:
 
-| Mode      | Factory method                | Description                                                                                                                        |
-|-----------|-------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
-| Software  | AttestationConfig.software()  | Software-based attestation without TPM (default if no other specified)                                                             |
-| TpmHttp   | AttestationConfig.tpmHttp()   | TPM-based attestation via HTTP conenction to the attestation service. The SDK connects to the service using the configured endpoint |
-| TpmCustom | AttestationConfig.tpmCustom() | TPM-based attestation using a custom AttestationService implementation provided by the client application                          |
+* **Hardware attestation (Android and Apple platforms):** used automatically. You don't need an `AttestationConfig` for it. See [Hardware attestation (Android and iOS)](#hardware-attestation-android-and-ios).
+* **Configured attestation (JVM, Linux, Windows):** selected with `AttestationConfig`. It's also used on Android and iOS when the device doesn't support hardware attestation.
+
+`AttestationConfig` has three modes:
+
+| Mode      | Factory method                | Description                                                                                                                                                        |
+|-----------|-------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Software  | AttestationConfig.software()  | Software-based attestation without TPM (default if no other mode is specified)                                                                                     |
+| TpmHttp   | AttestationConfig.tpmHttp()   | TPM-based attestation via an HTTP connection to the [attestation service](#the-attestation-service). The SDK connects to the service using the configured endpoint |
+| TpmCustom | AttestationConfig.tpmCustom() | TPM-based attestation using a custom `AttestationService` implementation provided by the client application                                                        |
+
+`tpmHttp()` and `tpmCustom()` accept an optional `AttestationStatusCallback`. It reports `OK`, `Degraded(reason)` or `KO(reason)`.
+
+#### Hardware attestation (Android and iOS)
+
+On Android and Apple platforms, the SDK attests the client with a hardware-backed key that is bound to the client instance key (`PuK.Client.Sig`). This happens in two places:
+
+* **At client registration (DCR):** the SDK creates an attestation key and sends the platform attestation evidence. The attestation challenge is `hash_puk_client_sig = SHA-256(PuK.Client.Sig)`.
+* **At every token request:** the client statement in the client assertion carries runtime evidence signed with the same attestation key. The posture type is `android` or `apple`.
+
+| Platform | Mechanism                                                                                       | Registration evidence                                                                                                                     | Runtime evidence (client statement)                                                                                                                        |
+|----------|-------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Android  | Android Key Attestation (StrongBox, falling back to TEE), plus optional Google Play Integrity   | Key attestation certificate chain of `Alias_AK`, plus an optional Play Integrity token (classic request, `nonce = hash_puk_client_sig`)   | Device posture, `signed_client_data_hash` signed with `Alias_AK`, plus an optional Play Integrity token (standard request, `requestHash = clientDataHash`) |
+| iOS      | Apple App Attest (DeviceCheck)                                                                  | `keyId` and the App Attest attestation object                                                                                             | Device posture and an App Attest assertion (`signature`, `authenticatorData`) over `clientDataHash`                                                        |
+
+For both platforms, `clientDataHash = SHA-256(nonce || posture || PuK.Client.Sig)`. On Android, the posture is canonicalised before hashing. JVM, Linux and Windows have no hardware attestation and always use `AttestationConfig`.
+
+##### Fallback
+
+If the device doesn't support hardware attestation, the SDK falls back to the configured `AttestationConfig` (software by default). This covers emulators, the iOS Simulator, devices without a hardware-backed keystore, and devices where App Attest is unavailable. The client is then registered with a `software` posture.
+
+##### Key lifecycle
+
+* The attestation state (key id, attestation object or certificate chain, and the attestation token) is stored encrypted in the SDK storage, scoped per resource.
+* `forget()` clears the attestation state. On Android, it also deletes `Alias_AK`. Apple App Attest keys can't be deleted, so on iOS they are only discarded.
+* `clearRegistration()` keeps the attestation state.
+* If the attestation key becomes unusable, the SDK discards it and the next registration attests a fresh key. On Android, this happens when the key is invalidated, for example after the screen lock is removed. On iOS, it happens when App Attest reports an invalid key.
+* If the App Attest server is temporarily unavailable, the key is kept and the operation can be retried.
+
+##### Android prerequisites
+
+* Android API 28+. On API 28+ devices with Google services, Key Attestation works without any configuration.
+* **Play Integrity (optional, recommended):** pass the Google Cloud project number of your app when initialising the SDK:
+
+  ```kotlin
+  ZetaInit.initAndroid(applicationContext, playIntegrityCloudProjectNumber = 123456789012L)
+  ```
+
+  Without it, Play Integrity is disabled and only Key Attestation is used. A warning is logged in that case. The app must be linked to that Cloud project in the Google Play Console.
+* Play Integrity requests time out after 10 seconds. If a request times out or fails, the SDK sends the request without `play_integrity_token` instead of failing.
+* Play Integrity quotas apply. Classic requests (registration only) are limited to 10,000 per day per app and 5 per minute per device.
+* The SDK manifest contributes the following entries, which are merged into the app manifest and used to collect the device posture:
+  * `REQUEST_PASSWORD_COMPLEXITY`
+  * `USE_BIOMETRIC`
+  * a `<queries>` entry for `com.google.android.modulemetadata`
+* The `platformProductId` must be an Android product id.
+
+##### iOS prerequisites
+
+* iOS 15+, on a real device. The Simulator doesn't support App Attest, so the SDK falls back.
+* Enable the **App Attest** capability for the app. This adds the `com.apple.developer.devicecheck.appattest-environment` entitlement:
+  * `development` during development
+  * `production` for App Store and TestFlight builds
+* The `platformProductId` must be an Apple product id.
 
 ### StorageConfig
 
@@ -1163,13 +1301,38 @@ This is used when the subject token is obtained through an OIDC broker flow rath
 
 **Interface (`OidcConfig`):**
 
-| Attribute                | Description                                                                                           |
-|--------------------------|-------------------------------------------------------------------------------------------------------|
-| `requestUri`             | Base URI the browser flow redirects back to (callback endpoint); the two redirect URIs `{requestUri}/app` and `{requestUri}/oidc` are derived from it |
-| `idpIss`                 | Issuer identifier of the OIDC IDP, sent as `idp_iss` in the PAR request                               |
-| `idpAlias`               | Alias of the IDP as configured in the Keycloak broker chain                                           |
-| `authenticationCallback` | Callback invoked to perform the browser-based authentication step (e.g. `SystemBrowserAuthenticator`) |
-| `otpCallback`            | Callback used to collect the email address and OTP code for email-binding                             |
+| Attribute               | Description                                                                                                                                                                   |
+|-------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `redirectUri`           | Final redirect URI of the app, where Keycloak returns the authorization code at the end of the login. Must match a `redirect_uri` registered during client registration (DCR) |
+| `oidcRedirectUri`       | Intermediate redirect URI where the SekIDP returns its `code` and `state`, which are then relayed to the Keycloak broker. Must also be registered during DCR                  |
+| `idpIss`                | Issuer URL of the SekIDP to authenticate against, sent as `idp_iss` in the PAR request                                                                                        |
+| `idpAlias`              | Alias of the SekIDP identity provider in the Keycloak broker, used to build the broker relay endpoint (`/broker/{idpAlias}/endpoint`)                                         |
+| `authorizationLauncher` | **Required.** Opens the login in the system browser and returns the final redirect to `redirectUri` (see [AuthorizationLauncher](#authorizationlauncher))                     |
+| `otpCallback`           | Prompts for the user's email address and OTP code during the email-binding flow (`awaitEmail()`, `awaitOtp()`; `OtpSubmission.Resend` requests a new code)                    |
+
+#### AuthorizationLauncher
+
+The SDK drives the OIDC flow: it creates PKCE and `state`, sends the pushed authorization request (PAR),
+builds the authorization URL, validates the result and exchanges the code for tokens.
+The `AuthorizationLauncher` only handles the part that needs the app: showing the login in a browser
+and catching the redirects that come back to the app.
+
+`open(request: AuthorizationRequest)` must complete two browser steps:
+
+1. Open `request.authorizationUrl` and wait for the redirect to `request.oidcRedirectUri`.
+   This redirect carries the identity provider's `code` and `state`, or `error` and `error_description` if the login failed.
+2. Send the **same browser** to `request.brokerEndpoint` with that `code` and `state` appended as query
+   parameters, and wait for the redirect to `request.redirectUri`.
+
+Return the complete redirect URL received at `redirectUri`, unchanged and including its query
+(e.g. `de.gematik.zeta://app?code=…&state=…`). The SDK reads `code`, `state` and `error` from it and validates `state` itself.
+
+Error handling:
+- If the identity provider redirects with `error` in step 1, or the user cancels the login, throw `AuthorizationFailedException(error, description)`.
+- If the calling coroutine is cancelled, close or cancel any open browser session.
+
+Both `redirectUri` and `oidcRedirectUri` must be registered as redirect URIs during client registration,
+and the app must be able to receive both (e.g. via a custom URL scheme or app links).
 
 **Email binding and OTP verification**
 
@@ -1181,14 +1344,33 @@ The SDK drives the interaction through the `otpCallback`:
 | `awaitEmail()`                  | Return the user's email address (only called when the server requests email collection)                          |
 | `awaitOtp(emailHint, rejected)` | Return `OtpSubmission.Otp(code)` with the OTP the user received, or `OtpSubmission.Resend` to request a new one. `rejected = true` means the previous OTP was wrong |
 
-**Changing the email address**
+**Client management (A_25733): e-mail change and registered clients**
+
+Clients with OIDC login can change the identity's e-mail address and list / de-register the identity's clients.
+The SDK calls the guard API `zeta-guard-client-management` 2.0.0 at the PEP (`https://{guardHost}/zeta/...`)
+with a DPoP-bound access token carrying the scope `zeta:client-management`. All calls need a registered client.
 
 ```kotlin
-val result: Result<ChangeEmailResponse> = sdk.changeEmail("new@example.com")
+// 1. start the change: the guard sends a one-time code to the new address
+when (val change = sdk.changeEmail("new@example.com").getOrThrow()) {
+    is ChangeEmailResponse.Pending -> {
+        // code sent to change.emailHint; sdk.resendEmailChangeCode() sends it again
+        sdk.verifyEmailChange(code).getOrThrow() // 2. submit the code
+    }
+    ChangeEmailResponse.Verified -> Unit // address was already verified, nothing changed
+}
+
+val clients = sdk.listClients().getOrThrow()     // [RegisteredClient(id, name), ...]
+sdk.deleteClient(clients.first().id).getOrThrow()
 ```
 
-`changeEmail` submits the new address to the guard (`202 Accepted` on success); failures are
-thrown as `ChangeEmailException` carrying the HTTP status and RFC 7807 problem details.
+Failures are `ClientManagementException` subclasses by HTTP status: `InvalidClientManagementRequestException` (400),
+`ClientManagementUnauthorizedException` (401), `ClientManagementForbiddenException` (403), `ClientNotFoundException` (404),
+`ClientManagementConflictException` (409), `UnexpectedClientManagementException` (other). The reason is
+`pepError` when the PEP rejected the request (e.g. invalid token or missing scope), otherwise `problem?.code`
+(`ProblemCode`, e.g. `INVALID_CODE`, `NO_PENDING_CHALLENGE`, `NOT_FOUND`, `UNAUTHORIZED`).
+
+The Java wrapper `ZetaSdkClientExtension` offers the same operations as blocking calls.
 
 See [authentication/README.md](authentication/README.md) for the full OIDC and email-binding flow.
 
@@ -1197,7 +1379,9 @@ See [authentication/README.md](authentication/README.md) for the full OIDC and e
 > **Preview:** push notifications are part of the ZETA 2.0 specification and still in preview — APIs and flows may change.
 
 The SDK can manage push registrations (pushers) and notification channels at the guard's
-Notification Service. The feature is opt-in via `BuildConfig.notificationConfig`:
+Notification Service, and read the notification history of the device (`getNotifications`,
+`getNotification`) where the operator has enabled it. The feature is opt-in via
+`BuildConfig.notificationConfig`:
 
 ```kotlin
 val sdk = ZetaSdk.build(
@@ -1223,7 +1407,8 @@ notifications.registerPusher(PusherConfig(pushkey = fcmToken, appId = "de.exampl
 The `notifications()` accessor exists on Android and iOS only. Receiving the actual push
 messages (FCM/APNs) is the responsibility of the embedding app — see
 [Push notifications (optional, Android)](#push-notifications-optional-android) for the demo
-client's FCM setup and [notifications/README.md](notifications/README.md) for details.
+client's FCM setup, [Push notifications (iOS, APNs)](#push-notifications-ios-apns) for its APNs
+setup and [notifications/README.md](notifications/README.md) for details.
 
 ### Custom Log Provider
 

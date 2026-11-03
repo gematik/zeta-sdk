@@ -1,3 +1,4 @@
+import de.gematik.zeta.sdk.buildlogic.isAndroidEnabled
 import de.gematik.zeta.sdk.buildlogic.setupBuildLogic
 import org.jetbrains.kotlin.gradle.dsl.ExplicitApiMode
 
@@ -16,12 +17,24 @@ setupBuildLogic {
             api(project(":network"))
             implementation(project(":tpm"))
             implementation(project(":storage"))
+            // App Attest attestation object and dc_assertion decoders (platform-neutral CBOR parsing).
+            implementation(libs.serialization.cbor)
         }
-
         sourceSets.commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.coroutines.test)
             implementation(libs.ktor.client.mock)
+        }
+
+        if (project.isAndroidEnabled) {
+            sourceSets.androidMain.dependencies {
+                implementation(libs.play.integrity)
+            }
+            sourceSets.androidUnitTest.dependencies {
+                implementation(kotlin("test"))
+                implementation(libs.coroutines.test)
+                implementation(libs.mockk)
+            }
         }
     }
 }

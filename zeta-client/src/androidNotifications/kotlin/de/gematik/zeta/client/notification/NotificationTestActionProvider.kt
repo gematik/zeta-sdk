@@ -26,18 +26,14 @@ package de.gematik.zeta.client.notification
 
 import android.os.Build
 import com.google.firebase.messaging.FirebaseMessaging
-import de.gematik.zeta.client.di.DIContainer
 import de.gematik.zeta.sdk.ZetaSdkClient
 import de.gematik.zeta.sdk.notifications
-import de.gematik.zeta.sdk.notifications.model.Channel
-import de.gematik.zeta.sdk.notifications.model.ChannelStatus
-import de.gematik.zeta.sdk.notifications.model.PusherData
-import de.gematik.zeta.sdk.notifications.model.PusherConfig
+import de.gematik.zeta.sdk.notifications.NotificationClient
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-private const val APP_ID = "de.gematik.zeta.client"
+private const val APP_ID = "zeta-notifications-test.zeta.firebase"
 
 internal fun createNotificationTestAction(): NotificationTestAction? = FcmNotificationTestAction
 
@@ -45,58 +41,19 @@ internal suspend fun reregisterPusherForNewFcmToken(token: String) {
     FcmNotificationTestAction.registerWithToken(token)
 }
 
-private object FcmNotificationTestAction : NotificationTestAction {
-    @Volatile
-    private var registered = false
+/**
+ * Decrypts an incoming FCM push payload using the SDK session from the last app interaction in
+ * this process (set via [FcmNotificationTestAction]'s test actions). Returns `null` when no
+ * session is available yet — e.g. a push delivered to a process where the app hasn't been opened
+ * since launch — since [ZetaFirebaseMessagingService] has no way to build one on its own.
+ */
+internal suspend fun decryptIncomingPush(ciphertext: String, timeMessageEncrypted: String): String? =
+    FcmNotificationTestAction.decryptIncomingPush(ciphertext, timeMessageEncrypted)
 
-    @Volatile
-    private var sdkClient: ZetaSdkClient? = null
+private object FcmNotificationTestAction : PusherNotificationTestAction(APP_ID, Build.MODEL) {
+    override suspend fun fetchPushToken(): String = fetchFcmToken()
 
-    override suspend fun run(sdkClient: ZetaSdkClient): String {
-        val pushKey = fetchFcmToken()
-        this.sdkClient = sdkClient
-        registerWithToken(pushKey)
-        return "Pusher registered (…${pushKey.takeLast(8)})"
-    }
-
-    override fun hasPusherKey(): Boolean = registered
-
-    override fun reset() {
-        registered = false
-        sdkClient = null
-    }
-
-    override suspend fun subscribeAllChannels(sdkClient: ZetaSdkClient): List<Channel> =
-        setAllChannels(sdkClient, ChannelStatus.ENABLED)
-
-    override suspend fun unsubscribeAllChannels(sdkClient: ZetaSdkClient): String {
-        val channels = setAllChannels(sdkClient, ChannelStatus.DISABLED)
-        return "Unsubscribed all channels (${channels.size})"
-    }
-
-    suspend fun registerWithToken(token: String) {
-        val client = sdkClient ?: return
-        client.notifications().registerPusher(
-            PusherConfig(
-                pushkey = token,
-                appId = APP_ID,
-                appDisplayName = "ZETA Demo",
-                deviceDisplayName = Build.MODEL,
-                lang = "de",
-                data = PusherData(url = DIContainer.PUSH_GATEWAY_URL),
-            ),
-        )
-        registered = true
-    }
-
-    private suspend fun setAllChannels(
-        sdkClient: ZetaSdkClient,
-        status: ChannelStatus,
-    ): List<Channel> {
-        val channels = sdkClient.notifications().getAvailableChannels().map { it.copy(status = status) }
-        sdkClient.notifications().setLocalChannels(channels)
-        return channels
-    }
+    override fun notificationsOf(sdkClient: ZetaSdkClient): NotificationClient = sdkClient.notifications()
 }
 
 private suspend fun fetchFcmToken(): String = suspendCancellableCoroutine { continuation ->

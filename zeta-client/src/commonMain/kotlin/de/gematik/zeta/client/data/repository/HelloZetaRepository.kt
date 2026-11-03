@@ -28,7 +28,11 @@ import de.gematik.zeta.client.data.service.HelloZetaService
 import de.gematik.zeta.client.data.service.HelloZetaServiceImpl
 import de.gematik.zeta.client.di.DIContainer
 import de.gematik.zeta.sdk.SdkStatus
+import de.gematik.zeta.sdk.authentication.identity.ChangeEmailResponse
+import de.gematik.zeta.sdk.authentication.identity.EmailChallenge
+import de.gematik.zeta.sdk.authentication.identity.models.RegisteredClient
 import de.gematik.zeta.sdk.notifications.model.Channel
+import de.gematik.zeta.sdk.notifications.model.HistoricNotification
 
 public interface HelloZetaRepository {
     public suspend fun helloZeta(): String
@@ -38,12 +42,18 @@ public interface HelloZetaRepository {
     public suspend fun status(): SdkStatus
     public suspend fun doAuthentication()
     public suspend fun doRegistration()
+    public suspend fun listClients(): List<RegisteredClient>
+    public suspend fun deleteClient(id: String)
     public suspend fun doDiscovery()
     public suspend fun registerTestPusher(): String
     public fun isPusherConfigured(): Boolean
     public suspend fun subscribeAllChannels(): List<Channel>
     public suspend fun unsubscribeAllChannels(): String
-    public suspend fun changeEmail(newEmail: String): String
+    public suspend fun getHistory(): List<HistoricNotification>
+    public suspend fun getHistoricNotification(identifier: String): HistoricNotification
+    public suspend fun changeEmail(newEmail: String): ChangeEmailResponse
+    public suspend fun resendEmailChangeCode(): EmailChallenge
+    public suspend fun verifyEmailChange(code: String)
 }
 
 public class HelloZetaRepositoryImpl(
@@ -58,6 +68,13 @@ public class HelloZetaRepositoryImpl(
 
     override suspend fun doRegistration() {
         DIContainer.httpClientProvider.register()
+    }
+
+    override suspend fun listClients(): List<RegisteredClient> =
+        DIContainer.httpClientProvider.listClients()
+
+    override suspend fun deleteClient(id: String) {
+        DIContainer.httpClientProvider.deleteClient(id)
     }
 
     override suspend fun doDiscovery() {
@@ -96,7 +113,23 @@ public class HelloZetaRepositoryImpl(
         return DIContainer.httpClientProvider.unsubscribeAllChannels()
     }
 
-    override suspend fun changeEmail(newEmail: String): String {
+    override suspend fun getHistory(): List<HistoricNotification> {
+        return DIContainer.httpClientProvider.getHistory()
+    }
+
+    override suspend fun getHistoricNotification(identifier: String): HistoricNotification {
+        return DIContainer.httpClientProvider.getHistoricNotification(identifier)
+    }
+
+    override suspend fun changeEmail(newEmail: String): ChangeEmailResponse {
         return DIContainer.httpClientProvider.changeEmail(newEmail)
+    }
+
+    override suspend fun resendEmailChangeCode(): EmailChallenge {
+        return DIContainer.httpClientProvider.resendEmailChangeCode()
+    }
+
+    override suspend fun verifyEmailChange(code: String) {
+        DIContainer.httpClientProvider.verifyEmailChange(code)
     }
 }

@@ -28,6 +28,8 @@ import de.gematik.zeta.logging.ZetaLogger
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.authentication.identity.ChangeEmailResponse
+import de.gematik.zeta.sdk.authentication.identity.EmailChallenge
+import de.gematik.zeta.sdk.authentication.identity.models.RegisteredClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.notifications.NotificationConfig
@@ -50,9 +52,16 @@ interface ZetaSdkClient {
     suspend fun logout(): Result<Unit>
     suspend fun close(): Result<Unit>
     suspend fun changeEmail(newEmail: String): Result<ChangeEmailResponse>
+    suspend fun resendEmailChangeCode(): Result<EmailChallenge>
+    suspend fun verifyEmailChange(code: String): Result<Unit>
+    suspend fun deleteClient(id: String): Result<Unit>
+    suspend fun listClients(): Result<List<RegisteredClient>>
 }
 
 interface TpmConfig
+
+private val PRODUCT_ID_PATTERN = Regex("[0-9a-zA-Z-]{1,20}")
+private val PRODUCT_VERSION_PATTERN = Regex("[0-9a-zA-Z.-]{1,20}")
 
 data class BuildConfig(
     val productId: String,
@@ -67,7 +76,17 @@ data class BuildConfig(
     val logger: ZetaLogger? = null,
     /** Notification Service integration; `null` (the default) disables notifications entirely. */
     val notificationConfig: NotificationConfig? = null,
-)
+) {
+    init {
+        // gemSpec_ZETA A_25338-01
+        require(PRODUCT_ID_PATTERN.matches(productId)) {
+            "productId must be 1-20 characters of [0-9a-zA-Z-] (A_25338-01), was '$productId'"
+        }
+        require(PRODUCT_VERSION_PATTERN.matches(productVersion)) {
+            "productVersion must be 1-20 characters of [0-9a-zA-Z.-] (A_25338-01), was '$productVersion'"
+        }
+    }
+}
 
 fun BuildConfig.withNamespace(namespace: String): BuildConfig {
     return copy(

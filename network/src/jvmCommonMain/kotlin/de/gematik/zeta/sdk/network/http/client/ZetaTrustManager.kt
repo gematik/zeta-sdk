@@ -26,11 +26,9 @@ package de.gematik.zeta.sdk.network.http.client
 
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.network.http.client.config.tls.ZetaCertificateValidator
-import de.gematik.zeta.sdk.network.http.client.config.tls.sanMatchesHost
 import de.gematik.zeta.time.ZetaClock
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import org.bouncycastle.asn1.x509.GeneralName
 import java.net.Socket
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
@@ -98,23 +96,12 @@ internal class ZetaTrustManager(
             throw CertificateException("No peer host available for SAN validation")
         }
 
-        val sanEntries = leaf.subjectAlternativeNames
-            ?.filter { it[0] == GeneralName.dNSName || it[0] == GeneralName.iPAddress }
-            ?.map { it[1] as String }
-            ?: emptyList()
-
-        if (sanEntries.isEmpty()) {
-            Log.e { "ZetaTls: certificate has no SAN entries for host=$peerHost - rejecting" }
-            throw CertificateException("Certificate has no SAN entries")
+        if (!leaf.matchesHost(peerHost)) {
+            Log.e { "ZetaTls: SAN/CN mismatch: host=$peerHost SANs=${leaf.subjectAlternativeNames} CN=${leaf.mostSpecificCommonName()}" }
+            throw CertificateException("SAN mismatch: host=$peerHost")
         }
 
-        val sanValid = sanEntries.any { san -> sanMatchesHost(san, peerHost) }
-        if (!sanValid) {
-            Log.e { "ZetaTls: SAN mismatch: host=$peerHost SANs=$sanEntries" }
-            throw CertificateException("SAN mismatch: host=$peerHost SANs=$sanEntries")
-        }
-
-        Log.i { "ZetaTls: SAN validated: host=$peerHost matched in $sanEntries" }
+        Log.i { "ZetaTls: SAN/CN validated: host=$peerHost" }
     }
 
     private fun validateZetaPolicy(

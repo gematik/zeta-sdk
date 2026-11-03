@@ -104,7 +104,11 @@ class EnsureAccessTokenHandler(
         ctx.authenticationStorage.clear()
         if (invalidClient && clientRegistrationHandler != null) {
             ctx.clientRegistrationStorage.clear()
-            clientRegistrationHandler.handle(FlowNeed.ClientRegistration, ctx)
+            val registration = clientRegistrationHandler.handle(FlowNeed.ClientRegistration, ctx)
+            if (registration is CapabilityResult.Error) {
+                Log.e { "Step-up re-registration failed (${registration.internalCode}); not requesting a token" }
+                return registration
+            }
         } else if (invalidClient) {
             Log.w { "invalid_client but no clientRegistrationHandler available - skipping re-registration" }
         }

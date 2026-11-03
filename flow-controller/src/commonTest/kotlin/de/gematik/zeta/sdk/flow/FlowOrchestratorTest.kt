@@ -48,6 +48,7 @@ import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.uuid.Uuid
 
@@ -106,6 +107,29 @@ class FlowOrchestratorTest {
         )
 
         assertEquals(HttpStatusCode.BadRequest, result.response.status)
+    }
+
+    @Test
+    fun run_throwsAndDoesNotSendRequest_whenPrerequisiteFailsWithoutHttpResponse() = runTest {
+        var requestSent = false
+        val forwarding = ForwardingClient { requestSent = true; error("request must not be sent") }
+        val dummyCtx = getDummyContextWithResource(forwarding)
+        val failingHandler = object : CapabilityHandler {
+            override fun canHandle(need: FlowNeed) = need == FlowNeed.ClientRegistration
+            override suspend fun handle(need: FlowNeed, ctx: FlowContext) =
+                CapabilityResult.Error("REGISTRATION_FAILED_ERROR", "attestation rejected", null)
+        }
+        val orchestrator = FlowOrchestrator(
+            listOf(failingHandler),
+            requestEvaluator = { _, _ -> listOf(FlowNeed.ClientRegistration) },
+        )
+
+        val error = assertFailsWith<ZetaClientError.PrerequisiteFailed> {
+            orchestrator.run(HttpRequestBuilder().apply { url("https://test") }, dummyCtx)
+        }
+
+        assertEquals("REGISTRATION_FAILED_ERROR", error.code)
+        assertFalse(requestSent)
     }
 
     /** Abort path: non-2xx (500) throws an exception. */

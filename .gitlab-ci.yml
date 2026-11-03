@@ -24,10 +24,29 @@ spec:
       description: "Fast lane: run ONLY the client build+test jobs (C#, Java), skipping all other stages"
       type: boolean
       default: false
+    do_nuget_only:
+      description: "Fast lane: build, test and publish only the C# NuGet package"
+      type: boolean
+      default: false
+    do_sbom_csharp_only:
+      description: "Fast lane: generate and publish only the C# SBOM"
+      type: boolean
+      default: false
+    android:
+      description: "Android TestDriver [Full]: APK+ Image + HelloZeta. [test-only]:run hellozeta-android. [base-image]: rebuild the emulator base image and runs [full]"
+      type: string
+      default: "off"
+      options: [ "off", "full", "test-only", "base-image"]
+    browserstack:
+      description: "Build signed APK/IPA and upload them to BrowserStack. [android] / [ios] / [all]"
+      type: string
+      default: "off"
+      options: [ "off", "android", "ios", "all" ]
 
 ---
 
 variables:
+  GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle-home"
   ANDROID_COMPILE_SDK: "37"
   ANDROID_BUILD_TOOLS: "37.0.0"
   ANDROID_SDK_TOOLS: "11076708"
@@ -38,6 +57,9 @@ variables:
   DOCKER_TLS_CERTDIR: /certs
   DOCKER_CERT_PATH: $DOCKER_TLS_CERTDIR/client
   DOCKER_TLS_VERIFY: "1"
+  ANDROID_EMULATOR_IMAGE: "$CI_REGISTRY_IMAGE/android-emulator-image:latest"
+  ANDROIDTESTDRIVER_IMAGE: "$CI_REGISTRY_IMAGE/android-testdriver-image"
+  GRADLE_USER_HOME: $CI_PROJECT_DIR/.gradle
 
 include:
   # adds job dependency-check-gradle
@@ -51,7 +73,7 @@ include:
 workflow:
   rules:
     # basically disables RELEASE_VERSION_WEB. Build results get tagged with a version only if running on a git tag
-    - if: '$RELEASE_VERSION_WEB != "latest" && $CI_COMMIT_TAG == null'
+    - if: '$RELEASE_VERSION_WEB != "latest" && $CI_COMMIT_TAG == null && "$[[ inputs.do_nuget_only ]]" != "true" && "$[[ inputs.do_sbom_csharp_only ]]" != "true"'
       when: never
     # check new commits on merge requests
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -72,11 +94,19 @@ default:
     - chmod +x ./gradlew
   cache:
     # cache valid only for a specific pipeline instance
-    key: $CI_PIPELINE_ID
-    paths:
-      - "**/build"
-      - "**/build/**"
-      - "build-cache"
+    - key: $CI_PIPELINE_ID
+      paths:
+        - "**/build"
+        - "**/build/**"
+        - "build-cache"
+    # Gradle dependencies + wrapper, shared across pipelines
+    - key:
+        files:
+          - gradle/libs.versions.toml
+          - gradle/wrapper/gradle-wrapper.properties
+      paths:
+        - .gradle-home/caches/modules-2/
+        - .gradle-home/wrapper/
   services:
     - name: docker:24.0.5-dind
       variables:
@@ -85,17 +115,75 @@ default:
 stages:
   - testAndAnalysis
   - build
+  - native_build
   - client_tests
+  - nuget
   - publish
   - image_build
+  - android_tests
+  - browserstack
   - container_scan
   - report
+
+.skip-if-sbom-csharp-only: &skip-if-sbom-csharp-only
+  - if: '"$[[ inputs.do_sbom_csharp_only ]]" == "true"'
+    when: never
+
+.sbom-csharp-rules: &sbom-csharp-rules
+  rules:
+    - if: '$CI_COMMIT_TAG != null'
+    - if: '"$[[ inputs.do_sbom_csharp_only ]]" == "true"'
+    - if: '"$[[ inputs.do_nuget_only ]]" == "true"'
+    - when: never
+
+# Fast-lane skip: when do_nuget_only is set, every non-NuGet job is disabled.
+.skip-if-nuget-only: &skip-if-nuget-only
+  - if: '"$[[ inputs.do_nuget_only ]]" == "true"'
+    when: never
 
 # Fast-lane skip: when do_client_tests_only is set, every non-client-test job is disabled,
 # regardless of any other condition. This must be the FIRST rule wherever it's included.
 .skip-if-client-tests-only: &skip-if-client-tests-only
   - if: '"$[[ inputs.do_client_tests_only ]]" == "true"'
     when: never
+
+# Fast-lane skip: any android mode (full, test-only, base-image) runs ONLY the android jobs.
+.skip-if-android-test-only: &skip-if-android-test-only
+  - if: '"$[[ inputs.android ]]" != "off"'
+    when: never
+
+# Fast-lane skip: browserstack != off runs ONLY the BrowserStack build+upload jobs.
+.skip-if-browserstack: &skip-if-browserstack
+  - if: '"$[[ inputs.browserstack ]]" != "off"'
+    when: never
+
+# Runs on git tags, or when the pipeline is started with android=full|base-image.
+.android-rules: &android-rules
+  rules:
+    - !reference [ .skip-if-nuget-only ]
+    - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - if: $CI_COMMIT_TAG
+    - if: '"$[[ inputs.android ]]" == "full" || "$[[ inputs.android ]]" == "base-image"'
+    - when: never
+
+.browserstack-android-rules: &browserstack-android-rules
+  rules:
+    - !reference [ .skip-if-nuget-only ]
+    - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
+    - if: '"$[[ inputs.browserstack ]]" == "android" || "$[[ inputs.browserstack ]]" == "all"'
+    - when: never
+
+.browserstack-ios-rules: &browserstack-ios-rules
+  rules:
+    - !reference [ .skip-if-nuget-only ]
+    - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
+    - if: '"$[[ inputs.browserstack ]]" == "ios" || "$[[ inputs.browserstack ]]" == "all"'
+    - when: never
 
 # define the release version variable, that determines the tag in the repositories
 # this is included (referenced) in the various build stages/jobs
@@ -104,7 +192,11 @@ stages:
     SONAR_QUALITY_GATE_ENABLED: $[[ inputs.sonar-quality-gate-enabled ]]
     RELEASE_VERSION: $RELEASE_VERSION_WEB
   rules:
+    - !reference [ .skip-if-browserstack ]
+    - !reference [ .skip-if-nuget-only ]
     - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
     # if on a tag, set the release version to the tag
     - if: $CI_COMMIT_TAG != null
       variables:
@@ -152,8 +244,6 @@ stages:
 .sonar_template: &sonar_template
   extends: .variables_template
   variables:
-    SONAR_QUALITY_GATE_ENABLED: !reference [ .variables_template, variables, SONAR_QUALITY_GATE_ENABLED ]
-    RELEASE_VERSION: !reference [ .variables_template, variables, RELEASE_VERSION ]
     GIT_DEPTH: 0
   rules:
     - !reference [ .variables_template, rules ]
@@ -168,7 +258,21 @@ stages:
     - if: '"$[[ inputs.do_pre_release_checks ]]" == "true"'
     - if: '"$[[ inputs.do_client_tests_only ]]" == "true"'
 
+# NuGet jobs (pack, test, publish)
+.nuget-rules: &nuget-rules
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - if: '"$[[ inputs.do_nuget_only ]]" == "true"'
+    - when: never
+
 # gradle jobs
+
+check-copyright:
+  <<: *gradle_template
+  stage: testAndAnalysis
+  script:
+    - chmod +x scripts/check-copyright.sh
+    - ./scripts/check-copyright.sh .
 
 test:
   <<: *gradle_template
@@ -262,7 +366,11 @@ dependency-updates:
   <<: *gradle_template
   stage: testAndAnalysis
   rules:
+    - !reference [ .skip-if-browserstack ]
+    - !reference [ .skip-if-nuget-only ]
     - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
     - if: '"$[[ inputs.do_dependency_updates_check ]]" == "true"'
       when: on_success
     - when: never
@@ -277,7 +385,11 @@ dependency-updates:
 
 dependency-check-gradle:
   rules:
+    - !reference [ .skip-if-browserstack ]
+    - !reference [ .skip-if-nuget-only ]
     - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
     - if: '"$[[ inputs.do_dependency_scan ]]" == "true"'
       when: on_success
     - !reference [ .pre-release-checks-rules, rules ]
@@ -293,6 +405,10 @@ test-linux-shared-lib:
   stage: build
   image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
   rules:
+    - !reference [ .skip-if-nuget-only ]
+    - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "staging"'
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "release"'
   script:
@@ -328,12 +444,274 @@ sbom:
       - "**/build/reports/cyclonedx/bom.json"
       - "**/build/reports/cyclonedx/bom.xml"
 
+build-android-emulator-image:
+  stage: build
+  image: $CI_REGISTRY/zeta/devops/ci-images/docker:24.0.5-zeta-0
+  needs: []
+  cache: []
+  rules:
+    - !reference [ .skip-if-nuget-only ]
+    - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - if: '"$[[ inputs.android ]]" == "base-image"'
+    - when: never
+  script:
+    - printf "%s" "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+    - printf "%s" "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+    - docker build
+      --build-arg BASE_IMAGE="$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/budtmo/docker-android:emulator_14.0"
+      -t "$ANDROID_EMULATOR_IMAGE" - < Dockerfile.android-emulator
+    - docker push "$ANDROID_EMULATOR_IMAGE"
+
+build-android-testdriver-image:
+  <<: *android-rules
+  stage: image_build
+  image: $CI_REGISTRY/zeta/devops/ci-images/docker:24.0.5-zeta-0
+  cache: []
+  needs:
+    - job: android-testdriver-apk
+    - job: build-android-emulator-image
+      optional: true
+  script:
+    - printf "%s" "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+    - docker build
+      --build-arg BASE_IMAGE="$ANDROID_EMULATOR_IMAGE"
+      -t "$ANDROIDTESTDRIVER_IMAGE:$CI_COMMIT_SHORT_SHA"
+      -f Dockerfile.android-testdriver .
+    - docker push "$ANDROIDTESTDRIVER_IMAGE:$CI_COMMIT_SHORT_SHA"
+    - |
+      for t in "$CI_COMMIT_REF_SLUG" ${CI_COMMIT_TAG:+"$CI_COMMIT_TAG"}; do
+        docker tag "$ANDROIDTESTDRIVER_IMAGE:$CI_COMMIT_SHORT_SHA" "$ANDROIDTESTDRIVER_IMAGE:$t"
+        docker push "$ANDROIDTESTDRIVER_IMAGE:$t"
+      done
+
+hellozeta-android:
+  stage: android_tests
+  allow_failure: true
+  image:
+    name: $ANDROIDTESTDRIVER_IMAGE:$ANDROIDTESTDRIVER_TAG
+    entrypoint: [""]
+  needs:
+    - job: build-android-testdriver-image
+      optional: true
+  timeout: 20m
+  # nothing from the repo or the pipeline cache is needed, and no docker daemon
+  services: []
+  cache: []
+  before_script: []
+  variables:
+    GIT_STRATEGY: none
+  rules:
+    - !reference [ .skip-if-nuget-only ]
+    - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - if: '"$[[ inputs.android ]]" == "test-only"'
+      variables:
+        ANDROIDTESTDRIVER_TAG: $CI_COMMIT_REF_SLUG
+    - if: $CI_COMMIT_TAG
+      variables:
+        ANDROIDTESTDRIVER_TAG: $CI_COMMIT_SHORT_SHA
+    - if: '"$[[ inputs.android ]]" == "full" || "$[[ inputs.android ]]" == "base-image"'
+      variables:
+        ANDROIDTESTDRIVER_TAG: $CI_COMMIT_SHORT_SHA
+    - when: never
+  script:
+    - /opt/testdriver/entrypoint.sh > entrypoint.log 2>&1 &
+    - ENTRYPOINT_PID=$!
+    - |
+      for i in $(seq 1 60); do
+        wget -qO- http://localhost:8080/androiddriver-api/health && break
+        kill -0 "$ENTRYPOINT_PID" 2>/dev/null || { echo "entrypoint exited early:"; cat entrypoint.log; exit 1; }
+        [ "$i" = 60 ] && { echo "android-testdriver not ready after 5 min"; exit 1; }
+        echo "waiting for android-testdriver... ($(tail -n 1 entrypoint.log 2>/dev/null))"; sleep 5
+      done
+    - wget -S --content-on-error --tries=1 --timeout=120 -O- http://localhost:8080/androidproxy/hellozeta
+  after_script:
+    - cat entrypoint.log || true
+
+android-testdriver-apk:
+  <<: *android-rules
+  stage: build
+  needs: []
+  services: []
+  script:
+    - ./gradlew :zeta-android-testdriver:assembleDebug
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - zeta-android-testdriver/build/outputs/apk/debug/zeta-android-testdriver-debug.apk
+
+browserstack-android-apk:
+  <<: *browserstack-android-rules
+  stage: build
+  needs: []
+  services: []
+  before_script:
+    - mkdir -p zeta-client/src/androidMain/assets
+    - cp "$ZETA_ENV" zeta-client/src/androidMain/assets/zeta.env
+  script:
+    - ./gradlew :zeta-client:assembleRelease
+    - echo "$ANDROID_RELEASE_KEYSTORE_B64" | base64 -d > /tmp/release.jks
+    - SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$(grep -s '^sdk.dir=' local.properties | cut -d= -f2)}}"
+    - APKSIGNER=$(ls "$SDK"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+    - '[ -n "$APKSIGNER" ] || APKSIGNER=$(find / -path "*/build-tools/*/apksigner" -type f 2>/dev/null | sort -V | tail -1)'
+    - echo "using $APKSIGNER"
+    - >-
+      "$APKSIGNER" sign
+      --ks /tmp/release.jks --ks-type JKS
+      --ks-pass env:ANDROID_RELEASE_KEYSTORE_PASS
+      --ks-key-alias "$ANDROID_RELEASE_KEY_ALIAS"
+      --out app-browserstack.apk
+      zeta-client/build/outputs/apk/release/zeta-client-release-unsigned.apk
+    - '"$APKSIGNER" verify --print-certs app-browserstack.apk'
+  after_script:
+    - rm -f /tmp/release.jks
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - app-browserstack.apk
+
+browserstack-android-upload:
+  <<: *browserstack-android-rules
+  stage: browserstack
+  image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
+  needs:
+    - job: browserstack-android-apk
+      artifacts: true
+  services: []
+  cache: []
+  before_script:
+    - command -v jq || (apt-get update && apt-get install -y jq)
+  script:
+    - |
+      RESPONSE=$(curl -sS --fail-with-body -u "${BS_USER}:${BS_KEY}" \
+        -X POST "https://api-cloud.browserstack.com/app-automate/upload" \
+        -F "file=@app-browserstack.apk" \
+        -F "custom_id=ZetaClientAndroid")
+      echo "$RESPONSE"
+      APP_URL=$(echo "$RESPONSE" | jq -r '.app_url // empty')
+      [ -n "$APP_URL" ] || { echo "BrowserStack upload failed"; exit 1; }
+      echo "BS_APP_URL=${APP_URL}" > browserstack.env
+      echo "Uploaded: ${APP_URL}"
+  artifacts:
+    expire_in: 1 week
+    reports:
+      dotenv: browserstack.env
+
+browserstack-ios-ipa:
+  <<: *browserstack-ios-rules
+  stage: build
+  tags:
+    - attestation-vm-macos
+  needs: []
+  cache: []
+  variables:
+    IOS_PROJECT: "iosApp/iosApp.xcodeproj"
+    IOS_SCHEME: "iosApp"
+    IOS_EXPORT_METHOD: "enterprise"
+  before_script:
+    - cp "$ZETA_ENV" iosApp/iosApp/zeta.env
+    - chmod +x ./gradlew
+    - chmod +x ./scripts/ios-signing-setup.sh
+    - chmod +x ./scripts/build-ios-ipa.sh
+    - chmod +x ./scripts/ios-signing-cleanup.sh
+  script:
+    - |
+      set -euo pipefail
+
+      CONSOLE_UID="$(id -u customer)"
+
+      # GitLab checked out the repository as root.
+      # The iOS build must run as customer for macOS code signing.
+      chown -R customer:staff "$CI_PROJECT_DIR"
+
+      launchctl asuser "$CONSOLE_UID" \
+        sudo -H -u customer \
+        env \
+          CI_JOB_ID="$CI_JOB_ID" \
+          CI_PROJECT_DIR="$CI_PROJECT_DIR" \
+          IOS_CERT_P12_B64="$IOS_CERT_P12_B64" \
+          IOS_CERT_PASSWORD="$IOS_CERT_PASSWORD" \
+          IOS_PROFILE_B64="$IOS_PROFILE_B64" \
+          IOS_PROJECT="$IOS_PROJECT" \
+          IOS_SCHEME="$IOS_SCHEME" \
+          IOS_EXPORT_METHOD="$IOS_EXPORT_METHOD" \
+        bash <<'EOF'
+      set -euo pipefail
+
+      cd "$CI_PROJECT_DIR"
+
+      echo "=== Build context ==="
+      whoami
+      echo "HOME=$HOME"
+
+      echo "=== Setup signing ==="
+      ./scripts/ios-signing-setup.sh
+
+      echo "=== Build IPA ==="
+      ./scripts/build-ios-ipa.sh
+      EOF
+  after_script:
+    - |
+      CONSOLE_UID="$(id -u customer)"
+
+      launchctl asuser "$CONSOLE_UID" \
+        sudo -H -u customer \
+        env CI_JOB_ID="$CI_JOB_ID" \
+        ./scripts/ios-signing-cleanup.sh || true
+
+      chown -R root:staff "$CI_PROJECT_DIR"
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - app-browserstack.ipa
+
+browserstack-ios-upload:
+  <<: *browserstack-ios-rules
+  stage: browserstack
+  image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
+  needs:
+    - job: browserstack-ios-ipa
+      artifacts: true
+  services: []
+  cache: []
+  before_script:
+    - command -v jq || (apt-get update && apt-get install -y jq)
+  script:
+    - |
+      RESPONSE=$(curl -sS --fail-with-body -u "${BS_USER}:${BS_KEY}" \
+        -X POST "https://api-cloud.browserstack.com/app-automate/upload" \
+        -F "file=@app-browserstack.ipa" \
+        -F "custom_id=ZetaClientIOS")
+
+      echo "$RESPONSE"
+
+      APP_URL=$(echo "$RESPONSE" | jq -r '.app_url // empty')
+
+      [ -n "$APP_URL" ] || {
+        echo "BrowserStack upload failed"
+        exit 1
+      }
+
+      echo "BS_IOS_APP_URL=${APP_URL}" > browserstack-ios.env
+      echo "Uploaded: ${APP_URL}"
+  artifacts:
+    expire_in: 1 week
+    reports:
+      dotenv: browserstack-ios.env
+
 build-sdk-linux:
-  stage: client_tests
+  stage: native_build
   image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
   tags:
     - attestation-vm-linux
-  <<: *pre-release-checks-rules
+  rules:
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
+    - if: '$CI_COMMIT_TAG'
+    - if: '"$[[ inputs.do_nuget_only ]]" == "true"'
+    - !reference [ .pre-release-checks-rules, rules ]
+    - when: never
   before_script:
     - java -version
     - echo "$SMB_KEYSTORE_FILE_B64" | base64 -d > /tmp/smcb.p12
@@ -350,10 +728,16 @@ build-sdk-linux:
       - "zeta-sdk/build/bin/linuxX64/releaseShared/*"
 
 build-sdk-windows:
-  stage: client_tests
+  stage: native_build
   tags:
     - attestation-vm-win
-  <<: *pre-release-checks-rules
+  rules:
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
+    - if: '$CI_COMMIT_TAG'
+    - if: '"$[[ inputs.do_nuget_only ]]" == "true"'
+    - !reference [ .pre-release-checks-rules, rules ]
+    - when: never
   before_script:
     - java -version
     - New-Item -ItemType Directory -Force -Path "C:\tmp"
@@ -366,24 +750,123 @@ build-sdk-windows:
     paths:
       - "zeta-sdk/build/bin/mingwX64/releaseShared/*"
 
-# build-sdk-macos:
-#   stage: client_tests
-#   tags:
-#     - attestation-vm-macos
-#   <<: *pre-release-checks-rules
-#   before_script:
-#     - java -version
-#     - echo "$SMB_KEYSTORE_FILE_B64" | base64 -d > /tmp/smcb.p12
-#   script:
-#     - export SMB_KEYSTORE_FILE=/tmp/smcb.p12
-#     - ./gradlew :zeta-sdk:linkReleaseSharedMacosArm64
-#   artifacts:
-#     expire_in: 1 week
-#     paths:
-#       - "zeta-sdk/build/bin/macosArm64/releaseShared/*"
+build-sdk-macos:
+  stage: native_build
+  tags:
+    - attestation-vm-macos
+  rules:
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
+    - if: '$CI_COMMIT_TAG'
+    - if: '"$[[ inputs.do_nuget_only ]]" == "true"'
+    - !reference [ .pre-release-checks-rules, rules ]
+    - when: never
+  before_script:
+    - java -version
+    - echo "$SMB_KEYSTORE_FILE_B64" | base64 --decode > /tmp/smcb.p12
+  script:
+    - export SMB_KEYSTORE_FILE=/tmp/smcb.p12
+    - ./gradlew :zeta-sdk:linkReleaseSharedMacosArm64
+  after_script:
+    - ./gradlew --stop || true
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - "zeta-sdk/build/bin/macosArm64/releaseShared/*"
+
+unit-test-csharp-macos:
+  stage: testAndAnalysis
+  rules:
+    - !reference [ .skip-if-browserstack ]
+    - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
+    - when: on_success
+  tags:
+    - attestation-vm-macos
+  needs: []
+  before_script:
+    - dotnet --info
+  script:
+    - dotnet test zeta-csharp-nuget/tests
+
+client-test-csharp-macos:
+  stage: client_tests
+  allow_failure: true
+  tags:
+    - attestation-vm-macos
+  rules:
+    - !reference [ .skip-if-nuget-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
+    - !reference [ .pre-release-checks-rules, rules ]
+    - when: never
+  needs:
+    - job: build-sdk-macos
+      artifacts: true
+  before_script:
+    - dotnet --info
+    - echo "$SMB_KEYSTORE_FILE_B64" | base64 --decode > /tmp/smcb.p12
+  script:
+    - export SMB_KEYSTORE_FILE=/tmp/smcb.p12
+    - mkdir -p zeta-csharp-nuget/runtimes/osx-arm64/native
+    - cp zeta-sdk/build/bin/macosArm64/releaseShared/libzeta_sdk.dylib zeta-csharp-nuget/runtimes/osx-arm64/native/libzeta_sdk.dylib
+    - cd zeta-csharp-nuget/sample
+    - dotnet run
+
+pack-nuget-macos:
+  stage: nuget
+  tags:
+    - attestation-vm-macos
+  <<: *nuget-rules
+  needs:
+    - job: build-sdk-macos
+      artifacts: true
+  before_script:
+    - dotnet --info
+  script:
+    - mkdir -p zeta-csharp-nuget/runtimes/osx-arm64/native
+    - cp zeta-sdk/build/bin/macosArm64/releaseShared/libzeta_sdk.dylib zeta-csharp-nuget/runtimes/osx-arm64/native/libzeta_sdk.dylib
+    - NUGET_VERSION="${CI_COMMIT_TAG:-$RELEASE_VERSION_WEB}"
+    - 'if [ -z "$NUGET_VERSION" ] || [ "$NUGET_VERSION" = "latest" ]; then echo "A valid NuGet version must be provided"; exit 1; fi'
+    - echo "NuGet version $NUGET_VERSION"
+    - dotnet pack zeta-csharp-nuget/ZetaSdk.csproj --configuration Release --output "$CI_PROJECT_DIR/nupkg-macos" -p:PackageVersion="$NUGET_VERSION" -p:ZetaRid=osx-arm64
+    - ls -lah "$CI_PROJECT_DIR/nupkg-macos"
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - nupkg-macos/*.nupkg
+
+test-nuget-macos:
+  stage: nuget
+  tags:
+    - attestation-vm-macos
+  <<: *nuget-rules
+  needs:
+    - job: pack-nuget-macos
+      artifacts: true
+  variables:
+    NUGET_PACKAGES: "$CI_PROJECT_DIR/.nuget-packages"
+  before_script:
+    - dotnet --info
+    - echo "$SMB_KEYSTORE_FILE_B64" | base64 --decode > /tmp/smcb.p12
+  script:
+    - NUGET_VERSION="${CI_COMMIT_TAG:-$RELEASE_VERSION_WEB}"
+    - mkdir -p nupkg-windows nupkg-linux nupkg-macos
+    - dotnet restore zeta-csharp-nuget/sample/sample.csproj --configfile zeta-csharp-nuget/sample/nuget.ci.config --runtime osx-arm64 --no-cache -p:ZetaSdkPackage=Zeta.Sdk.MacOS -p:ZetaSdkVersion="$NUGET_VERSION"
+    - dotnet build zeta-csharp-nuget/sample/sample.csproj --no-restore --runtime osx-arm64 -p:ZetaSdkPackage=Zeta.Sdk.MacOS -p:ZetaSdkVersion="$NUGET_VERSION"
+    - find zeta-csharp-nuget/sample/bin -name "libzeta_sdk.dylib" -print | grep .
+    - export SMB_KEYSTORE_FILE=/tmp/smcb.p12
+    - dotnet run --project zeta-csharp-nuget/sample/sample.csproj --no-build --runtime osx-arm64
 
 unit-test-csharp-linux:
   stage: testAndAnalysis
+  rules:
+    - !reference [ .skip-if-browserstack ]
+    - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
+    - when: on_success
   image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
   tags:
     - attestation-vm-linux
@@ -391,17 +874,23 @@ unit-test-csharp-linux:
   before_script:
     - dotnet --info
   script:
-    - dotnet test zeta-client-csharp/tests
+    - dotnet test zeta-csharp-nuget/tests
 
 unit-test-csharp-windows:
   stage: testAndAnalysis
+  rules:
+    - !reference [ .skip-if-browserstack ]
+    - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
+    - when: on_success
   tags:
     - attestation-vm-win
   needs: []
   before_script:
     - dotnet --info
   script:
-    - dotnet test zeta-client-csharp\tests
+    - dotnet test zeta-csharp-nuget\tests
 
 client-test-csharp-linux:
   stage: client_tests
@@ -409,7 +898,12 @@ client-test-csharp-linux:
   allow_failure: true
   tags:
     - attestation-vm-linux
-  <<: *pre-release-checks-rules
+  rules:
+    - !reference [ .skip-if-nuget-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
+    - !reference [ .pre-release-checks-rules, rules ]
+    - when: never
   needs:
     - job: build-sdk-linux
       artifacts: true
@@ -418,9 +912,9 @@ client-test-csharp-linux:
     - echo "$SMB_KEYSTORE_FILE_B64" | base64 -d > /tmp/smcb.p12
   script:
     - export SMB_KEYSTORE_FILE=/tmp/smcb.p12
-    - mkdir -p zeta-client-csharp/runtimes/linux-x64/native
-    - cp zeta-sdk/build/bin/linuxX64/releaseShared/libzeta_sdk.so zeta-client-csharp/runtimes/linux-x64/native/libzeta_sdk.so
-    - cd zeta-client-csharp/sample
+    - mkdir -p zeta-csharp-nuget/runtimes/linux-x64/native
+    - cp zeta-sdk/build/bin/linuxX64/releaseShared/libzeta_sdk.so zeta-csharp-nuget/runtimes/linux-x64/native/libzeta_sdk.so
+    - cd zeta-csharp-nuget/sample
     - dotnet run
 
 client-test-csharp-windows:
@@ -428,7 +922,12 @@ client-test-csharp-windows:
   allow_failure: true
   tags:
     - attestation-vm-win
-  <<: *pre-release-checks-rules
+  rules:
+    - !reference [ .skip-if-nuget-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
+    - !reference [ .pre-release-checks-rules, rules ]
+    - when: never
   needs:
     - job: build-sdk-windows
       artifacts: true
@@ -438,28 +937,170 @@ client-test-csharp-windows:
     - "[System.Convert]::FromBase64String($env:SMB_KEYSTORE_FILE_B64) | Set-Content -Path 'C:\\tmp\\smcb.p12' -AsByteStream"
   script:
     - $env:SMB_KEYSTORE_FILE = "C:\\tmp\\smcb.p12"
-    - New-Item -ItemType Directory -Force -Path "zeta-client-csharp\runtimes\win-x64\native"
-    - Copy-Item "zeta-sdk\build\bin\mingwX64\releaseShared\zeta_sdk.dll" -Destination "zeta-client-csharp\runtimes\win-x64\native\zeta_sdk.dll"
-    - cd zeta-client-csharp\sample
+    - New-Item -ItemType Directory -Force -Path "zeta-csharp-nuget\runtimes\win-x64\native"
+    - Copy-Item "zeta-sdk\build\bin\mingwX64\releaseShared\zeta_sdk.dll" -Destination "zeta-csharp-nuget\runtimes\win-x64\native\zeta_sdk.dll"
+    - cd zeta-csharp-nuget\sample
     - dotnet run
 
-# client-test-csharp-macos:
-#   stage: client_tests
-#   tags:
-#     - attestation-vm-macos
-#   <<: *pre-release-checks-rules
-#   needs:
-#     - job: build-sdk-macos
-#       artifacts: true
-#   before_script:
-#     - dotnet --info
-#     - echo "$SMB_KEYSTORE_FILE_B64" | base64 -d > /tmp/smcb.p12
-#   script:
-#     - export SMB_KEYSTORE_FILE=/tmp/smcb.p12
-#     - mkdir -p zeta-client-csharp/runtimes/osx-arm64/native
-#     - cp zeta-sdk/build/bin/macosArm64/releaseShared/libzeta_sdk.dylib zeta-client-csharp/runtimes/osx-arm64/native/libzeta_sdk.dylib
-#     - cd zeta-client-csharp/sample
-#     - dotnet run
+sbom-csharp:
+  stage: nuget
+  image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
+  tags:
+    - attestation-vm-linux
+  <<: *sbom-csharp-rules
+  needs: []
+  before_script:
+    - dotnet --info
+    - command -v jq || (apt-get update && apt-get install -y jq)
+  script:
+    - NUGET_VERSION="${CI_COMMIT_TAG:-$RELEASE_VERSION_WEB}"
+    - DOTNET_RT=$(dotnet msbuild zeta-csharp-nuget/ZetaSdk.csproj -getProperty:RuntimeFrameworkVersion)
+    - dotnet tool install CycloneDX --tool-path .tools
+    - .tools/dotnet-CycloneDX zeta-csharp-nuget/ZetaSdk.csproj --output sbom-csharp --output-format Json --spec-version 1.6 --set-name Zeta.Sdk --set-version "$NUGET_VERSION" --set-type Library
+    - jq --argjson rt "$(sed "s/__VERSION__/$DOTNET_RT/g" zeta-csharp-nuget/sbom/dotnet-runtime.json)" '.components += $rt | .dependencies[0].dependsOn += [$rt[]["bom-ref"]]' sbom-csharp/bom.json > sbom-csharp/bom.tmp && mv sbom-csharp/bom.tmp sbom-csharp/bom.json
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - sbom-csharp/bom.json
+
+pack-nuget-linux:
+  stage: nuget
+  image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
+  tags:
+    - attestation-vm-linux
+  <<: *nuget-rules
+  needs:
+    - job: build-sdk-linux
+      artifacts: true
+  before_script:
+    - dotnet --info
+  script:
+    - mkdir -p zeta-csharp-nuget/runtimes/linux-x64/native
+    - cp zeta-sdk/build/bin/linuxX64/releaseShared/libzeta_sdk.so zeta-csharp-nuget/runtimes/linux-x64/native/libzeta_sdk.so
+    - NUGET_VERSION="${CI_COMMIT_TAG:-$RELEASE_VERSION_WEB}"
+    - 'if [ -z "$NUGET_VERSION" ] || [ "$NUGET_VERSION" = "latest" ]; then echo "A valid NuGet version must be provided"; exit 1; fi'
+    - echo "NuGet version $NUGET_VERSION"
+    - dotnet pack zeta-csharp-nuget/ZetaSdk.csproj --configuration Release --output "$CI_PROJECT_DIR/nupkg-linux" -p:PackageVersion="$NUGET_VERSION" -p:ZetaRid=linux-x64
+    - ls -lah "$CI_PROJECT_DIR/nupkg-linux"
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - nupkg-linux/*.nupkg
+
+pack-nuget-windows:
+  stage: nuget
+  tags:
+    - attestation-vm-win
+  <<: *nuget-rules
+  needs:
+    - job: build-sdk-windows
+      artifacts: true
+  before_script:
+    - dotnet --info
+  script:
+    - '$NUGET_VERSION = if ($env:CI_COMMIT_TAG) { $env:CI_COMMIT_TAG } else { $env:RELEASE_VERSION_WEB }'
+    - 'if (-not $NUGET_VERSION -or $NUGET_VERSION -eq "latest") { throw "A valid NuGet version must be provided" }'
+    - Write-Host "NuGet version $NUGET_VERSION"
+    - New-Item -ItemType Directory -Force -Path zeta-csharp-nuget/runtimes/win-x64/native | Out-Null
+    - Copy-Item zeta-sdk/build/bin/mingwX64/releaseShared/zeta_sdk.dll zeta-csharp-nuget/runtimes/win-x64/native/zeta_sdk.dll
+    - dotnet pack zeta-csharp-nuget/ZetaSdk.csproj --configuration Release --output "$env:CI_PROJECT_DIR/nupkg-windows" -p:PackageVersion="$NUGET_VERSION" -p:ZetaRid=win-x64
+    - Get-ChildItem nupkg-windows
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - nupkg-windows/*.nupkg
+
+test-nuget-linux:
+  stage: nuget
+  image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
+  tags:
+    - attestation-vm-linux
+  <<: *nuget-rules
+  needs:
+    - job: pack-nuget-linux
+      artifacts: true
+  before_script:
+    - dotnet --info
+    - echo "$SMB_KEYSTORE_FILE_B64" | base64 -d > /tmp/smcb.p12
+  variables:
+    NUGET_PACKAGES: "$CI_PROJECT_DIR/.nuget-packages"
+  script:
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then NUGET_VERSION="$CI_COMMIT_TAG"; else NUGET_VERSION="$RELEASE_VERSION_WEB"; fi
+      mkdir -p nupkg-windows nupkg-linux nupkg-macos
+      dotnet restore zeta-csharp-nuget/sample/sample.csproj --configfile zeta-csharp-nuget/sample/nuget.ci.config --runtime linux-x64 --no-cache -p:ZetaSdkPackage=Zeta.Sdk.Linux -p:ZetaSdkVersion="$NUGET_VERSION"
+    - dotnet build zeta-csharp-nuget/sample/sample.csproj --no-restore --runtime linux-x64 -p:ZetaSdkPackage=Zeta.Sdk.Linux -p:ZetaSdkVersion="$NUGET_VERSION"
+    - find zeta-csharp-nuget/sample/bin -name "libzeta_sdk.so" -print | grep .
+    - export SMB_KEYSTORE_FILE=/tmp/smcb.p12
+    - dotnet run --project zeta-csharp-nuget/sample/sample.csproj --no-build --runtime linux-x64
+
+test-nuget-windows:
+  stage: nuget
+  tags:
+    - attestation-vm-win
+  <<: *nuget-rules
+  needs:
+    - job: pack-nuget-windows
+      artifacts: true
+  variables:
+    NUGET_PACKAGES: "$CI_PROJECT_DIR/.nuget-packages"
+  before_script:
+    - dotnet --info
+    - New-Item -ItemType Directory -Force -Path 'C:/tmp'
+    - '[System.Convert]::FromBase64String($env:SMB_KEYSTORE_FILE_B64) | Set-Content -Path "C:/tmp/smcb.p12" -AsByteStream'
+  script:
+    - '$NUGET_VERSION = if ($env:CI_COMMIT_TAG) { $env:CI_COMMIT_TAG } else { $env:RELEASE_VERSION_WEB }'
+    - New-Item -ItemType Directory -Force -Path nupkg-windows, nupkg-linux, nupkg-macos | Out-Null
+    - dotnet restore zeta-csharp-nuget/sample/sample.csproj --configfile zeta-csharp-nuget/sample/nuget.ci.config --runtime win-x64 --no-cache -p:ZetaSdkPackage=Zeta.Sdk.Windows -p:ZetaSdkVersion="$NUGET_VERSION"
+    - dotnet build zeta-csharp-nuget/sample/sample.csproj --no-restore --runtime win-x64 -p:ZetaSdkPackage=Zeta.Sdk.Windows -p:ZetaSdkVersion="$NUGET_VERSION"
+    - 'if (-not (Get-ChildItem zeta-csharp-nuget/sample/bin -Recurse -Filter zeta_sdk.dll)) { throw "zeta_sdk.dll not found in sample output" }'
+    - '$env:SMB_KEYSTORE_FILE = "C:/tmp/smcb.p12"'
+    - dotnet run --project zeta-csharp-nuget/sample/sample.csproj --no-build --runtime win-x64
+
+publish-sbom-csharp:
+  stage: publish
+  image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
+  tags:
+    - attestation-vm-linux
+  <<: *sbom-csharp-rules
+  needs:
+    - job: sbom-csharp
+      artifacts: true
+  script:
+    - NUGET_VERSION="${CI_COMMIT_TAG:-$RELEASE_VERSION_WEB}"
+    - >-
+      curl -v -X POST "${DEPENDENCYTRACK_URL}"
+      -H "X-API-Key: ${DEPENDENCYTRACK_TOKEN}"
+      -F "projectName=zeta-sdk-nuget"
+      -F "projectVersion=${NUGET_VERSION}"
+      -F "autoCreate=true"
+      -F "bom=@sbom-csharp/bom.json"
+
+publish-nuget:
+  stage: publish
+  image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
+  tags:
+    - attestation-vm-linux
+  <<: *nuget-rules
+  needs:
+    - job: pack-nuget-linux
+      artifacts: true
+    - job: pack-nuget-windows
+      artifacts: true
+    - job: pack-nuget-macos
+      artifacts: true
+    - job: test-nuget-linux
+    - job: test-nuget-windows
+    - job: test-nuget-macos
+    - job: unit-test-csharp-linux
+    - job: unit-test-csharp-windows
+    - job: unit-test-csharp-macos
+  before_script:
+    - dotnet --info
+  script:
+    - dotnet nuget push "$CI_PROJECT_DIR"/nupkg-linux/*.nupkg --source "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/nuget/index.json" --api-key "$CI_JOB_TOKEN"
+    - dotnet nuget push "$CI_PROJECT_DIR"/nupkg-windows/*.nupkg --source "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/nuget/index.json" --api-key "$CI_JOB_TOKEN"
+    - dotnet nuget push "$CI_PROJECT_DIR"/nupkg-macos/*.nupkg --source "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/nuget/index.json" --api-key "$CI_JOB_TOKEN"
 
 client-test-java:
   stage: client_tests
@@ -467,7 +1108,12 @@ client-test-java:
   allow_failure: true
   tags:
     - zeta
-  <<: *pre-release-checks-rules
+  rules:
+    - !reference [ .skip-if-nuget-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
+    - !reference [ .pre-release-checks-rules, rules ]
+    - when: never
   before_script:
     - java -version
     - echo "$SMB_KEYSTORE_FILE_B64" | base64 -d > /tmp/smcb.p12
@@ -544,7 +1190,11 @@ publish:
 publish_artifacts:
   stage: report
   rules:
+    - !reference [ .skip-if-browserstack ]
+    - !reference [ .skip-if-nuget-only ]
     - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
     - if: $CI_COMMIT_TAG
       variables:
         COMMIT_MESSAGE: "$CI_COMMIT_TAG"
@@ -687,7 +1337,11 @@ trigger_helm:
     - job: build-image-nativetestdriver
       optional: true
   rules:
+    - !reference [ .skip-if-browserstack ]
+    - !reference [ .skip-if-nuget-only ]
     - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
     # deploy to staging
     - if: '$CI_COMMIT_BRANCH == "develop"'
       variables:
@@ -752,7 +1406,11 @@ container_scan:
     # May still pass if allow_failure set to true (only when merging to develop)
     SEVERITIES: "UNKNOWN,MEDIUM,HIGH,CRITICAL"
   rules:
+    - !reference [ .skip-if-browserstack ]
+    - !reference [ .skip-if-nuget-only ]
     - !reference [ .skip-if-client-tests-only ]
+    - !reference [ .skip-if-sbom-csharp-only ]
+    - !reference [ .skip-if-android-test-only ]
     # when merging to develop, only warn on trivy failures (for MEDIUM and up)
     - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "develop" && $RELEASE_VERSION_WEB == "latest"
       variables:

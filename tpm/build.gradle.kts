@@ -1,3 +1,4 @@
+import de.gematik.zeta.sdk.buildlogic.isAndroidEnabled
 import de.gematik.zeta.sdk.buildlogic.isJvmEnabled
 import de.gematik.zeta.sdk.buildlogic.setupBuildLogic
 import org.jetbrains.kotlin.gradle.dsl.ExplicitApiMode
@@ -36,6 +37,14 @@ setupBuildLogic {
 
         if (project.isJvmEnabled) {
             sourceSets.jvmTest.dependencies {
+                implementation(libs.mockk)
+            }
+        }
+
+        if (project.isAndroidEnabled) {
+            sourceSets.androidUnitTest.dependencies {
+                implementation(kotlin("test"))
+                implementation(libs.coroutines.test)
                 implementation(libs.mockk)
             }
         }

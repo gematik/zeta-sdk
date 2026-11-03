@@ -27,7 +27,6 @@ package de.gematik.zeta.sdk.flow
 import de.gematik.zeta.logging.Log
 import io.ktor.client.call.HttpClientCall
 import io.ktor.client.request.HttpRequestBuilder
-import io.ktor.client.statement.HttpResponse
 import io.ktor.util.AttributeKey
 import kotlin.time.TimeSource
 import kotlin.time.measureTimedValue
@@ -90,7 +89,9 @@ class FlowOrchestrator(
         val (prerequisiteError, prereqTime) = measureTimedValue { executePrerequisites(req, ctx) }
         Log.d { "[ORCHESTRATOR-TIMING] url=$url prerequisites=$prereqTime" }
         if (prerequisiteError != null) {
-            return prerequisiteError.call
+            val response = prerequisiteError.httpResponse
+                ?: throw ZetaClientError.PrerequisiteFailed(prerequisiteError.internalCode, prerequisiteError.internalMessage)
+            return response.call
         }
 
         val (result, execTime) = measureTimedValue { executeRequest(req, ctx, retryState) }
@@ -101,16 +102,17 @@ class FlowOrchestrator(
     class RetryState {
         var stepUpAttempts: Int = 0
         var hasAttemptedDiscoveryRefresh: Boolean = false
+        var hasAttemptedAslReestablish: Boolean = false
     }
 
-    private suspend fun executePrerequisites(req: HttpRequestBuilder, ctx: FlowContext): HttpResponse? {
+    private suspend fun executePrerequisites(req: HttpRequestBuilder, ctx: FlowContext): CapabilityResult.Error? {
         val requestNeeds = requestEvaluator.evaluate(req, ctx)
         Log.d { "Request needs: $requestNeeds" }
         for (need in requestNeeds) {
             val result = executeNeed(need, req, ctx)
             if (result is CapabilityResult.Error) {
                 Log.e { "Prerequisite failed: $need - [${result.internalCode}] ${result.internalMessage}" }
-                return result.httpResponse
+                return result
             }
         }
         return null

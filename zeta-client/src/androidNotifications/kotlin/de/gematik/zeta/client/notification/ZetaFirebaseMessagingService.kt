@@ -42,10 +42,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 private const val TAG = "ZetaFirebaseMsgService"
 private const val INCOMING_TAG = "ZetaIncomingMessage"
 private const val PENDING_INTENT_REQUEST_CODE = 0
+private const val CONTENT_KEY = "content"
 
 public class ZetaFirebaseMessagingService : FirebaseMessagingService() {
 
@@ -67,8 +69,69 @@ public class ZetaFirebaseMessagingService : FirebaseMessagingService() {
             Log.d(tag = TAG) { "Message notification body: ${it.body}" }
         }
 
+        val encrypted = readEncryptedPayload(remoteMessage.data)
+        if (encrypted != null) {
+            val (ciphertext, timeMessageEncrypted) = encrypted
+            // Blocking on purpose to make sure decryption is finished before any service or process shut down
+            runBlocking { decryptAndNotify(ciphertext, timeMessageEncrypted, remoteMessage.messageId) }
+            return
+        }
+        // Fallback, since not every push notification is necessarily encrypted
         val notificationBody = remoteMessage.notification?.body ?: buildBodyFromData(remoteMessage.data)
         notificationBody?.let { sendNotification(it, remoteMessage.messageId) }
+    }
+
+    private suspend fun decryptAndNotify(ciphertext: String, timeMessageEncrypted: String, messageId: String?) {
+        try {
+            val decrypted = decryptIncomingPush(ciphertext, timeMessageEncrypted)
+            // In case the SDK client is not yet initialized in the demo environment, log instead of
+            // crash for debugging purposes.
+            if (decrypted == null) {
+                Log.w(tag = TAG) { "Dropping encrypted push: no SDK session in this process yet" }
+                return
+            }
+            sendNotification(pushDisplayText(decrypted), messageId)
+        } catch (t: Throwable) {
+            Log.e(throwable = t, tag = TAG) { "Failed to decrypt incoming push notification" }
+        }
+    }
+
+    /**
+     * Reads the encrypted payload out of an FCM data map. Two layouts are accepted:
+     *
+     *  - the keys sit at the **top level** of the data payload — the gematik naming convention the
+     *    Notification Service is expected to adopt once it encrypts payloads itself; or
+     *  - they sit inside **`content`**, which is the only way they survive Push Gateway 1.0.1. That
+     *    gateway forwards just the standard Matrix notification fields into the FCM data payload and
+     *    drops unknown top-level keys, and it serialises `content` with `toString()` rather than
+     *    JSON, e.g. `{ciphertext=Zm9v, time_message_encrypted=2026-09}`.
+     */
+    private fun readEncryptedPayload(data: Map<String, String>): Pair<String, String>? {
+        val topLevelCiphertext = data[CIPHERTEXT_KEY]
+        val topLevelTime = data[TIME_MESSAGE_ENCRYPTED_KEY]
+        if (topLevelCiphertext != null && topLevelTime != null) {
+            return topLevelCiphertext to topLevelTime
+        }
+        val content = data[CONTENT_KEY]?.let(::parseToStringMap) ?: return null
+        val ciphertext = content[CIPHERTEXT_KEY] ?: return null
+        val timeMessageEncrypted = content[TIME_MESSAGE_ENCRYPTED_KEY] ?: return null
+        return ciphertext to timeMessageEncrypted
+    }
+
+    /**
+     * Parses a `Map.toString()` rendering — `{a=1, b=2}` — back into a map. Values may themselves
+     * contain `=` (Base64 padding), so only the first `=` of an entry separates key from value.
+     */
+    private fun parseToStringMap(raw: String): Map<String, String> {
+        val trimmed = raw.trim()
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return emptyMap()
+        return trimmed.substring(1, trimmed.length - 1)
+            .split(", ")
+            .mapNotNull { entry ->
+                val separator = entry.indexOf('=')
+                if (separator <= 0) null else entry.substring(0, separator) to entry.substring(separator + 1)
+            }
+            .toMap()
     }
 
     private fun buildBodyFromData(data: Map<String, String>): String? {

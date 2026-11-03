@@ -45,6 +45,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 class AuthenticationApiImplTests {
     @Test
@@ -134,6 +135,26 @@ class AuthenticationApiImplTests {
         assertEquals("openid", response.scope)
         assertEquals("urn:ietf:params:oauth:token-type:access_token", response.issuedTokenType)
         assertEquals("test-refresh-token", response.refreshToken)
+    }
+
+    @Test
+    fun requestAccessToken_parsesZetaAttestationToken_whenPresent() = runTest {
+        val engine = MockEngine {
+            respond(
+                content = """{"access_token":"at","expires_in":300,"refresh_expires_in":1800,"token_type":"DPoP","refresh_token":"rt","zeta_attestation_token":"zat"}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val response = AuthenticationApiImpl(createClient(engine), SystemZetaClock).requestAccessToken("https://example.com/token", createAccessTokenRequest(), "dpop")
+        assertEquals("zat", response.zetaAttestationToken)
+    }
+
+    @Test
+    fun requestAccessToken_zetaAttestationTokenIsNull_whenAbsent() = runTest {
+        val engine = MockEngine { respond(validTokenResponseBody, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json")) }
+        val response = AuthenticationApiImpl(createClient(engine), SystemZetaClock).requestAccessToken("https://example.com/token", createAccessTokenRequest(), "dpop")
+        assertNull(response.zetaAttestationToken)
     }
 
     @Test
@@ -290,7 +311,7 @@ class AuthenticationApiImplTests {
         assertEquals("oidc-access-token", response.accessToken)
         assertEquals(300, response.expiresIn)
         assertEquals("DPoP", response.tokenType)
-        assertEquals("openid zeta:email-verify", response.scope)
+        assertEquals("openid zeta:email-binding", response.scope)
         assertEquals("oidc-refresh-token", response.refreshToken)
         assertEquals("t*@e*.com", response.emailHint)
         assertEquals("verify_otp", response.bindingMode)
@@ -619,7 +640,7 @@ class AuthenticationApiImplTests {
         )
 
         // Assert
-        assertEquals("code=123456", capturedBody)
+        assertEquals("code=123456&verify_type=email_otp", capturedBody)
     }
 
     @Test
@@ -714,7 +735,7 @@ class AuthenticationApiImplTests {
             "access_token": "oidc-access-token",
             "expires_in": 300,
             "token_type": "DPoP",
-            "scope": "openid zeta:email-verify",
+            "scope": "openid zeta:email-binding",
             "refresh_token": "oidc-refresh-token",
             "email_hint": "t*@e*.com",
             "binding_mode": "verify_otp"

@@ -37,8 +37,8 @@ import kotlinx.serialization.Serializable
 /**
  * Test-driver HTTP handlers that drive the SDK's [NotificationClient] (push pusher/channel
  * management), following the control-handler idiom in `DriverUtils.kt`. Routes are wired in
- * `TestDriver.kt`. Only the SDK-implemented operations are exposed; the unimplemented
- * `decryptPushNotification`/`getNotification(s)` methods are intentionally not routed.
+ * `TestDriver.kt`. Only pusher and channel management is exposed;
+ * `decryptPushNotification`/`getNotification(s)` are not routed.
  */
 
 /**

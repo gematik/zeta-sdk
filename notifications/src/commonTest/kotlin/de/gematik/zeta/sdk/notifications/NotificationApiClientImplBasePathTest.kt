@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.notifications
 
+import de.gematik.zeta.sdk.authentication.DpopProvider
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.notifications.model.Pusher
 import io.ktor.client.engine.mock.MockEngine
@@ -58,7 +59,7 @@ class NotificationApiClientImplBasePathTest {
             )
         }
         val proofHtu = mutableListOf<String>()
-        val dpopProvider = NotificationDpopProvider { _, htu, _ -> proofHtu += htu; "test-dpop-proof" }
+        val dpopProvider = DpopProvider { _, htu, _ -> proofHtu += htu; "test-dpop-proof" }
         val client = NotificationApiClientImpl(
             ZetaHttpClientBuilder(prefixedBaseUrl).build(engine),
             prefixedBaseUrl,

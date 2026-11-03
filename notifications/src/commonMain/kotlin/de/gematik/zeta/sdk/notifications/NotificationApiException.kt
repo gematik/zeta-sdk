@@ -59,6 +59,18 @@ class NotificationApiUnauthorizedException(response: HttpResponse) :
 class NotificationApiForbiddenException(response: HttpResponse) :
     NotificationApiException(response, "Notification Service denied access for this access token")
 
+/**
+ * `404`/`501` on a history endpoint. The Notification Service gives this answer for an unknown notification
+ * ID or pushkey, for another user's data (A_29978), and for a history the operator has deactivated
+ * (A_29974), so these cases cannot be told apart. [errorCode] is the server's code, such as
+ * `NOTIFICATION_NOT_FOUND` or `PUSHER_NOT_FOUND`, and `null` when the response carried no error body.
+ */
+class NotificationHistoryNotFoundException(
+    response: HttpResponse,
+    val errorCode: String?,
+    val errorDetail: String?,
+) : NotificationApiException(response, errorDetail ?: errorCode ?: "Notification history not found")
+
 /** Any other non-2xx status not explicitly modeled for this endpoint. */
 class UnexpectedNotificationApiException(response: HttpResponse) :
     NotificationApiException(response, "Unexpected Notification Service response: ${response.status}")

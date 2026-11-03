@@ -1,0 +1,5 @@
+<resources>
+    <string name="default_notification_channel_id">zeta_notifications</string>
+    <string name="notification_channel_name">ZETA Notifications</string>
+    <string name="fcm_message">ZETA Notification</string>
+</resources>

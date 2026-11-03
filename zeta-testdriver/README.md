@@ -21,6 +21,27 @@ curl -X POST http://localhost:8080/oidc/collect-email \
 -H "Content-Type: application/json" \
 -d '{"email": "zeta@mailgun.com"}'
 
+# Client management (guard API zeta-guard-client-management)
+
+# Start an e-mail change (code goes to the new address)
+curl -X POST http://localhost:8080/testdriver-api/client-management/identity/email \
+-H "Content-Type: application/json" \
+-d '{"new_email": "new@example.de"}'
+
+# Re-send the code
+curl -X POST http://localhost:8080/testdriver-api/client-management/identity/email/resend
+
+# Submit the code
+curl -X POST http://localhost:8080/testdriver-api/client-management/identity/email/verify \
+-H "Content-Type: application/json" \
+-d '{"code": "123456"}'
+
+# List the identity's clients
+curl http://localhost:8080/testdriver-api/client-management/clients
+
+# De-register a client
+curl -X DELETE http://localhost:8080/testdriver-api/client-management/clients/<client_id>
+
 # Notifications (push pusher/channel management)
 
 # Register a pusher (device_display_name and data are required by the Notification Service;

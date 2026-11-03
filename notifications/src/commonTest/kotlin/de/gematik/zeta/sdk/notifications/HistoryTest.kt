@@ -72,6 +72,13 @@ class HistoryTest {
     }
 
     @Test
+    fun historicNotification_decodesMissingPayloadAsEmptyObject() {
+        val decoded = json.decodeFromString<HistoricNotification>("""{"identifier":"id-1"}""")
+
+        assertEquals(HistoricNotification(identifier = "id-1", payload = buildJsonObject {}), decoded)
+    }
+
+    @Test
     fun historicNotifications_defaultsToEmptyList() {
         val empty = HistoricNotifications()
 

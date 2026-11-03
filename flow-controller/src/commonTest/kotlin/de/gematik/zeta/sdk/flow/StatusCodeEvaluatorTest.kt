@@ -101,7 +101,7 @@ class StatusCodeEvaluatorTest {
     fun evaluate_keeps_refresh_token_on_first_401_from_pep() = runTest {
         // Arrange
         val ctx = dummyCtx()
-        ctx.authenticationStorage.saveAccessTokens("access", "refresh", 9999L)
+        ctx.authenticationStorage.saveAccessTokens("access", "refresh", 9999L, 9999L)
         val resp = responseWith(HttpStatusCode.Unauthorized, pepHeaders())
         val retryState = FlowOrchestrator.RetryState()
 
@@ -120,7 +120,7 @@ class StatusCodeEvaluatorTest {
     fun evaluate_clears_refresh_token_on_second_401_from_pep() = runTest {
         // Arrange
         val ctx = dummyCtx()
-        ctx.authenticationStorage.saveAccessTokens("access", "refresh", 9999L)
+        ctx.authenticationStorage.saveAccessTokens("access", "refresh", 9999L, 9999L)
         val resp = responseWith(HttpStatusCode.Unauthorized, pepHeaders())
         val retryState = FlowOrchestrator.RetryState().apply { stepUpAttempts = 1 }
 
@@ -176,7 +176,7 @@ class StatusCodeEvaluatorTest {
     fun evaluate_keeps_refresh_token_on_first_403_from_pep() = runTest {
         // Arrange
         val ctx = dummyCtx()
-        ctx.authenticationStorage.saveAccessTokens("access", "refresh", 9999L)
+        ctx.authenticationStorage.saveAccessTokens("access", "refresh", 9999L, 9999L)
         val resp = responseWith(HttpStatusCode.Forbidden, pepHeaders())
 
         // Act

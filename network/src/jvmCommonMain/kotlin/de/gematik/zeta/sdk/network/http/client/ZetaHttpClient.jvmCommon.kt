@@ -228,6 +228,12 @@ private fun OkHttpClient.Builder.applyHostnameVerifier(
     if (disableTLSVerification) {
         Log.w { "JVM: Hostname verification DISABLED — not compliant with gematik requirements" }
         hostnameVerifier { _, _ -> true } // NOSONAR
+    } else {
+        // OkHttp's default verifier only checks the SAN and has no CN fallback (A_25340-02)
+        hostnameVerifier { hostname, session ->
+            val leaf = runCatching { session.peerCertificates.firstOrNull() as? X509Certificate }.getOrNull()
+            leaf?.matchesHost(hostname) ?: false
+        }
     }
     return this
 }

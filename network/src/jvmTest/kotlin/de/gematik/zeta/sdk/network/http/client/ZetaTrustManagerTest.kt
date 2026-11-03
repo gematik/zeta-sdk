@@ -132,7 +132,7 @@ class ZetaTrustManagerTest {
         )
     }
 
-    private fun buildCertWithoutSan(serial: Long = 2L): X509Certificate {
+    private fun buildCertWithoutSan(serial: Long = 2L, commonName: String = "NoSan"): X509Certificate {
         val (start, end) = validityWindow()
         return JcaX509CertificateConverter().setProvider("BC").getCertificate(
             JcaX509v3CertificateBuilder(
@@ -140,7 +140,7 @@ class ZetaTrustManagerTest {
                 BigInteger.valueOf(serial),
                 start,
                 end,
-                X500Name("CN=NoSan"),
+                X500Name("CN=$commonName"),
                 caKeyPair.public,
             )
                 .build(caSigner),
@@ -305,9 +305,39 @@ class ZetaTrustManagerTest {
     }
 
     @Test
-    fun checkServerTrusted_socket_throwsCertificateException_whenCertHasNoSanEntries() {
+    fun checkServerTrusted_socket_throwsCertificateException_whenNoSanAndCommonNameDoesNotMatchPeerHost() {
         val chain = arrayOf(buildCertWithoutSan())
         val socket = buildSocket(peerHost = "valid.example.com")
+
+        assertFailsWith<CertificateException> {
+            buildManager().checkServerTrusted(chain, "RSA", socket)
+        }
+    }
+
+    @Test
+    fun checkServerTrusted_socket_doesNotThrow_whenNoSanAndCommonNameMatchesPeerHost() {
+        val chain = arrayOf(buildCertWithoutSan(commonName = "valid.example.com"))
+        val socket = buildSocket(peerHost = "valid.example.com")
+
+        buildManager().checkServerTrusted(chain, "RSA", socket)
+
+        verify { mockDelegate.checkServerTrusted(chain, "RSA") }
+    }
+
+    @Test
+    fun checkServerTrusted_engine_doesNotThrow_whenNoSanAndCommonNameMatchesPeerHost() {
+        val chain = arrayOf(buildCertWithoutSan(commonName = "valid.example.com"))
+        val engine = buildEngine(peerHost = "valid.example.com")
+
+        buildManager().checkServerTrusted(chain, "RSA", engine)
+
+        verify { mockDelegate.checkServerTrusted(chain, "RSA") }
+    }
+
+    @Test
+    fun checkServerTrusted_socket_throwsCertificateException_whenPeerHostIsIpAndOnlyCommonNameMatches() {
+        val chain = arrayOf(buildCertWithoutSan(commonName = "127.0.0.1"))
+        val socket = buildSocket(peerHost = "127.0.0.1")
 
         assertFailsWith<CertificateException> {
             buildManager().checkServerTrusted(chain, "RSA", socket)

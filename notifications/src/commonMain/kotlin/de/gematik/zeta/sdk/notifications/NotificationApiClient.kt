@@ -25,12 +25,14 @@
 package de.gematik.zeta.sdk.notifications
 
 import de.gematik.zeta.sdk.notifications.model.Channel
+import de.gematik.zeta.sdk.notifications.model.HistoricNotification
 import de.gematik.zeta.sdk.notifications.model.Pusher
 
 /**
  * HTTP contract for the Notification Service device API (`GET /pushers`, `POST /pushers/set`,
- * `GET /channels`, `GET`/`POST /channels/{pushkey}`). Implemented by [NotificationApiClientImpl]
- * and used inside the SDK; the embedding app talks to [NotificationClient] instead.
+ * `GET /channels`, `GET`/`POST /channels/{pushkey}`, `GET /history/{notification_id}`,
+ * `GET /history/device/{pushkey}`). Implemented by [NotificationApiClientImpl] and used inside the
+ * SDK; the embedding app talks to [NotificationClient] instead.
  *
  * All methods may throw [NotificationApiException] subtypes.
  */
@@ -53,4 +55,10 @@ interface NotificationApiClient {
 
     /** Sets [channels] for the device identified by [pushkey]; omitted channels are unchanged. */
     suspend fun setChannel(pushkey: String, channels: List<Channel>)
+
+    /** The historic notification with [notificationId] (`GET /history/{notification_id}`). */
+    suspend fun getHistoricNotification(notificationId: String): HistoricNotification
+
+    /** The notification history of the device identified by [pushkey] (`GET /history/device/{pushkey}`). */
+    suspend fun getHistoricNotifications(pushkey: String): List<HistoricNotification>
 }

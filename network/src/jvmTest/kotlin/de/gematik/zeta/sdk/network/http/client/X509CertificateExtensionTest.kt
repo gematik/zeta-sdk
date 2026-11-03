@@ -214,4 +214,43 @@ class X509CertificateExtensionTest {
         // Assert
         assertEquals("SHA256withECDSA", info.sigAlgName)
     }
+
+    @Test
+    fun toZetaCertInfo_commonName_isExtractedFromSubject() {
+        // Arrange
+        val cert = mockEcCert(256)
+        every { cert.subjectX500Principal } returns X500Principal("CN=zeta.example.com, O=gematik, C=DE")
+
+        // Act
+        val info = cert.toZetaCertInfo()
+
+        // Assert
+        assertEquals("zeta.example.com", info.commonName)
+    }
+
+    @Test
+    fun toZetaCertInfo_multipleCommonNames_returnsMostSpecific() {
+        // Arrange
+        val cert = mockEcCert(256)
+        every { cert.subjectX500Principal } returns X500Principal("CN=zeta.example.com, O=gematik, CN=Group")
+
+        // Act
+        val info = cert.toZetaCertInfo()
+
+        // Assert
+        assertEquals("zeta.example.com", info.commonName)
+    }
+
+    @Test
+    fun toZetaCertInfo_noCommonName_returnsNull() {
+        // Arrange
+        val cert = mockEcCert(256)
+        every { cert.subjectX500Principal } returns X500Principal("O=gematik, C=DE")
+
+        // Act
+        val info = cert.toZetaCertInfo()
+
+        // Assert
+        assertNull(info.commonName)
+    }
 }

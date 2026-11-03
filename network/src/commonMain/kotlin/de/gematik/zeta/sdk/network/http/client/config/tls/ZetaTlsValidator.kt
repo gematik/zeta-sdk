@@ -127,6 +127,13 @@ public fun String.toOpenSslName(): String {
         .replace("AES-256-", "AES256-")
 }
 
+public fun certificateMatchesHost(sanDnsNames: List<String>, commonName: String?, host: String): Boolean =
+    if (sanDnsNames.isNotEmpty()) {
+        sanDnsNames.any { sanMatchesHost(it, host) }
+    } else {
+        commonName != null && sanMatchesHost(commonName, host)
+    }
+
 public fun sanMatchesHost(san: String, host: String): Boolean {
     if (san.equals(host, ignoreCase = true)) return true
 

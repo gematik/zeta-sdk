@@ -33,7 +33,7 @@ import derEcdsaToJose
 internal class SecureEnclaveClientInstanceKey(
     private val store: SecureEnclaveKeyStore,
     private val tag: String = CLIENT_INSTANCE_KEY_TAG,
-) : ClientKeyPoPSigner {
+) {
 
     /**
      * The uncompressed 65-byte P-256 public key point of the Client Instance Key, creating the key if it
@@ -51,7 +51,7 @@ internal class SecureEnclaveClientInstanceKey(
      * Explicit Proof of Possession: DER ECDSA signature over SHA-256 of the client public key.
      * No JOSE conversion — returns the raw DER.
      */
-    override suspend fun signProofOfPossession(): ByteArray {
+    fun signProofOfPossession(): ByteArray {
         val point = resolvePublicKeyPoint() ?: error("Secure Enclave client key unavailable for tag=$tag")
         return store.sign(tag, sha256PublicKeyPoint(point))
     }

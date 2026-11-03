@@ -42,6 +42,7 @@ public data class ZetaCertInfo(
     val notBefore: Long,
     val notAfter: Long,
     val san: List<String> = emptyList(),
+    val commonName: String? = null,
 )
 
 public object ZetaCertificateValidator {
@@ -148,8 +149,8 @@ public object ZetaCertificateValidator {
     }
 
     private fun validateSan(cert: ZetaCertInfo, host: String): List<String> =
-        if (cert.san.none { sanMatchesHost(it, host) }) {
-            listOf("Certificate SAN does not match host '$host': ${cert.san}")
+        if (!certificateMatchesHost(cert.san, cert.commonName, host)) {
+            listOf("Certificate SAN does not match host '$host': SAN=${cert.san}, CN=${cert.commonName}")
         } else {
             emptyList()
         }

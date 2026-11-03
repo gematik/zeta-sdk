@@ -24,12 +24,17 @@
 
 package de.gematik.zeta.sdk.notifications
 
+import de.gematik.zeta.logging.Log
+import de.gematik.zeta.sdk.authentication.DpopProvider
 import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
+import de.gematik.zeta.sdk.network.http.client.zetaJson
 import de.gematik.zeta.sdk.notifications.model.Channel
 import de.gematik.zeta.sdk.notifications.model.ChannelsResponse
 import de.gematik.zeta.sdk.notifications.model.GetPushersResponse
+import de.gematik.zeta.sdk.notifications.model.HistoricNotification
+import de.gematik.zeta.sdk.notifications.model.HistoricNotificationsResponse
 import de.gematik.zeta.sdk.notifications.model.NotificationServiceErrorBody
 import de.gematik.zeta.sdk.notifications.model.Pusher
 import de.gematik.zeta.sdk.notifications.model.RateLimitErrorBody
@@ -43,18 +48,21 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLPathPart
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Typed client for the SDK-facing Notification Service API (`GET /pushers`, `POST /pushers/set`,
- * `GET /channels`, `GET`/`POST /channels/{pushkey}`), per
- * `gem-push-notifications-concept/docs_sources/fd_openapi.yaml` (A_29972).
+ * `GET /channels`, `GET`/`POST /channels/{pushkey}`, `GET /history/{notification_id}`,
+ * `GET /history/device/{pushkey}`), per
+ * `gem-push-notifications-concept/docs_sources/fd_openapi.yaml` (A_29972, A_29973).
  *
  * Built on the existing `zeta-sdk/network` [ZetaHttpClient] — no custom transport/TLS/retry logic
  * here. Every call authenticates with a DPoP-bound access token (RFC 9449, A_29975–A_29978):
  * the token travels as `Authorization: dpop <token>` and each request carries a fresh proof JWT
  * in the `dpop` header, bound to the request's method/URL and to the token via `ath`. The token
- * comes from [NotificationTokenProvider], the proof from [NotificationDpopProvider]; this client
+ * comes from [NotificationTokenProvider], the proof from [DpopProvider]; this client
  * implements no signing, Resource Indicator, or PAR logic of its own.
  *
  * [serviceBaseUrl] is the Notification Service's API base (guard host + PEP prefix, e.g.
@@ -70,7 +78,7 @@ class NotificationApiClientImpl(
     private val httpClient: ZetaHttpClient,
     private val serviceBaseUrl: String,
     private val tokenProvider: NotificationTokenProvider,
-    private val dpopProvider: NotificationDpopProvider,
+    private val dpopProvider: DpopProvider,
     private val rateLimitRetryPolicy: RateLimitRetryPolicy = RateLimitRetryPolicy(),
 ) : NotificationApiClient {
     override suspend fun getPushers(): List<Pusher> =
@@ -99,9 +107,54 @@ class NotificationApiClientImpl(
         authenticatedPost("/channels/${pushkey.encodeURLPathPart()}", setOf(NotificationScopes.CHANNEL_WRITE), SetChannelsRequest(channels)) {}
     }
 
+    /** `404`/`501` map to [NotificationHistoryNotFoundException] (A_29974). */
+    override suspend fun getHistoricNotification(notificationId: String): HistoricNotification =
+        authenticatedGet("/history/${notificationId.encodeURLPathPart()}", setOf(NotificationScopes.HISTORY_READ), ::historyNotFound) {
+            it.body<HistoricNotification>()
+        }
+
+    /**
+     * `404`/`501` map to [NotificationHistoryNotFoundException] (A_29974). A malformed item is skipped
+     * instead of failing the whole list; only the number of skipped items is logged, never their content.
+     */
+    override suspend fun getHistoricNotifications(pushkey: String): List<HistoricNotification> =
+        authenticatedGet("/history/device/${pushkey.encodeURLPathPart()}", setOf(NotificationScopes.HISTORY_READ), ::historyNotFound) {
+            decodeHistoricNotifications(it.body<HistoricNotificationsResponse>().messages)
+        }
+
+    private fun decodeHistoricNotifications(items: List<JsonElement>): List<HistoricNotification> {
+        val decoded = items.mapNotNull { item ->
+            runCatching { zetaJson.decodeFromJsonElement<HistoricNotification>(item) }.getOrNull()
+        }
+        val skipped = items.size - decoded.size
+        if (skipped > 0) {
+            Log.w { "Skipped $skipped malformed historic notification(s)" }
+        }
+        return decoded
+    }
+
+    /**
+     * The history endpoints answer `404`/`501` alike for an unknown ID or pushkey, another user's data
+     * and a deactivated history. The error body is optional: a proxy in front of the service may send none.
+     */
+    private suspend fun historyNotFound(response: ZetaHttpResponse): NotificationApiException? =
+        when (response.status) {
+            HttpStatusCode.NotFound, HttpStatusCode.NotImplemented -> {
+                val error = runCatching { response.body<NotificationServiceErrorBody>() }.getOrNull()
+                NotificationHistoryNotFoundException(response.raw, error?.errorCode, error?.errorDetail)
+            }
+
+            else -> null
+        }
+
+    /**
+     * [mapEndpointError] maps statuses that only this endpoint defines; returning `null` falls back
+     * to [UnexpectedNotificationApiException].
+     */
     private suspend fun <T> authenticatedGet(
         path: String,
         requiredScopes: Set<String>,
+        mapEndpointError: suspend (ZetaHttpResponse) -> NotificationApiException? = { null },
         onSuccess: suspend (ZetaHttpResponse) -> T,
     ): T = withUnauthorizedRetry(requiredScopes) {
         withRateLimitRetry {
@@ -112,7 +165,7 @@ class NotificationApiClientImpl(
                 header(HttpHeaders.Authorization, "${HttpAuthHeaders.Dpop} $accessToken")
                 header(HttpAuthHeaders.Dpop, dpopProof)
             }
-            handleResponse(response, onSuccess)
+            handleResponse(response, onSuccess, mapEndpointError)
         }
     }
 
@@ -174,7 +227,11 @@ class NotificationApiClientImpl(
      */
     private fun htu(path: String): String = serviceBaseUrl.trimEnd('/') + path
 
-    private suspend fun <T> handleResponse(response: ZetaHttpResponse, onSuccess: suspend (ZetaHttpResponse) -> T): T =
+    private suspend fun <T> handleResponse(
+        response: ZetaHttpResponse,
+        onSuccess: suspend (ZetaHttpResponse) -> T,
+        mapEndpointError: suspend (ZetaHttpResponse) -> NotificationApiException? = { null },
+    ): T =
         when (response.status) {
             HttpStatusCode.OK -> onSuccess(response)
 
@@ -192,6 +249,6 @@ class NotificationApiClientImpl(
 
             HttpStatusCode.Forbidden -> throw NotificationApiForbiddenException(response.raw)
 
-            else -> throw UnexpectedNotificationApiException(response.raw)
+            else -> throw mapEndpointError(response) ?: UnexpectedNotificationApiException(response.raw)
         }
 }

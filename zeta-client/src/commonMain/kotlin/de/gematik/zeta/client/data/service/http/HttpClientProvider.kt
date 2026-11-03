@@ -24,14 +24,12 @@
 
 package de.gematik.zeta.client.data.service.http
 
-import de.gematik.zeta.client.data.service.oidc.BrowserLauncher
-import de.gematik.zeta.client.data.service.oidc.SystemBrowserAuthenticator
+import de.gematik.zeta.client.config.platformProductId
 import de.gematik.zeta.client.data.service.smb.HardcodedTokenProvider
 import de.gematik.zeta.client.di.DIContainer.ASL_PROD
 import de.gematik.zeta.client.di.DIContainer.AUTH_MODE
 import de.gematik.zeta.client.di.DIContainer.CUSTOM_SMCB_ENABLED
 import de.gematik.zeta.client.di.DIContainer.DISABLE_SERVER_VALIDATION
-import de.gematik.zeta.client.di.DIContainer.OIDC_BASE_URI
 import de.gematik.zeta.client.di.DIContainer.OIDC_IDP_ALIAS
 import de.gematik.zeta.client.di.DIContainer.OIDC_IDP_ISS
 import de.gematik.zeta.client.di.DIContainer.REQUIRED_OID
@@ -39,8 +37,6 @@ import de.gematik.zeta.client.di.DIContainer.SMB_KEYSTORE_CREDENTIALS
 import de.gematik.zeta.client.di.DIContainer.STORAGE_AES_KEY
 import de.gematik.zeta.client.notification.NotificationTestAction
 import de.gematik.zeta.client.notification.notificationTestAction
-import de.gematik.zeta.platform.Platform
-import de.gematik.zeta.platform.platform
 import de.gematik.zeta.sdk.BuildConfig
 import de.gematik.zeta.sdk.SdkStatus
 import de.gematik.zeta.sdk.TpmConfig
@@ -49,11 +45,14 @@ import de.gematik.zeta.sdk.ZetaSdk.clearRegistration
 import de.gematik.zeta.sdk.ZetaSdk.forget
 import de.gematik.zeta.sdk.ZetaSdkClient
 import de.gematik.zeta.sdk.attestation.model.AttestationConfig
-import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.authentication.AuthMode
 import de.gematik.zeta.sdk.authentication.OidcTokenProvider
 import de.gematik.zeta.sdk.authentication.SubjectTokenProvider
+import de.gematik.zeta.sdk.authentication.identity.ChangeEmailResponse
+import de.gematik.zeta.sdk.authentication.identity.EmailChallenge
+import de.gematik.zeta.sdk.authentication.identity.models.RegisteredClient
+import de.gematik.zeta.sdk.authentication.oidc.AuthorizationLauncher
 import de.gematik.zeta.sdk.authentication.oidc.OidcConfig
 import de.gematik.zeta.sdk.authentication.oidc.OtpCallback
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
@@ -63,6 +62,7 @@ import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.notifications.NotificationConfig
 import de.gematik.zeta.sdk.notifications.model.Channel
+import de.gematik.zeta.sdk.notifications.model.HistoricNotification
 import de.gematik.zeta.sdk.storage.StorageConfig
 import io.ktor.client.plugins.logging.LogLevel
 import kotlin.io.encoding.Base64
@@ -79,6 +79,8 @@ public interface HttpClientProvider {
     public fun setAuthMode(mode: AuthMode)
     public suspend fun discover()
     public suspend fun register()
+    public suspend fun listClients(): List<RegisteredClient>
+    public suspend fun deleteClient(clientId: String)
     public suspend fun authenticate()
 
     /**
@@ -89,7 +91,11 @@ public interface HttpClientProvider {
     public fun isPusherConfigured(): Boolean
     public suspend fun subscribeAllChannels(): List<Channel>
     public suspend fun unsubscribeAllChannels(): String
-    public suspend fun changeEmail(newEmail: String): String
+    public suspend fun getHistory(): List<HistoricNotification>
+    public suspend fun getHistoricNotification(identifier: String): HistoricNotification
+    public suspend fun changeEmail(newEmail: String): ChangeEmailResponse
+    public suspend fun resendEmailChangeCode(): EmailChallenge
+    public suspend fun verifyEmailChange(code: String)
 }
 
 private const val demoClient = "ZETA-Test-Client"
@@ -141,6 +147,13 @@ public class HttpClientProviderImpl(
         sdkClient.register()
     }
 
+    override suspend fun listClients(): List<RegisteredClient> =
+        sdkClient.listClients().getOrThrow()
+
+    override suspend fun deleteClient(clientId: String) {
+        sdkClient.deleteClient(clientId).getOrThrow()
+    }
+
     override suspend fun discover() {
         sdkClient.discover()
     }
@@ -168,10 +181,20 @@ public class HttpClientProviderImpl(
 
     override suspend fun unsubscribeAllChannels(): String = runNotificationAction { it.unsubscribeAllChannels(sdkClient) }
 
-    override suspend fun changeEmail(newEmail: String): String {
+    override suspend fun getHistory(): List<HistoricNotification> = runNotificationAction { it.getHistory(sdkClient) }
+
+    override suspend fun getHistoricNotification(identifier: String): HistoricNotification =
+        runNotificationAction { it.getHistoricNotification(sdkClient, identifier) }
+
+    override suspend fun changeEmail(newEmail: String): ChangeEmailResponse {
         check(::sdkClient.isInitialized) { "Select an environment first" }
-        val response = sdkClient.changeEmail(newEmail).getOrThrow()
-        return "Email change ${response.status}"
+        return sdkClient.changeEmail(newEmail).getOrThrow()
+    }
+
+    override suspend fun resendEmailChangeCode(): EmailChallenge = sdkClient.resendEmailChangeCode().getOrThrow()
+
+    override suspend fun verifyEmailChange(code: String) {
+        sdkClient.verifyEmailChange(code).getOrThrow()
     }
 
     private suspend fun <T> runNotificationAction(block: suspend (NotificationTestAction) -> T): T {
@@ -196,7 +219,7 @@ public class HttpClientProviderImpl(
             resource = url,
             config = BuildConfig(
                 demoClient,
-                productVersion = "1.3.2",
+                productVersion = "2.0.1",
                 "demo-client",
                 StorageConfig.Default(STORAGE_AES_KEY),
                 object : TpmConfig {},
@@ -208,7 +231,7 @@ public class HttpClientProviderImpl(
                     AttestationConfig.software(),
                     requiredRoleOid = REQUIRED_OID ?: "",
                 ),
-                getPlatformProduct(),
+                platformProductId(demoClient),
                 httpClientBuilder,
                 notificationConfig = NotificationConfig(),
             ),
@@ -217,22 +240,16 @@ public class HttpClientProviderImpl(
         return sdkClient.httpClient()
     }
 
-    private fun getPlatformProduct(): PlatformProductId {
-        return when (val plat = platform()) {
-            is Platform.Jvm.Macos, Platform.Native.Macos, Platform.IOS -> PlatformProductId.AppleProductId("apple", "macos", listOf())
-            is Platform.Jvm.Linux -> PlatformProductId.LinuxProductId("linux", "", demoClient, "0.5.0")
-            is Platform.Jvm.Windows -> PlatformProductId.WindowsProductId("windows", "", demoClient)
-            else -> error("Unknown platform: $plat")
-        }
-    }
-
     private fun buildOidcTokenProvider(): OidcTokenProvider {
+        val redirects = oidcRedirectUris()
+
         return OidcTokenProvider(
             OidcConfig(
-                requestUri = OIDC_BASE_URI,
+                redirectUri = redirects.redirectUri,
+                oidcRedirectUri = redirects.oidcRedirectUri,
                 idpIss = OIDC_IDP_ISS,
                 idpAlias = OIDC_IDP_ALIAS,
-                authenticationCallback = SystemBrowserAuthenticator(BrowserLauncher(baseUri = OIDC_BASE_URI)),
+                authorizationLauncher = defaultAuthorizationLauncher(),
                 otpCallback = otpCallback,
             ),
         )
@@ -260,3 +277,11 @@ public class HttpClientProviderImpl(
             HardcodedTokenProvider()
     }
 }
+
+internal data class OidcRedirectUris(
+    val redirectUri: String,
+    val oidcRedirectUri: String,
+)
+
+internal expect fun oidcRedirectUris(): OidcRedirectUris
+internal expect fun defaultAuthorizationLauncher(): AuthorizationLauncher

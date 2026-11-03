@@ -284,6 +284,13 @@ void runHttpClientSample(ZetaSdk_HttpClient* zetaHttpClient, char* poppToken) {
     if (httpGetResponse->error == NULL) {
         std::cout << "Response status: " << httpGetResponse->status << "\n";
         std::cout << "Response body: " << httpGetResponse->body << "\n";
+
+        std::cout << "Response headers (" << httpGetResponse->headersCount << "):\n";
+        for (uint32_t i = 0; i < httpGetResponse->headersCount; i++) {
+            std::cout << "  " << httpGetResponse->headers[i].key
+                      << ": " << httpGetResponse->headers[i].value << "\n";
+        }
+
         std::cout.flush();
     } else {
         std::cout << "Error during httpGet: " << httpGetResponse->error << "\n";
@@ -349,7 +356,7 @@ int main() {
     }
 
     char* productId = "ZETA-Test-Client";
-    char* productVersion = "1.3.2";
+    char* productVersion = "2.0.1";
     char* clientName = "sdk-client";
     char* scopes[] = {"zero:audience"};
 

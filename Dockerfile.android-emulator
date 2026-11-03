@@ -1,0 +1,15 @@
+ARG BASE_IMAGE=budtmo/docker-android:emulator_14.0
+FROM ${BASE_IMAGE}
+
+USER root
+
+ENV ANDROID_AVD_HOME=/opt/android/avd
+
+RUN mkdir -p "${ANDROID_AVD_HOME}" \
+ && echo no | avdmanager create avd \
+      -n zeta_android_14 \
+      -k "system-images;android-34;google_apis;x86_64" \
+      -p "${ANDROID_AVD_HOME}/zeta_android_14.avd" \
+ && chmod -R a+rwX "${ANDROID_AVD_HOME}" \
+ && rm -rf /root/.android/cache /tmp/* \
+ && emulator -list-avds

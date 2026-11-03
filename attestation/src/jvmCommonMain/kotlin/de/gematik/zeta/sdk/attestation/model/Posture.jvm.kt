@@ -94,7 +94,7 @@ internal fun mapPostureType(plat: de.gematik.zeta.platform.Platform): PostureTyp
         is de.gematik.zeta.platform.Platform.Jvm.Macos -> PostureType.SOFTWARE
         is de.gematik.zeta.platform.Platform.Jvm.Linux -> PostureType.SOFTWARE
         is de.gematik.zeta.platform.Platform.Jvm.Windows -> PostureType.SOFTWARE
-        is de.gematik.zeta.platform.Platform.Android -> PostureType.ANDROID
+        is de.gematik.zeta.platform.Platform.Android -> PostureType.SOFTWARE
         else -> error("Unknown platform: $plat")
     }
 }

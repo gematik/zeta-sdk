@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.sdk.notifications
 
+import de.gematik.zeta.sdk.authentication.DpopProvider
 import de.gematik.zeta.sdk.authentication.HttpAuthHeaders
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.notifications.model.Pusher
@@ -45,7 +46,7 @@ import kotlin.test.assertEquals
  * absolute URL of the request it accompanies.
  */
 class NotificationApiClientImplDpopTest {
-    private class RecordingDpopProvider : NotificationDpopProvider {
+    private class RecordingDpopProvider : DpopProvider {
         data class ProofRequest(val htm: String, val htu: String, val accessToken: String)
 
         val proofRequests = mutableListOf<ProofRequest>()

@@ -27,6 +27,7 @@ package de.gematik.zeta.sdk.clientregistration
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationRequest
 import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationResponse
+import de.gematik.zeta.sdk.clientregistration.model.toJson
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
 import io.ktor.client.request.setBody
@@ -35,71 +36,74 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 
-/**
- * Dynamic Client Registration (RFC 7591) at the authorization server [A_27799].
- * Registration is orchestrated by the flow-controller's `ClientRegistrationHandler`;
- * consumers trigger it via `ZetaSdkClient.register()`.
- */
-fun interface ClientRegistrationApi {
-    /**
-     * Sends the registration request to `POST [endpoint]`. Returns the parsed response on
-     * `201 Created`; any other status is thrown as [ClientRegistrationException].
-     */
+interface ClientRegistrationApi {
     suspend fun register(endpoint: String, request: ClientRegistrationRequest): ClientRegistrationResponse
+
+    /** Fetches a fresh nonce for the proof of possession, unchanged as dcr-request.yaml `definitions/nonce` requires. */
+    suspend fun fetchNonce(endpoint: String): String
 }
 
 class ClientRegistrationApiImpl(
     private val zetaHttpClient: ZetaHttpClient,
 ) : ClientRegistrationApi {
 
-    override suspend fun register(endpoint: String, request: ClientRegistrationRequest): ClientRegistrationResponse {
-        Log.d { "Client registration will proceed" }
-
-        val response = zetaHttpClient.post(endpoint) {
-            contentType(ContentType.Application.Json)
-            setBody(request)
+    override suspend fun fetchNonce(endpoint: String): String {
+        val response = zetaHttpClient.get(endpoint)
+        if (response.status != HttpStatusCode.OK) {
+            Log.e { "Failed to get a nonce for client registration: ${response.status}" }
+            throw ClientRegistrationException(response.raw, "Failed to get nonce: ${response.status.description}")
         }
-
-        // [A_27799](06): Handle registration response
-        return handleResponse(request, response)
+        return response.bodyAsText().trim()
     }
 
-    private suspend fun handleResponse(request: ClientRegistrationRequest, response: ZetaHttpResponse): ClientRegistrationResponse {
+    override suspend fun register(endpoint: String, request: ClientRegistrationRequest): ClientRegistrationResponse {
+        Log.d { "Client registration will proceed" }
+        // Abb-ZETA-DCR-für-mobile-Clients (01) / (12) / (15) POST /register
+        val response = zetaHttpClient.post(endpoint) {
+            contentType(ContentType.Application.Json)
+            setBody(request.toJson())
+        }
+        return handleResponse(request.metadata.clientName, response)
+    }
+
+    private suspend fun handleResponse(clientName: String, response: ZetaHttpResponse): ClientRegistrationResponse {
         return when (response.status) {
+            // Abb-ZETA-DCR-für-mobile-Clients (14) / (21) 201 Created {client_id, status}
             HttpStatusCode.Created -> {
-                Log.d { "Registration for client ${request.clientName} succeeded" }
-                response.body()
+                response.body<ClientRegistrationResponse>().also {
+                    Log.d { "Registration for client $clientName succeeded: client_id=${it.clientId} status=${it.status}" }
+                }
             }
 
             HttpStatusCode.BadRequest -> {
-                Log.e { "Error while registering client: ${request.clientName}" }
+                Log.e { "Error while registering client: $clientName" }
                 throw ClientRegistrationException(response.raw, "Invalid client data")
             }
 
             HttpStatusCode.Unauthorized -> {
-                Log.e { "Authentication failed for client: ${request.clientName}" }
+                Log.e { "Authentication failed for client: $clientName" }
                 throw ClientRegistrationException(response.raw, "Client authentication failed")
             }
 
             HttpStatusCode.Forbidden -> {
-                Log.e { "Authentication failed for client: ${request.clientName}" }
-                throw ClientRegistrationException(response.raw, "Registration denied for client: ${request.clientName} ")
+                Log.e { "Registration denied for client: $clientName" }
+                throw ClientRegistrationException(response.raw, "Registration denied for client: $clientName ")
             }
 
             HttpStatusCode.Conflict -> {
-                Log.e { "Authentication failed for client: ${request.clientName}" }
-                throw ClientRegistrationException(response.raw, "Client is already registered: ${request.clientName} ")
+                Log.e { "Client is already registered: $clientName" }
+                throw ClientRegistrationException(response.raw, "Client is already registered: $clientName ")
             }
 
             else -> {
-                Log.e { "Unexpected registration error for client: ${request.clientName}. Error: ${response.status.description}" }
+                Log.e { "Unexpected registration error for client: $clientName. Error: ${response.status.description}" }
                 throw ClientRegistrationException(response.raw, "Unexpected registration error: ${response.status.description}")
             }
         }
     }
 }
 
-class ClientRegistrationException(
-    val response: HttpResponse,
+open class ClientRegistrationException(
+    val response: HttpResponse?,
     message: String,
 ) : Throwable(message)

@@ -31,6 +31,17 @@ dependencies {
     kover(project(":crypto"))
 }
 
+kover {
+    reports {
+        filters {
+            excludes {
+                // kotlinx.serialization DTOs: their branches are plugin-generated (defaults, missing fields)
+                annotatedBy("kotlinx.serialization.Serializable")
+            }
+        }
+    }
+}
+
 allprojects {
     tasks.cyclonedxDirectBom {
         includeConfigs = listOf("runtimeClasspath", "compileClasspath")
@@ -61,6 +72,7 @@ sonar {
                 "zeta-nativetestdriver/**",
             ).joinToString(",")
         )
+        property("sonar.cpd.exclusions", "zeta-client/**")
         property("sonar.coverage.jacoco.xmlReportPaths", "$rootDir/build/reports/kover/report.xml")
         //property("sonar.dependencyCheck.jsonReportPath","$rootDir/build/reports/dependency-check-report.json")
         //property("sonar.dependencyCheck.htmlReportPath","$rootDir/build/reports/dependency-check-report.html")

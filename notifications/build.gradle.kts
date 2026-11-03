@@ -14,6 +14,7 @@ setupBuildLogic {
 
         sourceSets.commonMain.dependencies {
             api(project(":network"))
+            api(project(":storage"))
             implementation(project(":authentication"))
             implementation(project(":tpm"))
             implementation(project(":crypto"))

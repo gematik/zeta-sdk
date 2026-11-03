@@ -35,11 +35,10 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.request
 import io.ktor.client.statement.HttpResponse
-import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLBuilder
-import io.ktor.http.headersOf
+import io.ktor.http.headers
 import io.ktor.http.takeFrom
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
@@ -460,51 +459,6 @@ class AslResponseEvaluatorTest {
         assertIs<FlowDirective.Perform>(directive)
     }
 
-    private suspend fun aslResponseWith(
-        status: HttpStatusCode,
-        body: ByteArray = ByteArray(0),
-        contentType: String = "application/cbor",
-        innerStatus: Int? = null,
-        innerHeaders: Map<String, String>? = null,
-    ): HttpResponse {
-        val engine = MockEngine {
-            respond(
-                content = ByteReadChannel(body),
-                status = status,
-                headers = headersOf(
-                    HttpHeaders.ContentType,
-                    contentType,
-                ),
-            )
-        }
-
-        val client = HttpClient(engine)
-
-        val response = client.request(
-            HttpRequestBuilder().apply {
-                url.takeFrom(
-                    URLBuilder("https://test"),
-                )
-            },
-        )
-
-        innerStatus?.let {
-            response.call.attributes.put(
-                InnerStatusKey,
-                it,
-            )
-        }
-
-        innerHeaders?.let {
-            response.call.attributes.put(
-                InnerHeadersKey,
-                it,
-            )
-        }
-
-        return response
-    }
-
     @Test
     fun evaluate_returnsProceed_on200_whenInnerStatusMissing() = runTest {
         // Arrange
@@ -620,6 +574,265 @@ class AslResponseEvaluatorTest {
         assertEquals(
             FlowNeed.Asl,
             perform.need,
+        )
+    }
+
+    @Test
+    fun evaluate_performsAsl_whenOuter403IsAslSessionExpiredFromPep() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState()
+        val response = aslResponseWith(
+            status = HttpStatusCode.Forbidden,
+            body = aslSessionExpiredBody,
+            contentType = "application/json",
+            outerHeaders = mapOf("zeta-error-origin" to "pep"),
+        )
+
+        // Act
+        val directive = evaluator.evaluate(response.call, dummyCtx(), retryState)
+
+        // Assert
+        val perform = assertIs<FlowDirective.Perform>(directive)
+        assertEquals(FlowNeed.Asl, perform.need)
+        assertTrue(retryState.hasAttemptedAslReestablish)
+    }
+
+    @Test
+    fun evaluate_performsAsl_whenOuter403AslSessionExpiredOriginIsUppercase() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val response = aslResponseWith(
+            status = HttpStatusCode.Forbidden,
+            body = aslSessionExpiredBody,
+            contentType = "application/json",
+            outerHeaders = mapOf("ZETA-ERROR-ORIGIN" to "PEP"),
+        )
+
+        // Act
+        val directive = evaluator.evaluate(response.call, dummyCtx(), FlowOrchestrator.RetryState())
+
+        // Assert
+        val perform = assertIs<FlowDirective.Perform>(directive)
+        assertEquals(FlowNeed.Asl, perform.need)
+    }
+
+    @Test
+    fun evaluate_aborts_whenOuter403AslSessionExpiredAndReestablishAlreadyAttempted() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState().apply {
+            hasAttemptedAslReestablish = true
+        }
+        val response = aslResponseWith(
+            status = HttpStatusCode.Forbidden,
+            body = aslSessionExpiredBody,
+            contentType = "application/json",
+            outerHeaders = mapOf("zeta-error-origin" to "pep"),
+        )
+
+        // Act
+        val directive = evaluator.evaluate(response.call, dummyCtx(), retryState)
+
+        // Assert
+        val abort = assertIs<FlowDirective.Abort>(directive)
+        val error = assertIs<ZetaClientError.AslError>(abort.error)
+        assertEquals(-1, error.errorCode)
+    }
+
+    @Test
+    fun evaluate_aborts_whenOuter403AslSessionExpiredDoesNotComeFromPep() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState()
+        val response = aslResponseWith(
+            status = HttpStatusCode.Forbidden,
+            body = aslSessionExpiredBody,
+            contentType = "application/json",
+        )
+
+        // Act
+        val directive = evaluator.evaluate(response.call, dummyCtx(), retryState)
+
+        // Assert
+        assertIs<FlowDirective.Abort>(directive)
+        assertFalse(retryState.hasAttemptedAslReestablish)
+    }
+
+    @Test
+    fun evaluate_aborts_whenOuter403FromPepIsNotAslSessionExpired() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState()
+        val response = aslResponseWith(
+            status = HttpStatusCode.Forbidden,
+            body = pepAccessTokenErrorBody,
+            contentType = "application/json",
+            outerHeaders = mapOf("zeta-error-origin" to "pep"),
+        )
+
+        // Act
+        val directive = evaluator.evaluate(response.call, dummyCtx(), retryState)
+
+        // Assert
+        assertIs<FlowDirective.Abort>(directive)
+        assertFalse(retryState.hasAttemptedAslReestablish)
+    }
+
+    @Test
+    fun evaluate_aborts_whenOuter403CborAslErrorComesWithPepOrigin() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState()
+        val response = aslResponseWith(
+            status = HttpStatusCode.Forbidden,
+            body = realAslErrorBody,
+            outerHeaders = mapOf("zeta-error-origin" to "pep"),
+        )
+
+        // Act
+        val directive = evaluator.evaluate(response.call, dummyCtx(), retryState)
+
+        // Assert
+        val abort = assertIs<FlowDirective.Abort>(directive)
+        val error = assertIs<ZetaClientError.AslError>(abort.error)
+        assertEquals(4, error.errorCode)
+        assertFalse(retryState.hasAttemptedAslReestablish)
+    }
+
+    @Test
+    fun evaluate_marksReestablishAttempted_on500() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState()
+        val response = aslResponseWith(status = HttpStatusCode.InternalServerError)
+
+        // Act
+        val directive = evaluator.evaluate(response.call, dummyCtx(), retryState)
+
+        // Assert
+        assertIs<FlowDirective.Perform>(directive)
+        assertTrue(retryState.hasAttemptedAslReestablish)
+    }
+
+    @Test
+    fun evaluate_aborts_on500WhenReestablishAlreadyAttempted() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState().apply {
+            hasAttemptedAslReestablish = true
+        }
+        val response = aslResponseWith(status = HttpStatusCode.InternalServerError)
+
+        // Act
+        val directive = evaluator.evaluate(response.call, dummyCtx(), retryState)
+
+        // Assert
+        val abort = assertIs<FlowDirective.Abort>(directive)
+        val error = assertIs<ZetaClientError.AslError>(abort.error)
+        assertEquals(-1, error.errorCode)
+    }
+
+    @Test
+    fun evaluate_performsAsl_on500WithCborMissingChannelBody() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState()
+        val response = aslResponseWith(
+            status = HttpStatusCode.InternalServerError,
+            body = missingChannelCborBody(),
+        )
+
+        // Act
+        val directive = evaluator.evaluate(response.call, dummyCtx(), retryState)
+
+        // Assert
+        val perform = assertIs<FlowDirective.Perform>(directive)
+        assertEquals(FlowNeed.Asl, perform.need)
+        assertTrue(retryState.hasAttemptedAslReestablish)
+    }
+
+    @Test
+    fun evaluate_reestablishesOnlyOnce_across500ThenAslSessionExpired() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState()
+        val first = aslResponseWith(status = HttpStatusCode.InternalServerError)
+        val second = aslResponseWith(
+            status = HttpStatusCode.Forbidden,
+            body = aslSessionExpiredBody,
+            contentType = "application/json",
+            outerHeaders = mapOf("zeta-error-origin" to "pep"),
+        )
+
+        // Act
+        val firstDirective = evaluator.evaluate(first.call, dummyCtx(), retryState)
+        val secondDirective = evaluator.evaluate(second.call, dummyCtx(), retryState)
+
+        // Assert
+        assertIs<FlowDirective.Perform>(firstDirective)
+        assertIs<FlowDirective.Abort>(secondDirective)
+    }
+
+    private suspend fun aslResponseWith(
+        status: HttpStatusCode,
+        body: ByteArray = ByteArray(0),
+        contentType: String = "application/cbor",
+        innerStatus: Int? = null,
+        innerHeaders: Map<String, String>? = null,
+        outerHeaders: Map<String, String> = emptyMap(),
+    ): HttpResponse {
+        val engine = MockEngine {
+            respond(
+                content = ByteReadChannel(body),
+                status = status,
+                headers = headers {
+                    append(HttpHeaders.ContentType, contentType)
+                    outerHeaders.forEach { (name, value) -> append(name, value) }
+                },
+            )
+        }
+
+        val client = HttpClient(engine)
+
+        val response = client.request(
+            HttpRequestBuilder().apply {
+                url.takeFrom(URLBuilder("https://test"))
+            },
+        )
+
+        innerStatus?.let { response.call.attributes.put(InnerStatusKey, it) }
+        innerHeaders?.let { response.call.attributes.put(InnerHeadersKey, it) }
+
+        return response
+    }
+
+    private val aslSessionExpiredBody = """
+        {
+          "error": "AslSessionExpired",
+          "error_description": "ASL session expired: 1223345 (@1790319593)",
+          "error_uri": "https://test/doc/errors/AslSessionExpired.html"
+        }
+    """.trimIndent().encodeToByteArray()
+
+    private val pepAccessTokenErrorBody = """
+        {
+          "error": "AccessToken",
+          "error_description": "access token error: expired",
+          "error_uri": "https://test/doc/errors/AccessToken.html"
+        }
+    """.trimIndent().encodeToByteArray()
+
+    private fun missingChannelCborBody(): ByteArray {
+        val message = "internal error: missing — /ASL/1223345".encodeToByteArray()
+        return byteArrayOf(
+            0xa3.toByte(),
+            0x6b, *"MessageType".encodeToByteArray(),
+            0x65, *"Error".encodeToByteArray(),
+            0x69, *"ErrorCode".encodeToByteArray(),
+            0x19, 0x01, 0xf4.toByte(),
+            0x6c, *"ErrorMessage".encodeToByteArray(),
+            0x78, message.size.toByte(), *message,
         )
     }
 }

@@ -26,8 +26,12 @@ package de.gematik.zeta.sdk
 
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
-import de.gematik.zeta.sdk.authentication.identity.ChangeEmailClient
+import de.gematik.zeta.sdk.authentication.identity.ChallengeType
 import de.gematik.zeta.sdk.authentication.identity.ChangeEmailResponse
+import de.gematik.zeta.sdk.authentication.identity.ClientManagement
+import de.gematik.zeta.sdk.authentication.identity.ClientManagementApiClient
+import de.gematik.zeta.sdk.authentication.identity.EmailChallenge
+import de.gematik.zeta.sdk.authentication.identity.models.RegisteredClient
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
 import de.gematik.zeta.sdk.clientregistration.ClientRegistrationStorageImpl
 import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationResponse
@@ -49,6 +53,9 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ZetaSdkClientImplCapabilityTest {
@@ -160,8 +167,7 @@ class ZetaSdkClientImplCapabilityTest {
 
     @Test
     fun changeEmail_returnsFailure_whenDiscoverFails() = runTest {
-        coEvery { configHandler.handle(FlowNeed.ConfigurationFiles, any()) } returns
-            CapabilityResult.Error("SERVICE_DISCOVERY_ERROR", "discovery error", httpResponse)
+        mockDiscover(CapabilityResult.Error("SERVICE_DISCOVERY_ERROR", "discovery error", httpResponse))
         val client = buildClient()
 
         val result = client.changeEmail("new@example.de")
@@ -171,46 +177,44 @@ class ZetaSdkClientImplCapabilityTest {
     }
 
     @Test
-    fun changeEmail_returnsFailure_whenRegisterFails() = runTest {
-        mockDiscoverAndRegister(
-            discover = CapabilityResult.Done,
-            register = CapabilityResult.Error("REGISTRATION_FAILED_ERROR", "registration error", httpResponse),
-        )
+    fun changeEmail_doesNotRegisterImplicitly() = runTest {
+        mockDiscover()
+        val api = FakeClientManagementApi()
+        val client = buildClient(api = api)
+
+        val result = client.changeEmail("new@example.de")
+
+        assertTrue(result.isFailure)
+        coVerify(exactly = 0) { clientRegistrationHandler.handle(any(), any()) }
+        assertTrue(api.calls.isEmpty())
+    }
+
+    @Test
+    fun changeEmail_returnsNotRegistered_whenAuthServerMetadataMissing() = runTest {
+        mockDiscover()
         val client = buildClient()
 
         val result = client.changeEmail("new@example.de")
 
         assertTrue(result.isFailure)
-        assertTrue("REGISTRATION_FAILED_ERROR" in result.exceptionOrNull()?.message.orEmpty())
+        assertEquals(ClientManagementOperations.NOT_REGISTERED, result.exceptionOrNull()?.message)
     }
 
     @Test
-    fun changeEmail_returnsFailure_whenAuthServerMetadataMissing() = runTest {
-        mockDiscoverAndRegister()
-        val client = buildClient()
-
-        val result = client.changeEmail("new@example.de")
-
-        assertTrue(result.isFailure)
-        assertTrue("Authorization Server metadata unavailable" in result.exceptionOrNull()?.message.orEmpty())
-    }
-
-    @Test
-    fun changeEmail_returnsFailure_whenClientIsNotRegistered() = runTest {
-        mockDiscoverAndRegister()
+    fun changeEmail_returnsNotRegistered_whenNoClientIdStored() = runTest {
+        mockDiscover()
         val storage = InMemoryStorage()
         val client = buildClient(storage)
         linkAuthServer(storage)
 
         val result = client.changeEmail("new@example.de")
 
-        assertTrue(result.isFailure)
-        assertTrue("Client not registered" in result.exceptionOrNull()?.message.orEmpty())
+        assertEquals(ClientManagementOperations.NOT_REGISTERED, result.exceptionOrNull()?.message)
     }
 
     @Test
-    fun changeEmail_returnsFailure_whenClientIdIsBlank() = runTest {
-        mockDiscoverAndRegister()
+    fun changeEmail_returnsNotRegistered_whenClientIdIsBlank() = runTest {
+        mockDiscover()
         val storage = InMemoryStorage()
         val client = buildClient(storage)
         linkAuthServer(storage)
@@ -218,49 +222,121 @@ class ZetaSdkClientImplCapabilityTest {
 
         val result = client.changeEmail("new@example.de")
 
-        assertTrue(result.isFailure)
-        assertTrue("Client not registered" in result.exceptionOrNull()?.message.orEmpty())
+        assertEquals(ClientManagementOperations.NOT_REGISTERED, result.exceptionOrNull()?.message)
     }
 
     @Test
-    fun changeEmail_usesIssuerWhenRegistrationEndpointIsBlank() = runTest {
-        mockDiscoverAndRegister()
+    fun changeEmail_delegates_whenRegisteredUnderIssuer() = runTest {
+        mockDiscover()
         val storage = InMemoryStorage()
-        val changeEmailClient = mockk<ChangeEmailClient>()
-        coEvery { changeEmailClient.changeEmail(any(), any(), any()) } returns ChangeEmailResponse("verified")
-        val client = buildClient(storage, changeEmailClient)
+        val api = FakeClientManagementApi(changeEmailResponse = ChangeEmailResponse.Verified)
+        val client = buildClient(storage, api)
         linkAuthServer(storage)
         saveClientId(storage, authServerIssuer, "client-123")
 
         val result = client.changeEmail("new@example.de")
 
-        assertTrue(result.isSuccess)
-        assertEquals("verified", result.getOrThrow().status)
-        coVerify { changeEmailClient.changeEmail(authServerIssuer, "client-123", "new@example.de") }
+        assertEquals(ChangeEmailResponse.Verified, result.getOrThrow())
+        assertEquals(listOf("changeEmail:new@example.de"), api.calls)
     }
 
     @Test
-    fun changeEmail_usesRegistrationEndpointWhenItIsNotBlank() = runTest {
-        mockDiscoverAndRegister()
+    fun changeEmail_delegates_whenRegisteredUnderRegistrationEndpoint() = runTest {
+        mockDiscover()
         val storage = InMemoryStorage()
         val registrationEndpoint = "https://auth.example.com/register"
-        val changeEmailClient = mockk<ChangeEmailClient>()
-        coEvery { changeEmailClient.changeEmail(any(), any(), any()) } returns ChangeEmailResponse("pending")
-        val client = buildClient(storage, changeEmailClient)
+        val api = FakeClientManagementApi(changeEmailResponse = ChangeEmailResponse.Pending(challengeType = ChallengeType.EMAIL_OTP, emailHint = "n***@example.de"))
+        val client = buildClient(storage, api)
         linkAuthServer(storage, authServer(registrationEndpoint = registrationEndpoint))
         saveClientId(storage, registrationEndpoint, "registered-client")
 
         val result = client.changeEmail("new@example.de")
 
-        assertTrue(result.isSuccess)
-        assertEquals("pending", result.getOrThrow().status)
-        coVerify { changeEmailClient.changeEmail(authServerIssuer, "registered-client", "new@example.de") }
+        assertIs<ChangeEmailResponse.Pending>(result.getOrThrow())
     }
 
     @Test
-    fun close_succeedsAfterChangeEmailClientWasCreated() = runTest {
-        val client = buildClient()
-        client.forceChangeEmailClientInit()
+    fun resendEmailChangeCode_delegates_whenRegistered() = runTest {
+        mockDiscover()
+        val storage = InMemoryStorage()
+        val api = FakeClientManagementApi()
+        val client = buildClient(storage, api)
+        linkAuthServer(storage)
+        saveClientId(storage, authServerIssuer, "client-123")
+
+        val result = client.resendEmailChangeCode()
+
+        assertEquals(EmailChallenge(challengeType = ChallengeType.EMAIL_OTP), result.getOrThrow())
+        assertEquals(listOf("resendEmailChangeCode"), api.calls)
+    }
+
+    @Test
+    fun verifyEmailChange_delegates_whenRegistered() = runTest {
+        mockDiscover()
+        val storage = InMemoryStorage()
+        val api = FakeClientManagementApi()
+        val client = buildClient(storage, api)
+        linkAuthServer(storage)
+        saveClientId(storage, authServerIssuer, "client-123")
+
+        client.verifyEmailChange("123456").getOrThrow()
+
+        assertEquals(listOf("verifyEmailChange:123456"), api.calls)
+    }
+
+    @Test
+    fun listClients_returnsNotRegistered_whenNoClientIdStored() = runTest {
+        mockDiscover()
+        val storage = InMemoryStorage()
+        val api = FakeClientManagementApi()
+        val client = buildClient(storage, api)
+        linkAuthServer(storage)
+
+        val result = client.listClients()
+
+        assertEquals(ClientManagementOperations.NOT_REGISTERED, result.exceptionOrNull()?.message)
+        assertTrue(api.calls.isEmpty())
+    }
+
+    @Test
+    fun listClients_returnsClients_whenRegistered() = runTest {
+        mockDiscover()
+        val storage = InMemoryStorage()
+        val clients = listOf(RegisteredClient(id = "client-123", name = "Pixel 9"), RegisteredClient(id = "other", name = "iPhone 15"))
+        val client = buildClient(storage, FakeClientManagementApi(clients = clients))
+        registerUnderIssuer(storage, "client-123")
+
+        assertEquals(clients, client.listClients().getOrThrow())
+    }
+
+    @Test
+    fun deleteClient_ownClientDeleted_clearsStoredRegistration() = runTest {
+        mockDiscover()
+        val storage = InMemoryStorage()
+        val client = buildClient(storage, FakeClientManagementApi())
+        registerUnderIssuer(storage, "client-123")
+
+        client.deleteClient("client-123").getOrThrow()
+
+        assertNull(storedClientId(storage))
+    }
+
+    @Test
+    fun deleteClient_otherClientDeleted_keepsStoredRegistration() = runTest {
+        mockDiscover()
+        val storage = InMemoryStorage()
+        val client = buildClient(storage, FakeClientManagementApi())
+        registerUnderIssuer(storage, "client-123")
+
+        client.deleteClient("other-client").getOrThrow()
+
+        assertEquals("client-123", storedClientId(storage))
+    }
+
+    @Test
+    fun close_succeedsAfterClientManagementWasCreated() = runTest {
+        val client = ZetaSdkClientImpl(resourceScope, buildTestConfig(), SystemZetaClock)
+        assertNotNull(client.clientManagement)
 
         val result = client.close()
 
@@ -276,12 +352,8 @@ class ZetaSdkClientImplCapabilityTest {
     private val authHandler: EnsureAccessTokenHandler = mockk()
     private val httpResponse: HttpResponse = mockk()
 
-    private fun mockDiscoverAndRegister(
-        discover: CapabilityResult = CapabilityResult.Done,
-        register: CapabilityResult = CapabilityResult.Done,
-    ) {
-        coEvery { configHandler.handle(FlowNeed.ConfigurationFiles, any()) } returns discover
-        coEvery { clientRegistrationHandler.handle(FlowNeed.ClientRegistration, any()) } returns register
+    private fun mockDiscover(result: CapabilityResult = CapabilityResult.Done) {
+        coEvery { configHandler.handle(FlowNeed.ConfigurationFiles, any()) } returns result
     }
 
     private fun buildTestConfig(storage: InMemoryStorage = InMemoryStorage()): BuildConfig {
@@ -311,25 +383,23 @@ class ZetaSdkClientImplCapabilityTest {
         field.set(this, lazyOf(value))
     }
 
-    private fun ZetaSdkClientImpl.forceChangeEmailClientInit() {
-        val field = ZetaSdkClientImpl::class.java.getDeclaredField("changeEmailClient\$delegate")
-        field.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        (field.get(this) as Lazy<ChangeEmailClient>).value
-    }
-
     private fun buildClient(
         storage: InMemoryStorage = InMemoryStorage(),
-        changeEmailClient: ChangeEmailClient? = null,
+        api: ClientManagementApiClient? = null,
     ): ZetaSdkClientImpl {
         val client = ZetaSdkClientImpl(resourceScope, buildTestConfig(storage), SystemZetaClock)
         client.injectLazyDelegate("configHandler", configHandler)
         client.injectLazyDelegate("clientRegistrationHandler", clientRegistrationHandler)
         client.injectLazyDelegate("authHandler", authHandler)
-        if (changeEmailClient != null) {
-            client.injectLazyDelegate("changeEmailClient", changeEmailClient)
+        if (api != null) {
+            client.injectLazyDelegate("clientManagement", ClientManagement(api))
         }
         return client
+    }
+
+    private suspend fun registerUnderIssuer(storage: InMemoryStorage, clientId: String) {
+        linkAuthServer(storage)
+        saveClientId(storage, authServerIssuer, clientId)
     }
 
     private suspend fun linkAuthServer(
@@ -345,6 +415,9 @@ class ZetaSdkClientImplCapabilityTest {
             registrationResponse = ClientRegistrationResponse(clientId = clientId),
         )
     }
+
+    private suspend fun storedClientId(storage: InMemoryStorage): String? =
+        ClientRegistrationStorageImpl(storage, resourceScope).getClientId(authServerIssuer)
 
     private fun authServer(registrationEndpoint: String = ""): AuthorizationServerMetadata =
         AuthorizationServerMetadata(
@@ -365,4 +438,34 @@ class ZetaSdkClientImplCapabilityTest {
             codeChallengeMethodsSupported = listOf(""),
             registrationEndpoint = registrationEndpoint,
         )
+
+    private class FakeClientManagementApi(
+        private val clients: List<RegisteredClient> = emptyList(),
+        private val changeEmailResponse: ChangeEmailResponse = ChangeEmailResponse.Verified,
+    ) : ClientManagementApiClient {
+        val calls = mutableListOf<String>()
+
+        override suspend fun listClients(): List<RegisteredClient> {
+            calls += "listClients"
+            return clients
+        }
+
+        override suspend fun deleteClient(id: String) {
+            calls += "deleteClient:$id"
+        }
+
+        override suspend fun changeEmail(newEmail: String): ChangeEmailResponse {
+            calls += "changeEmail:$newEmail"
+            return changeEmailResponse
+        }
+
+        override suspend fun resendEmailChangeCode(): EmailChallenge {
+            calls += "resendEmailChangeCode"
+            return EmailChallenge(challengeType = ChallengeType.EMAIL_OTP)
+        }
+
+        override suspend fun verifyEmailChange(code: String) {
+            calls += "verifyEmailChange:$code"
+        }
+    }
 }

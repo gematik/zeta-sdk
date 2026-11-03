@@ -26,15 +26,19 @@ package de.gematik.zeta.client.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -66,6 +70,9 @@ import de.gematik.zeta.client.ui.settings.SettingsComponent
 import de.gematik.zeta.client.ui.utils.buildViewModel
 import de.gematik.zeta.sdk.notifications.model.Channel
 import kotlinx.coroutines.launch
+
+/** Share of the screen the action panel may take before it scrolls; the rest stays for the lists above it. */
+private const val ACTIONS_MAX_HEIGHT_FRACTION = 0.65f
 
 @OptIn(ExperimentalReactiveStateApi::class)
 @Composable
@@ -118,28 +125,38 @@ private fun ZetaClientContent(
                     Text("\u2630")
                 }
             }
-            Box(
-                modifier = Modifier.weight(1f),
-            ) {
+            BoxWithConstraints(modifier = Modifier.weight(1f)) {
+                // The action panel grows with every section and result. Capped and scrollable, it
+                // leaves the prescriptions and subscribed channels above it room even on short
+                // screens (iPhone), where they would otherwise be squeezed to zero height.
+                val actionsMaxHeight = maxHeight * ACTIONS_MAX_HEIGHT_FRACTION
                 Column(modifier = Modifier.fillMaxSize()) {
-                    PrescriptionListComponent(
-                        modifier = if (subscribedChannels.isEmpty()) {
-                            Modifier.weight(1f).fillMaxWidth()
-                        } else {
-                            Modifier.fillMaxWidth()
-                        },
-                        showList = subscribedChannels.isEmpty(),
-                    )
-                    if (subscribedChannels.isNotEmpty()) {
-                        SubscribedChannelsList(
-                            channels = subscribedChannels,
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                        )
+                    Box(
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            PrescriptionListComponent(
+                                modifier = if (subscribedChannels.isEmpty()) {
+                                    Modifier.weight(1f).fillMaxWidth()
+                                } else {
+                                    Modifier.fillMaxWidth()
+                                },
+                                showList = subscribedChannels.isEmpty(),
+                            )
+                            if (subscribedChannels.isNotEmpty()) {
+                                SubscribedChannelsList(
+                                    channels = subscribedChannels,
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                    Box(
+                        modifier = Modifier.heightIn(max = actionsMaxHeight).verticalScroll(rememberScrollState()),
+                    ) {
+                        HelloZetaComponent(helloViewModel)
                     }
                 }
-            }
-            Box {
-                HelloZetaComponent(helloViewModel)
             }
         }
     }

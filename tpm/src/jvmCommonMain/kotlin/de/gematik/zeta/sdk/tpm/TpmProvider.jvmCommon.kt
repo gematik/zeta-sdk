@@ -35,7 +35,7 @@ import java.util.Base64
 import kotlin.time.TimeSource
 import kotlin.time.measureTimedValue
 
-private class SoftwareCryptoProvider(
+internal class SoftwareCryptoProvider(
     storage: TpmStorage,
     private val keyPairGenerator: EcdhP256Kem,
     private val signer: EcdhSigner,
@@ -169,15 +169,5 @@ private class SoftwareCryptoProvider(
     }
 }
 
-@Suppress("FunctionOnlyReturningConstant")
-internal fun hardwareBackedAvailable(): Boolean = false
-
-actual fun platformDefaultProvider(storage: TpmStorage, appAttestSupported: Boolean): TpmProvider {
-    if (hardwareBackedAvailable()) {
-        Log.d { "Using hardware crypto provider (JVM)" }
-        TODO("hardware backed provider")
-    } else {
-        Log.d { "Using software crypto provider (JVM)" }
-        return SoftwareCryptoProvider(storage, EcdhP256Kem(), EcdhSigner(), X509PemReader())
-    }
-}
+internal fun jvmSoftwareCryptoProvider(storage: TpmStorage): TpmProvider =
+    SoftwareCryptoProvider(storage, EcdhP256Kem(), EcdhSigner(), X509PemReader())
