@@ -165,60 +165,6 @@ class ZetaSdkClientTests {
     }
 
     @Test
-    fun regInfo_createsWithClientName_whenProvided() {
-        // Arrange & Act
-        val regInfo = RegInfo(clientName = "TestClient")
-
-        // Assert
-        assertEquals("TestClient", regInfo.clientName)
-    }
-
-    @Test
-    fun regInfo_equality_sameClientName() {
-        // Arrange
-        val info1 = RegInfo(clientName = "Client1")
-        val info2 = RegInfo(clientName = "Client1")
-
-        // Act & Assert
-        assertEquals(info1, info2)
-    }
-
-    @Test
-    fun regInfo_inequality_differentClientName() {
-        // Arrange
-        val info1 = RegInfo(clientName = "Client1")
-        val info2 = RegInfo(clientName = "Client2")
-
-        // Act & Assert
-        assertNotEquals(info1, info2)
-    }
-
-    @Test
-    fun regInfo_copy_createsNewInstance() {
-        // Arrange
-        val original = RegInfo(clientName = "Original")
-
-        // Act
-        val copy = original.copy(clientName = "Copy")
-
-        // Assert
-        assertEquals("Original", original.clientName)
-        assertEquals("Copy", copy.clientName)
-    }
-
-    @Test
-    fun regInfo_component1_destructuring() {
-        // Arrange
-        val regInfo = RegInfo(clientName = "TestClient")
-
-        // Act
-        val (clientName) = regInfo
-
-        // Assert
-        assertEquals("TestClient", clientName)
-    }
-
-    @Test
     fun buildConfig_createsWithAllParameters_whenProvided() {
         // Arrange
         val storageConfig = StorageConfig.Default(aesB64Key = aesTestKey)
@@ -244,7 +190,6 @@ class ZetaSdkClientTests {
         assertEquals(authConfig, buildConfig.authConfig)
         assertEquals(platformProductId, buildConfig.platformProductId)
         assertNull(buildConfig.httpClientBuilder)
-        assertNull(buildConfig.registrationCallback)
     }
 
     @Test
@@ -255,7 +200,6 @@ class ZetaSdkClientTests {
         val authConfig = AuthConfig(listOf("scopes"), 300, true, SmbTokenProvider(SmbTokenProvider.Credentials("", "", "")), requiredRoleOid = requiredRoleOid)
         val platformProductId = PlatformProductId.LinuxProductId("", "", "", "")
         val httpClientBuilder = ZetaHttpClientBuilder()
-        val regCallback = RegistrationCallback { RegInfo("test") }
 
         // Act
         val buildConfig = BuildConfig(
@@ -267,12 +211,10 @@ class ZetaSdkClientTests {
             authConfig = authConfig,
             platformProductId = platformProductId,
             httpClientBuilder = httpClientBuilder,
-            registrationCallback = regCallback,
         )
 
         // Assert
         assertEquals(httpClientBuilder, buildConfig.httpClientBuilder)
-        assertEquals(regCallback, buildConfig.registrationCallback)
     }
 
     @Test
@@ -330,38 +272,6 @@ class ZetaSdkClientTests {
 
         // Act & Assert
         assertEquals(config1, config2)
-    }
-
-    @Test
-    fun registrationCallback_invokesLambda_whenCalled() = runTest {
-        // Arrange
-        var invoked = false
-        val callback = RegistrationCallback {
-            invoked = true
-            RegInfo("TestClient")
-        }
-
-        // Act
-        val result = callback.registrationCb()
-
-        // Assert
-        assertTrue(invoked)
-        assertEquals("TestClient", result.clientName)
-    }
-
-    @Test
-    fun registrationCallback_returnsCorrectValue_whenInvoked() = runTest {
-        // Arrange
-        val expectedClientName = "ExpectedClient"
-        val callback = RegistrationCallback {
-            RegInfo(expectedClientName)
-        }
-
-        // Act
-        val result = callback.registrationCb()
-
-        // Assert
-        assertEquals(expectedClientName, result.clientName)
     }
 
     @Test
@@ -522,50 +432,6 @@ class ZetaSdkClientTests {
     }
 
     @Test
-    fun regInfo_toString_containsClientName() {
-        // Arrange
-        val regInfo = RegInfo(clientName = "MyClient")
-
-        // Act
-        val result = regInfo.toString()
-
-        // Assert
-        assertTrue(result.contains("MyClient"))
-        assertTrue(result.contains("RegInfo"))
-    }
-
-    @Test
-    fun regInfo_hashCode_sameForEqualObjects() {
-        // Arrange
-        val info1 = RegInfo(clientName = "SameName")
-        val info2 = RegInfo(clientName = "SameName")
-
-        // Act & Assert
-        assertEquals(info1.hashCode(), info2.hashCode())
-    }
-
-    @Test
-    fun regInfo_withEmptyClientName_createsValidObject() {
-        // Arrange & Act
-        val regInfo = RegInfo(clientName = "")
-
-        // Assert
-        assertEquals("", regInfo.clientName)
-    }
-
-    @Test
-    fun regInfo_withLongClientName_createsValidObject() {
-        // Arrange
-        val longName = "A".repeat(1000)
-
-        // Act
-        val regInfo = RegInfo(clientName = longName)
-
-        // Assert
-        assertEquals(longName, regInfo.clientName)
-    }
-
-    @Test
     fun buildConfig_toString_containsMainFields() {
         // Arrange
         val config = createTestBuildConfig()
@@ -583,7 +449,6 @@ class ZetaSdkClientTests {
     fun buildConfig_withAllOptionalParameters_createsValidObject() {
         // Arrange
         val httpClientBuilder = ZetaHttpClientBuilder()
-        val regCallback = RegistrationCallback { RegInfo("test") }
 
         // Act
         val config = BuildConfig(
@@ -595,12 +460,10 @@ class ZetaSdkClientTests {
             authConfig = createTestAuthConfig(),
             platformProductId = createTestPlatformProductId(),
             httpClientBuilder = httpClientBuilder,
-            registrationCallback = regCallback,
         )
 
         // Assert
         assertNotNull(config.httpClientBuilder)
-        assertNotNull(config.registrationCallback)
     }
 
     @Test
@@ -666,41 +529,6 @@ class ZetaSdkClientTests {
         assertTrue(linuxConfig.platformProductId is PlatformProductId.LinuxProductId)
         assertTrue(appleConfig.platformProductId is PlatformProductId.AppleProductId)
         assertTrue(windowsConfig.platformProductId is PlatformProductId.WindowsProductId)
-    }
-
-    @Test
-    fun registrationCallback_canBeCalledMultipleTimes() = runTest {
-        // Arrange
-        var callCount = 0
-        val callback = RegistrationCallback {
-            callCount++
-            RegInfo("Client-$callCount")
-        }
-
-        // Act
-        val result1 = callback.registrationCb()
-        val result2 = callback.registrationCb()
-
-        // Assert
-        assertEquals(2, callCount)
-        assertEquals("Client-1", result1.clientName)
-        assertEquals("Client-2", result2.clientName)
-    }
-
-    @Test
-    fun registrationCallback_canAccessExternalState() = runTest {
-        // Arrange
-        var externalState = "Initial"
-        val callback = RegistrationCallback {
-            externalState = "Modified"
-            RegInfo("TestClient")
-        }
-
-        // Act
-        callback.registrationCb()
-
-        // Assert
-        assertEquals("Modified", externalState)
     }
 
     @Test

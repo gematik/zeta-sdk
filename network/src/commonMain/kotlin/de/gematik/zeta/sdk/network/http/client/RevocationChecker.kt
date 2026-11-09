@@ -373,10 +373,15 @@ public class RevocationChecker(
         nextUpdate: Long?,
         thisUpdate: Long,
         nowSeconds: Long,
-    ): Boolean = if (nextUpdate != null) {
-        nowSeconds < nextUpdate
-    } else {
-        nowSeconds < thisUpdate + MAX_CACHE_AGE_NO_NEXT_UPDATE_SECONDS
+    ): Boolean {
+        if (thisUpdate > nowSeconds) {
+            return false
+        }
+        return if (nextUpdate != null) {
+            nowSeconds < nextUpdate
+        } else {
+            nowSeconds < thisUpdate + MAX_CACHE_AGE_NO_NEXT_UPDATE_SECONDS
+        }
     }
 
     private fun canReuseCachedEntry(

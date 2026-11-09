@@ -1,7 +1,7 @@
 
 # RELEASE NOTES
 
-## Version: v2.0.1
+## Version: v2.0.4
 
 This version implements the ZETA protocol for the ZETA client SDK.
 
@@ -57,9 +57,80 @@ runtime environments.
 
 ### Known issues:
 
-- TLS validation is not fully implemented on iOS
 - The SDK does not fully handle paths parts in the AS well-known URL. The AS well-known is defined
   as on the root path, so this is WONTFIX.
+
+### Changes in 2.0.4 (from 2.0.3)
+
+#### Breaking changes
+
+- N/A
+
+#### New
+
+- N/A
+
+#### Bug Fixes
+
+- Guards that publish no usable `api_versions_supported` (missing,
+empty or all versions retired, e.g. ZETA Guard 1.2) are now treated as 1.x. In 2.0.3 they got the 2.x behavior,
+  so software registration sent fields introduced in 2.0 and Apple clients without App Attest
+  failed with "Invalid combination of »SOFTWARE« and »APPLE«".
+
+### Behavioural Changes
+
+- Without a usable `api_versions_supported`, the SDK now applies the 1.x adaptations
+  instead of the standard behavior. 1.3.x guards (`[1.0.0]`) and 2.x guards
+  (`[1.0.0, 2.0.0]`) are unaffected.
+
+### Changes in 2.0.3 (from 2.0.2)
+
+#### Breaking changes
+
+- Removed the unused `registrationCallback` from `BuildConfig`. Integrations that set it
+  must remove that argument.
+
+#### New
+
+- Compatibility with ZETA Guard 1.3.x and 2.0.x: the SDK reads `api_versions_supported`
+  from the authorization server's well-known and adapts to 1.3.x guards: software client
+  registration without the fields introduced in 2.0, and no Apple `platform_product_id` in
+  software postures. 2.0.x guards, and guards that publish no API versions, keep the
+  standard behavior.
+- iOS: TLS validation: adds a pre-flight check to obtain the OCSP stapled responses.
+
+#### Bug Fixes
+
+- Fixed OCSP and CRL time checks on native platforms.
+- GS_A_4367 - Use secure random for the code verifier and the code challenge
+
+### Behavioural Changes
+
+- N/A
+
+
+## Changes in 2.0.2 (from 2.0.1)
+
+Hotfix release based on 2.0.1.
+
+### Bug Fixes
+
+- Authorization server configuration is no longer lost when the well-known
+  documents are served with `Cache-Control: max-age=0`. The SDK now revalidates
+  the cached configuration instead of discarding it. The workaround of setting
+  `max-age > 0` on the server side is no longer required.
+
+### Breaking Changes
+
+- N/A
+
+### New Features
+
+- N/A
+
+### Behavioural Changes
+
+- N/A
 
 ## Changes in 2.0.1 (from 2.0.0)
 

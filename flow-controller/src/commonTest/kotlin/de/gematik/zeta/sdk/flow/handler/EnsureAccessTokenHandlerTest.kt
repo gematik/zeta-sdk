@@ -63,6 +63,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -464,7 +465,7 @@ private class FakeForwardingClient : de.gematik.zeta.sdk.flow.ForwardingClient {
 
 class FakeConfigurationStorage : ConfigurationStorage {
     private val notInScope: String = "not in scope"
-    override suspend fun getProtectedResource(name: String): ProtectedResourceMetadata =
+    override suspend fun getProtectedResource(name: String, allowStale: Boolean): ProtectedResourceMetadata =
         getDummyProtectedResourceObject()
 
     override suspend fun getProtectedResourceETag(name: String): String? =
@@ -479,7 +480,7 @@ class FakeConfigurationStorage : ConfigurationStorage {
     override suspend fun getAuthServers(): List<AuthorizationServerMetadata> =
         error(notInScope)
 
-    override suspend fun getAuthServer(): AuthorizationServerMetadata =
+    override suspend fun getAuthServer(allowStale: Boolean): AuthorizationServerMetadata =
         AuthorizationServerMetadata(
             issuer = "https://auth.example.com",
             authorizationEndpoint = "",
@@ -557,6 +558,7 @@ private class FakeClientRegistrationHandler(private val result: CapabilityResult
         override suspend fun register(
             endpoint: String,
             request: ClientRegistrationRequest,
+            body: JsonObject,
         ): ClientRegistrationResponse = ClientRegistrationResponse(clientId = "fake-id")
 
         override suspend fun fetchNonce(endpoint: String): String = "fake-nonce"

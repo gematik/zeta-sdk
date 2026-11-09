@@ -28,6 +28,10 @@ import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.crypto.openssl.ACCESS_DESCRIPTION
 import de.gematik.zeta.sdk.crypto.openssl.ASN1_GENERALIZEDTIME
 import de.gematik.zeta.sdk.crypto.openssl.ASN1_STRING_get0_data
+import de.gematik.zeta.sdk.crypto.openssl.ASN1_TIME
+import de.gematik.zeta.sdk.crypto.openssl.ASN1_TIME_diff
+import de.gematik.zeta.sdk.crypto.openssl.ASN1_TIME_free
+import de.gematik.zeta.sdk.crypto.openssl.ASN1_TIME_set
 import de.gematik.zeta.sdk.crypto.openssl.DIST_POINT
 import de.gematik.zeta.sdk.crypto.openssl.EVP_PKEY_free
 import de.gematik.zeta.sdk.crypto.openssl.GENERAL_NAME
@@ -47,10 +51,8 @@ import de.gematik.zeta.sdk.crypto.openssl.OCSP_cert_to_id
 import de.gematik.zeta.sdk.crypto.openssl.OCSP_request_add0_id
 import de.gematik.zeta.sdk.crypto.openssl.OCSP_request_add1_nonce
 import de.gematik.zeta.sdk.crypto.openssl.OCSP_resp_find_status
-import de.gematik.zeta.sdk.crypto.openssl.OCSP_resp_get0
 import de.gematik.zeta.sdk.crypto.openssl.OCSP_response_get1_basic
 import de.gematik.zeta.sdk.crypto.openssl.OCSP_response_status
-import de.gematik.zeta.sdk.crypto.openssl.OCSP_single_get0_status
 import de.gematik.zeta.sdk.crypto.openssl.OPENSSL_STACK
 import de.gematik.zeta.sdk.crypto.openssl.OPENSSL_sk_free
 import de.gematik.zeta.sdk.crypto.openssl.OPENSSL_sk_new_null
@@ -92,9 +94,7 @@ import kotlinx.cinterop.alloc
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.allocPointerTo
 import kotlinx.cinterop.convert
-import kotlinx.cinterop.free
 import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.nativeHeap
 import kotlinx.cinterop.pointed
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
@@ -102,8 +102,6 @@ import kotlinx.cinterop.refTo
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.value
-import platform.posix.mktime
-import platform.posix.tm
 import kotlin.time.Instant
 
 @OptIn(ExperimentalForeignApi::class, UnsafeNumber::class)
@@ -141,19 +139,10 @@ actual class RevocationHandlerImpl : RevocationHandler {
                         error("OCSP responder returned UNKNOWN status for this cert")
                 }
 
-                val thisUpd = thisUpdPtr.value
-                    ?: error("Failed to get thisUpdate")
-                val thisUpdStr = ASN1_STRING_get0_data(thisUpd.reinterpret())
-                    ?.reinterpret<ByteVar>()?.toKString()
-                    ?: error("Failed to get time string")
-
-                val nextUpdSeconds = nextUpdPtr.value
-                    ?.let { ASN1_STRING_get0_data(it.reinterpret())?.reinterpret<ByteVar>()?.toKString() }
-                    ?.let { parseGeneralizedTime(it) }
-
+                val thisUpd = thisUpdPtr.value ?: error("Failed to get thisUpdate")
                 OcspValidity(
-                    thisUpdateEpochSeconds = parseGeneralizedTime(thisUpdStr),
-                    nextUpdateEpochSeconds = nextUpdSeconds,
+                    thisUpdateEpochSeconds = asn1TimeToEpochSeconds(thisUpd.reinterpret()),
+                    nextUpdateEpochSeconds = nextUpdPtr.value?.let { asn1TimeToEpochSeconds(it.reinterpret()) },
                 )
             } finally {
                 OCSP_CERTID_free(certId)
@@ -317,20 +306,20 @@ actual class RevocationHandlerImpl : RevocationHandler {
         null
     }
 
-    private fun parseGeneralizedTime(timeStr: String): Long {
-        val year = if (timeStr.length >= 14) timeStr.substring(0, 4).toInt() else 2000 + timeStr.substring(0, 2).toInt()
-        val offset = if (timeStr.length >= 14) 4 else 2
-        val tm = nativeHeap.alloc<tm>().apply {
-            tm_year = year - 1900
-            tm_mon = timeStr.substring(offset, offset + 2).toInt() - 1
-            tm_mday = timeStr.substring(offset + 2, offset + 4).toInt()
-            tm_hour = timeStr.substring(offset + 4, offset + 6).toInt()
-            tm_min = timeStr.substring(offset + 6, offset + 8).toInt()
-            tm_sec = timeStr.substring(offset + 8, offset + 10).toInt()
+    /**
+     * Converts an ASN.1 UTCTime/GeneralizedTime to epoch seconds (UTC).
+     * Done by OpenSSL, so it does not depend on the local time zone or DST.
+     */
+    internal fun asn1TimeToEpochSeconds(time: CPointer<ASN1_TIME>): Long = memScoped {
+        val epoch = ASN1_TIME_set(null, 0.convert()) ?: error("Failed to create epoch ASN1_TIME")
+        try {
+            val days = alloc<IntVar>()
+            val secs = alloc<IntVar>()
+            check(ASN1_TIME_diff(days.ptr, secs.ptr, epoch, time) == 1) { "Invalid ASN.1 time" }
+            days.value.toLong() * 86_400L + secs.value
+        } finally {
+            ASN1_TIME_free(epoch)
         }
-        val epoch = mktime(tm.ptr)
-        nativeHeap.free(tm)
-        return epoch
     }
 
     actual override fun extractCrlUrl(certDer: ByteArray): String? = memScoped {
@@ -428,19 +417,11 @@ actual class RevocationHandlerImpl : RevocationHandler {
             ?: error(failedToParseCrlErrorMessage)
 
         try {
-            val thisUpdate = X509_CRL_get0_lastUpdate(crl)
-                ?: error("CRL has no thisUpdate")
-            val thisUpdateStr = ASN1_STRING_get0_data(thisUpdate.reinterpret())
-                ?.reinterpret<ByteVar>()?.toKString()
-                ?: error("Failed to read CRL thisUpdate")
-
-            val nextUpdateSeconds = X509_CRL_get0_nextUpdate(crl)
-                ?.let { ASN1_STRING_get0_data(it.reinterpret())?.reinterpret<ByteVar>()?.toKString() }
-                ?.let { parseGeneralizedTime(it) }
+            val thisUpdate = X509_CRL_get0_lastUpdate(crl) ?: error("CRL has no thisUpdate")
 
             CrlValidity(
-                thisUpdateEpochSeconds = parseGeneralizedTime(thisUpdateStr),
-                nextUpdateEpochSeconds = nextUpdateSeconds,
+                thisUpdateEpochSeconds = asn1TimeToEpochSeconds(thisUpdate.reinterpret()),
+                nextUpdateEpochSeconds = X509_CRL_get0_nextUpdate(crl)?.let { asn1TimeToEpochSeconds(it.reinterpret()) },
             )
         } finally {
             X509_CRL_free(crl)

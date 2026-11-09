@@ -36,8 +36,11 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import de.gematik.zeta.android.testdriver.oidc.MailCatcherOtpCallback
 import de.gematik.zeta.client.notification.PushNotifications
+import de.gematik.zeta.driver.core.ProxyConfig
+import de.gematik.zeta.driver.core.ProxyTarget
 import de.gematik.zeta.driver.core.oidc.MailCatcherOtpClient
 import de.gematik.zeta.driver.core.oidc.TestDriverAuthorizationLauncher
+import de.gematik.zeta.driver.core.proxyRoutes
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.BuildConfig
 import de.gematik.zeta.sdk.TpmConfig
@@ -57,7 +60,6 @@ import de.gematik.zeta.sdk.notifications.model.ChannelStatus
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.StorageConfig
 import io.ktor.client.plugins.logging.LogLevel
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Url
 import io.ktor.serialization.kotlinx.json.json
@@ -68,7 +70,6 @@ import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.Routing
-import io.ktor.server.routing.RoutingContext
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -128,7 +129,7 @@ public class MainActivity : ComponentActivity() {
             resource = fachdienst,
             config = BuildConfig(
                 clientName = "sdk-client",
-                productVersion = "2.0.1",
+                productVersion = "2.0.4",
                 productId = "ZETA-Test-Client",
                 storageConfig = StorageConfig.Custom(InMemoryStorage()),
                 authConfig = AuthConfig(
@@ -176,6 +177,9 @@ public class MainActivity : ComponentActivity() {
             install(io.ktor.server.plugins.contentnegotiation.ContentNegotiation) { json() }
             routing {
                 registerDriverRoutes()
+                get(ANDROID_DRIVER_PROXY_PREFIX) {
+                    call.respondText("path required, e.g. $ANDROID_DRIVER_PROXY_PREFIX/hellozeta", status = HttpStatusCode.BadRequest)
+                }
                 registerProxyRoutes(poppToken)
             }
         }.start(wait = false)
@@ -211,36 +215,15 @@ public class MainActivity : ComponentActivity() {
     }
 
     private fun Routing.registerProxyRoutes(poppToken: String) {
-        route(ANDROID_DRIVER_PROXY_PREFIX) {
-            get("/{path...}") {
-                val path = call.parameters.getAll("path")?.joinToString("/").orEmpty()
-                if (path.isBlank()) {
-                    call.respondText("path required, e.g. /androidproxy/hellozeta", status = HttpStatusCode.BadRequest)
-                    return@get
-                }
-                handleProxy(path, poppToken)
-            }
-        }
-    }
-
-    private suspend fun RoutingContext.handleProxy(path: String, poppToken: String) {
-        try {
-            val response = zetaHttpClient.get(path) {
-                if (poppToken.isNotBlank()) {
-                    headers.append("PoPP", poppToken)
-                }
-            }
-
-            call.respondText(
-                text = response.bodyAsText(),
-                contentType = ContentType.Text.Plain,
-                status = response.status,
-            )
-        } catch (e: Exception) {
-            Log.e(throwable = e) { "$path failed" }
-            call.respondText(
-                text = "$path failed: ${e.message}",
-                status = HttpStatusCode.InternalServerError,
+        proxyRoutes(ANDROID_DRIVER_PROXY_PREFIX) {
+            ProxyTarget(
+                sdk = sdkClient,
+                httpClient = zetaHttpClient,
+                config = ProxyConfig(
+                    targetBaseUrl = fachdienst,
+                    poppToken = poppToken,
+                    filterHostHeaders = true,
+                ),
             )
         }
     }

@@ -72,7 +72,6 @@ data class BuildConfig(
     val authConfig: AuthConfig,
     val platformProductId: PlatformProductId,
     val httpClientBuilder: ZetaHttpClientBuilder? = null,
-    val registrationCallback: RegistrationCallback? = null,
     val logger: ZetaLogger? = null,
     /** Notification Service integration; `null` (the default) disables notifications entirely. */
     val notificationConfig: NotificationConfig? = null,
@@ -96,6 +95,3 @@ fun BuildConfig.withNamespace(namespace: String): BuildConfig {
         },
     )
 }
-
-data class RegInfo(val clientName: String)
-fun interface RegistrationCallback { suspend fun registrationCb(): RegInfo }

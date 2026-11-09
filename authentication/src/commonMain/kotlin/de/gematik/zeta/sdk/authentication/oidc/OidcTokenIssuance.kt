@@ -39,8 +39,8 @@ import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import secureRandom
 import kotlin.io.encoding.Base64
-import kotlin.random.Random
 import kotlin.time.measureTimedValue
 
 data class TokenIssuanceRequest(
@@ -65,6 +65,7 @@ class OidcTokenIssuance(
     private val resolveVerifyEmailEndpoint: suspend () -> String,
     private val clock: () -> Long,
     private val attestationState: AttestationStateStorage? = null,
+    private val randomBytes: (ByteArray) -> ByteArray = ::secureRandom,
 ) {
     companion object {
         private const val GRANT_TYPE_AUTHORIZATION_CODE = "authorization_code"
@@ -93,9 +94,9 @@ class OidcTokenIssuance(
         request: TokenIssuanceRequest,
         provider: OidcTokenProvider,
     ): TokenIssuanceResult {
-        val verifier = generateCodeVerifier()
+        val verifier = generateCodeVerifier(randomBytes)
         val challenge = generateCodeChallenge(verifier)
-        val state = generateState()
+        val state = generateState(randomBytes)
         val authorizationEndpoint = provider.resolveAuthorizationEndpoint()
         val brokerEndpoint = provider.resolveBrokerEndpoint()
 
@@ -376,14 +377,11 @@ data class ParResponse(
     @SerialName("expires_in") val expiresIn: Int,
 )
 
-private fun generateCodeVerifier(): String =
-    Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(Random.nextBytes(32))
-
+private val base64Url = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
 private fun generateCodeChallenge(verifier: String): String =
-    Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(hashWithSha256(verifier.encodeToByteArray()))
-
-private fun generateState(): String =
-    Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(Random.nextBytes(16))
+    base64Url.encode(hashWithSha256(verifier.encodeToByteArray()))
+private fun generateCodeVerifier(random: (ByteArray) -> ByteArray): String = base64Url.encode(random(ByteArray(32)))
+private fun generateState(random: (ByteArray) -> ByteArray): String = base64Url.encode(random(ByteArray(16)))
 
 fun interface AuthenticationCallback {
     suspend fun authenticationCb(authorizationUrl: String): AuthInfo

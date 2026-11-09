@@ -69,6 +69,7 @@ open class AccessTokenProviderImpl(
     private val tpmProvider: TpmProvider,
     private val hardwarePostureBuilder: HardwarePostureBuilder? = null,
     private val attestationState: AttestationStateStorage? = null,
+    private val omitApplePlatformProductIdInSoftwarePosture: suspend () -> Boolean = { false },
 ) : AccessTokenProvider {
 
     open val attestationApi: AttestationApi by lazy {
@@ -77,6 +78,7 @@ open class AccessTokenProviderImpl(
             attestationConfig = authConfig.attestation,
             clockEpochSeconds = clock,
             hardwarePostureBuilder = hardwarePostureBuilder,
+            omitApplePlatformProductIdInSoftwarePosture = omitApplePlatformProductIdInSoftwarePosture,
         )
     }
 

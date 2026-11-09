@@ -24,6 +24,12 @@
 
 package de.gematik.zeta.nativedriver
 
+import de.gematik.zeta.driver.core.DriverConfig
+import de.gematik.zeta.driver.core.DriverSession
+import de.gematik.zeta.driver.core.ProxyConfig
+import de.gematik.zeta.driver.core.ProxyTarget
+import de.gematik.zeta.driver.core.proxyRoutes
+import de.gematik.zeta.driver.core.sessionRoutes
 import de.gematik.zeta.platform.Platform
 import de.gematik.zeta.platform.platform
 import de.gematik.zeta.sdk.BuildConfig
@@ -34,47 +40,36 @@ import de.gematik.zeta.sdk.attestation.model.AttestationConfig
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
-import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.StorageConfig
 import io.ktor.client.plugins.logging.LogLevel
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.server.request.receive
 import io.ktor.server.response.respond
-import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
-import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import kotlinx.cinterop.toKString
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import platform.posix.getenv
 
+private const val NATIVE_PROXY_PREFIX = "/nativeproxy"
 private const val NATIVE_DRIVER_API_PREFIX = "/nativedriver-api"
 
 public fun main() {
-    val fachdienstUrl = requireNotNull(
-        platform.posix.getenv("FACHDIENST_URL")
-            ?.toKString(),
-    ) { "FACHDIENST_URL is required" }
+    val fachdienstUrl = requireNotNull(getenv("FACHDIENST_URL")?.toKString()) {
+        "FACHDIENST_URL is required"
+    }
 
-    val disableTlsVerification = platform.posix.getenv("DISABLE_SERVER_VALIDATION")
+    val disableTlsVerification = getenv("DISABLE_SERVER_VALIDATION")
         ?.toKString()
         ?.toBooleanStrictOrNull()
         ?: false
-
-    var sdk: ZetaSdkClient = buildSdk(fachdienstUrl, disableTlsVerification)
-    var httpClient: ZetaHttpClient = sdk.httpClient {
-        logging(LogLevel.ALL)
-        disableServerValidation(disableTlsVerification)
-    }
 
     embeddedServer(CIO, port = 8091) {
         install(ContentNegotiation) {
@@ -86,28 +81,30 @@ public fun main() {
             )
         }
 
+        val session = DriverSession(DriverConfig(fachdienstUrl, disableTlsVerification)) { cfg ->
+            buildSdk(cfg.resource, cfg.disableTlsVerification, cfg.caCertificatePem)
+        }
+
         routing {
+            sessionRoutes(NATIVE_DRIVER_API_PREFIX, session)
+            proxyRoutes(NATIVE_PROXY_PREFIX) {
+                ProxyTarget(
+                    sdk = session.sdk,
+                    httpClient = session.httpClient,
+                    config = ProxyConfig(
+                        targetBaseUrl = session.config.resource,
+                        poppToken = getenv("POPP_TOKEN")?.toKString(),
+                        filterHostHeaders = true,
+                    ),
+                )
+            }
             route(NATIVE_DRIVER_API_PREFIX) {
                 get("/health") { call.respond(HttpStatusCode.OK, "alive") }
-
-                post("/configure") {
-                    val config = call.receive<ConfigureRequest>()
-                    sdk = buildSdk(config.resource, config.disableTlsVerification, config.caCertificatePem)
-
-                    httpClient = sdk.httpClient {
-                        addCaPem(config.caCertificatePem)
-                        logging(LogLevel.ALL)
-                        disableServerValidation(config.disableTlsVerification)
-                    }
-
-                    call.respondText("Test driver configured successfully", ContentType.Text.Plain)
-                }
-
                 get("/hellonative") {
                     val poppHeader = call.request.headers["PoPP"]
 
                     val result = runCatching {
-                        httpClient.get("hellozeta") {
+                        session.httpClient.get("hellozeta") {
                             poppHeader?.let { headers.append("PoPP", it) }
                         }
                     }
@@ -134,7 +131,7 @@ public fun main() {
 private fun getPlatformProduct(): PlatformProductId {
     return when (val plat = platform()) {
         is Platform.Jvm.Macos, Platform.Native.Macos -> PlatformProductId.AppleProductId("apple", "macos", listOf())
-        is Platform.Jvm.Linux, Platform.Native.Linux -> PlatformProductId.LinuxProductId("linux", "", "", "0.5.0")
+        is Platform.Jvm.Linux, Platform.Native.Linux -> PlatformProductId.LinuxProductId("linux", "", "", "2.0.1")
         is Platform.Jvm.Windows, Platform.Native.Windows -> PlatformProductId.WindowsProductId("windows", "", "")
         else -> error("Unknown platform: $plat")
     }
@@ -142,20 +139,20 @@ private fun getPlatformProduct(): PlatformProductId {
 
 private fun buildSdk(fachdienstUrl: String, disableTlsVerification: Boolean, caPem: String = ""): ZetaSdkClient {
     val keystoreFile = requireNotNull(
-        platform.posix.getenv("SMB_KEYSTORE_FILE")
+        getenv("SMB_KEYSTORE_FILE")
             ?.toKString(),
     ) { "SMB_KEYSTORE_FILE is required" }
-    val keystoreAlias = platform.posix.getenv("SMB_KEYSTORE_ALIAS")?.toKString() ?: ""
-    val keystorePassword = platform.posix.getenv("SMB_KEYSTORE_PASSWORD")?.toKString() ?: ""
-    val aslProd = platform.posix.getenv("ASL_PROD")?.toKString() == "true"
-    val requiredOid = platform.posix.getenv("REQUIRED_ROLE_OID")?.toKString() ?: ""
+    val keystoreAlias = getenv("SMB_KEYSTORE_ALIAS")?.toKString() ?: ""
+    val keystorePassword = getenv("SMB_KEYSTORE_PASSWORD")?.toKString() ?: ""
+    val aslProd = getenv("ASL_PROD")?.toKString() == "true"
+    val requiredOid = getenv("REQUIRED_ROLE_OID")?.toKString() ?: ""
 
     return ZetaSdk.build(
         resource = fachdienstUrl,
         BuildConfig(
-            productId = "zeta-native-server",
-            productVersion = "2.0.1",
-            clientName = "zeta-native-server",
+            productId = "test-proxy",
+            productVersion = "2.0.4",
+            clientName = "sdk-client",
             storageConfig = StorageConfig.Custom(InMemoryStorage()),
             tpmConfig = object : TpmConfig {},
             authConfig = AuthConfig(
@@ -180,10 +177,3 @@ private fun buildSdk(fachdienstUrl: String, disableTlsVerification: Boolean, caP
         ),
     )
 }
-
-@Serializable
-public data class ConfigureRequest(
-    val caCertificatePem: String,
-    val resource: String,
-    val disableTlsVerification: Boolean,
-)

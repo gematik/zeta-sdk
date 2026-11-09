@@ -35,9 +35,11 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import kotlinx.serialization.json.JsonObject
 
 interface ClientRegistrationApi {
-    suspend fun register(endpoint: String, request: ClientRegistrationRequest): ClientRegistrationResponse
+    /** POSTs [body] to [endpoint]; [body] defaults to [request] as JSON and differs only for older API versions. */
+    suspend fun register(endpoint: String, request: ClientRegistrationRequest, body: JsonObject = request.toJson()): ClientRegistrationResponse
 
     /** Fetches a fresh nonce for the proof of possession, unchanged as dcr-request.yaml `definitions/nonce` requires. */
     suspend fun fetchNonce(endpoint: String): String
@@ -56,12 +58,12 @@ class ClientRegistrationApiImpl(
         return response.bodyAsText().trim()
     }
 
-    override suspend fun register(endpoint: String, request: ClientRegistrationRequest): ClientRegistrationResponse {
+    override suspend fun register(endpoint: String, request: ClientRegistrationRequest, body: JsonObject): ClientRegistrationResponse {
         Log.d { "Client registration will proceed" }
         // Abb-ZETA-DCR-für-mobile-Clients (01) / (12) / (15) POST /register
         val response = zetaHttpClient.post(endpoint) {
             contentType(ContentType.Application.Json)
-            setBody(request.toJson())
+            setBody(body)
         }
         return handleResponse(request.metadata.clientName, response)
     }

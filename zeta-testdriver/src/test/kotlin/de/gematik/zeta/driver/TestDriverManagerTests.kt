@@ -24,8 +24,9 @@
 
 package de.gematik.zeta.driver
 
-import de.gematik.zeta.driver.model.ConfigureRequest
+import de.gematik.zeta.driver.core.ConfigureRequest
 import de.gematik.zeta.driver.model.SdkInstanceConfig
+import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -156,7 +157,7 @@ class TestDriverManagerTest {
     }
 
     @Test
-    fun notifications_followsRebuiltSdk_afterConfigure() {
+    fun notifications_followsRebuiltSdk_afterConfigure() = runTest {
         // Arrange
         val before = manager.notifications()
 
@@ -176,7 +177,7 @@ class TestDriverManagerTest {
     }
 
     @Test
-    fun configure_updatesDisableTlsVerification_whenProvided() {
+    fun configure_updatesDisableTlsVerification_whenProvided() = runTest {
         // Arrange
         val request = ConfigureRequest(
             resource = "",
@@ -192,7 +193,7 @@ class TestDriverManagerTest {
     }
 
     @Test
-    fun configure_updatesFachdienstUrl_whenResourceProvided() {
+    fun configure_updatesFachdienstUrl_whenResourceProvided() = runTest {
         // Arrange
         val request = ConfigureRequest(
             resource = "https://new-resource.example.com",
@@ -208,7 +209,7 @@ class TestDriverManagerTest {
     }
 
     @Test
-    fun configure_keepsOriginalUrl_whenResourceIsEmpty() {
+    fun configure_keepsOriginalUrl_whenResourceIsEmpty() = runTest {
         // Arrange
         val request = ConfigureRequest(
             resource = "",
@@ -224,7 +225,7 @@ class TestDriverManagerTest {
     }
 
     @Test
-    fun configure_rebuildsClient_whenCalled() {
+    fun configure_rebuildsClient_whenCalled() = runTest {
         // Arrange
         val oldSdk = manager.sdk
         val oldHttpClient = manager.httpClient
@@ -258,8 +259,7 @@ class TestDriverManagerTest {
     }
 
     @Test
-    fun reset_restoresDefaultConfig_whenNoConfigProvided() {
-        // Arrange
+    fun reset_restoresDefaultConfig_whenNoConfigProvided() = runTest {
         val request = ConfigureRequest(
             resource = "https://custom.example.com",
             disableTlsVerification = true,
@@ -267,24 +267,19 @@ class TestDriverManagerTest {
         )
         manager.configure(request)
 
-        // Act
-        manager.reset(initialConfig)
+        manager.resetTo(initialConfig)
 
-        // Assert
         assertEquals("https://initial.example.com", manager.config.fachdienstUrl)
         assertEquals(true, manager.config.disableTlsVerification)
     }
 
     @Test
-    fun reset_rebuildsClient() {
-        // Arrange
+    fun reset_rebuildsClient() = runTest {
         val oldSdk = manager.sdk
         val oldHttpClient = manager.httpClient
 
-        // Act
-        manager.reset(initialConfig)
+        manager.resetTo(initialConfig)
 
-        // Assert
         assertNotSame(oldSdk, manager.sdk)
         assertNotSame(oldHttpClient, manager.httpClient)
     }
@@ -345,7 +340,7 @@ class TestDriverManagerTest {
     }
 
     @Test
-    fun configure_multipleChanges_appliesAllCorrectly() {
+    fun configure_multipleChanges_appliesAllCorrectly() = runTest {
         // Arrange
         val request = ConfigureRequest(
             resource = "https://multi-change.example.com",

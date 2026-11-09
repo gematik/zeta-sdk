@@ -143,7 +143,7 @@ public class Main {
             getFirstResourceUrl(props),
             new BuildConfig(
                 "ZETA-Test-Client",
-                "2.0.1",
+                "2.0.4",
                 "sdk-client",
                 new StorageConfig.Custom(new InMemoryStorage()),
                 new TpmConfig() {
@@ -162,7 +162,6 @@ public class Main {
                 new ZetaHttpClientBuilder()
                     .disableServerValidation(disableServerValidation)
                     .logging(LogLevel.ALL),
-                null,
                 null,
                 new NotificationConfig(
                     "notification-service",

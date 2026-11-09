@@ -176,6 +176,9 @@ The C# SDK is published on NuGet. There is one package per platform, and each pa
 | `Zeta.Sdk.Windows` | Windows  |
 | `Zeta.Sdk.MacOS`   | MacOS    |
 
+The packages target .NET. The .NET runtime is not part of the packages: it is provided by your application or the system, like the JVM for Java.
+Keep it updated to the latest .NET patch release, which includes the current security fixes.
+
 Add the package for your target platform:
 
 ```shell
@@ -382,11 +385,12 @@ device token as 64 hex characters.
 
 ## Platform Requirements
 
-| Platform | Requirements           |
-|-----------|------------------------|
-| Android | API 28+ (Android 9.0+) |
-| JVM | JDK 17+                |
-| iOS | iOS 15+                |
+| Platform  | Requirements                       |
+|-----------|------------------------------------|
+| Android   | API 28+ (Android 9.0+)             |
+| JVM       | JDK 17+                            |
+| iOS       | iOS 15+                            |
+| .NET      | .NET 10 (latest patch recommended) |
 
 
 ### Android: cleartext traffic for revocation endpoints
@@ -1100,7 +1104,6 @@ This object contains the following attributes and sub-objects.
 | authConfig            | Configuration for Authentication Process, e.g: Token scopes, Expiry etc.                                                                        |
 | platformProductId     | Platform-specific product id (MacOS, Win, Linux Android, Apple), used for attestation                                                           |
 | httpClientBuilder     | Configuration for the HTTP Client, e.g.: timeouts, retries etc.                                                                                 |
-| registrationCallback  | Deprecated, not called by the SDK. Will be removed in a future major version                                                                    |
 | notificationConfig    | Optional `NotificationConfig` enabling the Notification Service integration; `null` (default) disables it (see [Notifications](#notifications)) |
 
 Note: user interaction during authentication is not configured in `BuildConfig`.

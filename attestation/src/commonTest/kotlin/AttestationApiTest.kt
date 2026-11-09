@@ -50,6 +50,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -186,12 +187,40 @@ class AttestationApiTest {
         attestationConfig: AttestationConfig = AttestationConfig.software(),
         uuidGen: () -> String = { fixedUuid },
         clock: () -> Long = { fixedEpoch },
+        omitApplePlatformProductIdInSoftwarePosture: suspend () -> Boolean = { false },
     ) = AttestationApiImpl(
         tpmProvider = tpmProvider,
         uuidGen = uuidGen,
         clockEpochSeconds = clock,
         attestationConfig = attestationConfig,
+        omitApplePlatformProductIdInSoftwarePosture = omitApplePlatformProductIdInSoftwarePosture,
     )
+
+    private suspend fun softwarePosture(impl: AttestationApiImpl): JsonObject {
+        val jwt = impl.createClientAssertion(
+            productId = defaultProductId,
+            productVersion = defaultProductVersion,
+            nonce = fixedNonce,
+            clientId = defaultClientId,
+            exp = fixedExp,
+            aud = defaultaud,
+            platformProductId = platformProductIdAppleProductId,
+        )
+        val (_, payloadB64, _) = jwtParts(jwt)
+        return decodeJson(payloadB64)["client_statement"]!!.jsonObject["posture"]!!.jsonObject
+    }
+
+    @Test
+    fun softwarePosture_keepsApplePlatformProductId_byDefault() = runTest {
+        assertTrue(softwarePosture(buildImpl()).containsKey("platform_product_id"))
+    }
+
+    @Test
+    fun softwarePosture_omitsApplePlatformProductId_whenGuardRejectsIt() = runTest {
+        val posture = softwarePosture(buildImpl(omitApplePlatformProductIdInSoftwarePosture = { true }))
+        assertFalse(posture.containsKey("platform_product_id"))
+        assertEquals(defaultProductId, posture["product_id"]?.jsonPrimitive?.content)
+    }
 
     private fun jwtParts(jwt: String): Triple<String, String, String> {
         val p = jwt.split(".")

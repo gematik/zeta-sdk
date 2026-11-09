@@ -89,6 +89,7 @@ class AttestationApiImpl(
     private val clockEpochSeconds: () -> Long,
     private val attestationConfig: AttestationConfig = AttestationConfig.software(),
     private val hardwarePostureBuilder: HardwarePostureBuilder? = null,
+    private val omitApplePlatformProductIdInSoftwarePosture: suspend () -> Boolean = { false },
 ) : AttestationApi {
     val json = Json {
         encodeDefaults = true
@@ -148,7 +149,7 @@ class AttestationApiImpl(
                     productId,
                     productVersion,
                     clientId,
-                    platformProductId,
+                    if (omitApplePlatformProductIdInSoftwarePosture()) softwarePlatformProductId(platformProductId) else platformProductId,
                 )
             }
 
@@ -304,3 +305,12 @@ class AttestationApiImpl(
             .encode(bytes)
     }
 }
+
+/** The platform_product_id for a software posture on guards that reject (v1.3.x) an Apple product id with posture-software.yaml only allows the Windows and Linux.*/
+internal fun softwarePlatformProductId(platformProductId: PlatformProductId?): PlatformProductId? =
+    if (platformProductId is PlatformProductId.AppleProductId) {
+        Log.d { "Omitting Apple platform_product_id from software posture" }
+        null
+    } else {
+        platformProductId
+    }

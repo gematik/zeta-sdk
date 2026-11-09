@@ -27,11 +27,4 @@ package de.gematik.zeta.driver.model
 import kotlinx.serialization.Serializable
 
 @Serializable
-public data class ConfigureRequest(
-    val caCertificatePem: String,
-    val resource: String,
-    val disableTlsVerification: Boolean,
-)
-
-@Serializable
 public data class KvnrEmailRequest(val kvnr: String, val email: String)

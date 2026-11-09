@@ -34,12 +34,14 @@ import de.gematik.zeta.sdk.notifications.NotificationConfig
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.time.SystemZetaClock
+import de.gematik.zeta.time.ZetaClock
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 class NotificationDiscoveryTest {
     private val resourceFqdn = "https://fachdienst.example.com"
@@ -127,47 +129,42 @@ class NotificationDiscoveryTest {
     @Test
     fun expiredCachedDocument_sendsCachedETag() = runTest {
         // Arrange
-        val storage = buildConfigStorage()
+        val clock = TestClock()
+        val storage = buildConfigStorage(clock = clock)
 
         storage.saveProtectedResource(
             protectedRes = nsMetadataJson(),
             name = "notification-service",
-            maxAgeSeconds = -1,
+            maxAgeSeconds = 0,
             eTag = "\"old-etag\"",
         )
+        clock.advanceSeconds(1)
 
-        val api = FakeConfigurationApi(
-            metadataJson = nsMetadataJson(),
-        )
-
+        val api = FakeConfigurationApi(metadataJson = nsMetadataJson())
         val sut = buildSut(api, storage)
 
         // Act
         sut.ensureDiscovered()
 
         // Assert
-        assertEquals(
-            "\"old-etag\"",
-            api.lastETag,
-        )
-
-        assertEquals(
-            "notification-service",
-            api.lastSubpath,
-        )
+        assertEquals("\"old-etag\"", api.lastETag)
+        assertEquals("notification-service", api.lastSubpath)
     }
 
     @Test
     fun notModified_touchesCachedNotificationMetadata() = runTest {
         // Arrange
-        val storage = buildConfigStorage()
+        val clock = TestClock()
+        val storage = buildConfigStorage(clock = clock)
 
         storage.saveProtectedResource(
             protectedRes = nsMetadataJson(),
             name = "notification-service",
-            maxAgeSeconds = -1,
+            maxAgeSeconds = 0,
             eTag = "\"old-etag\"",
         )
+
+        clock.advanceSeconds(1)
 
         val api = FakeConfigurationApi(
             metadataJson = null,
@@ -192,7 +189,7 @@ class NotificationDiscoveryTest {
 
         assertNotNull(
             storage.getProtectedResource(
-                "notification-service",
+                "notification-service", allowStale = false,
             ),
         )
 
@@ -557,6 +554,7 @@ class NotificationDiscoveryTest {
 
     private suspend fun buildConfigStorage(
         linkGuardAs: Boolean = true,
+        clock: ZetaClock = SystemZetaClock,
     ): ConfigurationStorage {
         val storage = ConfigurationStorageImpl(
             InMemoryStorage(),
@@ -564,7 +562,7 @@ class NotificationDiscoveryTest {
                 resourceFqdn,
                 listOf("scope-a"),
             ),
-            clock = SystemZetaClock,
+            clock = clock,
         )
 
         if (linkGuardAs) {
@@ -614,4 +612,9 @@ class NotificationDiscoveryTest {
         codeChallengeMethodsSupported = listOf(""),
         registrationEndpoint = "",
     )
+}
+
+private class TestClock(private var epochSeconds: Long = 1_000_000L) : ZetaClock {
+    override fun now(): Instant = Instant.fromEpochSeconds(epochSeconds)
+    fun advanceSeconds(seconds: Long) { epochSeconds += seconds }
 }

@@ -24,6 +24,8 @@
 
 package de.gematik.zeta.driver
 
+import de.gematik.zeta.driver.core.ProxyConfig
+import de.gematik.zeta.driver.core.ProxyTarget
 import de.gematik.zeta.driver.core.oidc.MailCatcherOtpClient
 import de.gematik.zeta.driver.core.oidc.TestDriverAuthorizationLauncher
 import de.gematik.zeta.driver.model.SdkInstanceConfig
@@ -46,29 +48,17 @@ import de.gematik.zeta.sdk.authentication.oidc.OidcConfig
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClientBuilder
-import de.gematik.zeta.sdk.network.http.client.ZetaHttpResponse
 import de.gematik.zeta.sdk.notifications.NotificationConfig
 import de.gematik.zeta.sdk.storage.SdkStorage
 import de.gematik.zeta.sdk.storage.StorageConfig
-import io.ktor.client.request.HttpRequestBuilder
-import io.ktor.client.request.headers
-import io.ktor.client.request.setBody
-import io.ktor.content.ByteArrayContent
-import io.ktor.http.ContentType
-import io.ktor.http.Headers
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLBuilder
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
 import io.ktor.http.encodedPath
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.response.respond
-import io.ktor.server.response.respondBytes
-import io.ktor.server.response.respondText
-import io.ktor.utils.io.toByteArray
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.DefaultWebSocketSession
 import io.ktor.websocket.Frame
@@ -81,136 +71,10 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.TimeSource
-import kotlin.time.measureTimedValue
 
 internal const val DISABLE_SERVER_VALIDATION = "DISABLE_SERVER_VALIDATION"
 internal const val FACHDIENST_URL_REQUIRED_MESSAGE = "fachdienstUrl is required"
-
 internal const val POPP_TOKEN_HEADER_NAME = "popp"
-
-internal fun shouldForwardHeader(name: String, filterHostHeaders: Boolean): Boolean {
-    return notForwardedHeaders.none { it.equals(name, ignoreCase = true) } && ((!filterHostHeaders) || optionallyNotForwardedHeaders.none { it.equals(name, ignoreCase = true) })
-}
-
-private val notForwardedHeaders = setOf(
-    HttpHeaders.ContentType,
-    HttpHeaders.ContentLength,
-    HttpHeaders.TransferEncoding,
-    HttpHeaders.Connection,
-)
-
-private val optionallyNotForwardedHeaders = setOf(
-    HttpHeaders.Host,
-    HttpHeaders.Forwarded,
-    HttpHeaders.XForwardedHost,
-    HttpHeaders.XForwardedPort,
-)
-
-internal suspend fun forward(
-    call: ApplicationCall,
-    httpClient: ZetaHttpClient,
-    config: SdkInstanceConfig,
-) {
-    val fachdienstUrl = requireNotNull(config.fachdienstUrl) { FACHDIENST_URL_REQUIRED_MESSAGE }
-    val targetUrl = buildTargetUrl(call, fachdienstUrl)
-    val requestBody = extractRequestBody(call)
-    val forwardStart = TimeSource.Monotonic.markNow()
-
-    try {
-        val (response, httpTime) = measureTimedValue {
-            executeHttpRequest(httpClient, targetUrl, call, requestBody, config.poppToken.ifBlank { null }, config.filterHostHeaders)
-        }
-
-        Log.i { "[TESTDRIVER-FORWARD-TIMING] url=$targetUrl method=${call.request.httpMethod.value} http_request=$httpTime status=${response.status}" }
-        val (bytes, bodyReadTime) = measureTimedValue { response.body<ByteArray>() }
-        Log.i { "[TESTDRIVER-FORWARD-TIMING] url=$targetUrl body_read=$bodyReadTime body_size=${bytes.size}" }
-
-        forwardResponse(call, response, bytes, config.filterHostHeaders)
-
-        Log.i { "[TESTDRIVER-DRIVER-FORWARD-TIMING] url=$targetUrl total=${forwardStart.elapsedNow()}" }
-    } catch (ex: Throwable) {
-        Log.i { "[TESTDRIVER-DRIVER-FORWARD-TIMING] url=$targetUrl FAILED in ${forwardStart.elapsedNow()}: ${ex.message}" }
-        call.respondText(
-            ex.message ?: "Unexpected error while forwarding request",
-            status = HttpStatusCode.InternalServerError,
-        )
-    }
-}
-
-private suspend fun extractRequestBody(call: ApplicationCall): ByteArray? {
-    val hasBody = call.request.headers.contains(HttpHeaders.ContentType) ||
-        call.request.headers.contains(HttpHeaders.TransferEncoding)
-    return if (hasBody) call.request.receiveChannel().toByteArray() else null
-}
-
-internal fun buildForwardHeaders(
-    incomingHeaders: Headers,
-    poppToken: String?,
-    filterHostHeaders: Boolean,
-): Headers = Headers.build {
-    incomingHeaders.forEach { name, values ->
-        if (shouldForwardHeader(name, filterHostHeaders)) appendAll(name, values)
-    }
-    if (!incomingHeaders.contains(POPP_TOKEN_HEADER_NAME)) {
-        poppToken?.let { append(POPP_TOKEN_HEADER_NAME, it) }
-    }
-}
-
-private suspend fun executeHttpRequest(
-    httpClient: ZetaHttpClient,
-    targetUrl: String,
-    call: ApplicationCall,
-    requestBody: ByteArray?,
-    poppToken: String?,
-    filterHostHeaders: Boolean,
-): ZetaHttpResponse {
-    val forwardHeaders = buildForwardHeaders(call.request.headers, poppToken, filterHostHeaders)
-
-    return httpClient.request(targetUrl) {
-        method = call.request.httpMethod
-        headers { headers.appendAll(forwardHeaders) }
-        if (requestBody != null) {
-            setRequestBody(this, call, requestBody)
-        }
-    }
-}
-
-private fun setRequestBody(
-    builder: HttpRequestBuilder,
-    call: ApplicationCall,
-    requestBody: ByteArray,
-) {
-    val contentType = call.request.headers[HttpHeaders.ContentType]
-    if (contentType != null) {
-        builder.setBody(ByteArrayContent(requestBody, ContentType.parse(contentType)))
-    } else {
-        builder.setBody(requestBody)
-    }
-}
-
-private suspend fun forwardResponse(
-    call: ApplicationCall,
-    response: ZetaHttpResponse,
-    bytes: ByteArray,
-    filterHostHeaders: Boolean,
-) {
-    response.headers.forEach { (name, value) ->
-        if (shouldForwardHeader(name, filterHostHeaders)) call.response.headers.append(name, value)
-    }
-
-    val contentType = response.headers[HttpHeaders.ContentType]?.let(ContentType::parse)
-    if (contentType != null) {
-        call.respondBytes(bytes, contentType = contentType, status = response.status)
-    } else {
-        call.respondBytes(bytes, status = response.status)
-    }
-}
-
-internal fun buildTargetUrl(call: ApplicationCall, fachdienstUrl: String): String {
-    val path = call.parameters.getAll("path")?.joinToString("/") ?: ""
-    return "${fachdienstUrl.trimEnd('/')}/$path"
-}
 
 public suspend fun forwardWs(
     serverSession: DefaultWebSocketSession,
@@ -312,7 +176,7 @@ public fun newSdk(
         resource = fachdienstUrl,
         BuildConfig(
             "test-proxy",
-            "2.0.1",
+            "2.0.4",
             "sdk-client",
             StorageConfig.Custom(storage),
             object : TpmConfig {},
@@ -487,3 +351,16 @@ public suspend fun register(
         call.respond(HttpStatusCode.InternalServerError, ex.message.toString())
     }
 }
+
+internal fun SdkInstanceConfig.toProxyTarget(sdk: ZetaSdkClient, httpClient: ZetaHttpClient): ProxyTarget =
+    ProxyTarget(
+        sdk = sdk,
+        httpClient = httpClient,
+        config = ProxyConfig(
+            targetBaseUrl = requireNotNull(fachdienstUrl) { FACHDIENST_URL_REQUIRED_MESSAGE },
+            poppToken = poppToken,
+            filterHostHeaders = filterHostHeaders,
+            disableTlsVerification = disableTlsVerification,
+            logLevel = Log.logLevel.toKtorLogLevel(),
+        ),
+    )

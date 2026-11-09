@@ -59,6 +59,7 @@ import de.gematik.zeta.sdk.flow.handler.ClientRegistrationHandler
 import de.gematik.zeta.sdk.flow.handler.ConfigurationHandler
 import de.gematik.zeta.sdk.flow.handler.EnsureAccessTokenHandler
 import de.gematik.zeta.sdk.flow.handler.RetryHandler
+import de.gematik.zeta.sdk.flow.omitsApplePlatformProductIdInSoftwarePosture
 import de.gematik.zeta.sdk.flow.zetaPlugin
 import de.gematik.zeta.sdk.network.http.client.CompositeCookieStorage
 import de.gematik.zeta.sdk.network.http.client.DEFAULT_REVOCATION_CACHE_SECONDS
@@ -213,6 +214,13 @@ class ZetaSdkClientImpl(
     }
 
     private val hardwareAttestation: HardwareAttestation? = platformHardwareAttestation(attestationState)
+
+    internal val omitApplePlatformProductIdInSoftwarePosture: suspend () -> Boolean = {
+        flowContext.configurationStorage.getAuthServer()
+            ?.let { omitsApplePlatformProductIdInSoftwarePosture(it.apiVersionsSupported) }
+            ?: false
+    }
+
     internal val deviceAttestor: DeviceAttestor? = hardwareAttestation?.attestor
 
     private val baseHttpClientBuilder: ZetaHttpClientBuilder =
@@ -291,6 +299,7 @@ class ZetaSdkClientImpl(
             tpmProvider,
             hardwareAttestation?.postureBuilder,
             attestationState,
+            omitApplePlatformProductIdInSoftwarePosture,
         )
         EnsureAccessTokenHandler(
             accessTokenProvider,
@@ -359,6 +368,7 @@ class ZetaSdkClientImpl(
                     tpmProvider,
                     hardwareAttestation?.postureBuilder,
                     attestationState,
+                    omitApplePlatformProductIdInSoftwarePosture,
                 )
             },
             endpoints = {
@@ -451,6 +461,7 @@ class ZetaSdkClientImpl(
                     tpmProvider,
                     hardwareAttestation?.postureBuilder,
                     attestationState,
+                    omitApplePlatformProductIdInSoftwarePosture,
                 )
             },
             persistentStorage = clientManagementAuthStorage,

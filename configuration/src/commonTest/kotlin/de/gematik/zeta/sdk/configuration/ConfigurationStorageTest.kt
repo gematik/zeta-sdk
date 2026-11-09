@@ -130,7 +130,7 @@ class ConfigurationStorageTest {
         clock.advanceSeconds(11)
 
         // Act
-        val result = storage.getProtectedResource()
+        val result = storage.getProtectedResource(allowStale = false)
 
         // Assert
         assertNull(result)
@@ -154,11 +154,15 @@ class ConfigurationStorageTest {
         )
 
         // Assert
-        assertNotNull(storage.getProtectedResource())
+        assertNotNull(storage.getProtectedResource(allowStale = false))
 
         clock.advanceSeconds(10)
 
-        assertNull(storage.getProtectedResource())
+        assertNull(storage.getProtectedResource(allowStale = false))
+
+        clock.advanceSeconds(10)
+
+        assertNull(storage.getProtectedResource(allowStale = false))
     }
 
     @Test
@@ -228,7 +232,7 @@ class ConfigurationStorageTest {
         clock.advanceSeconds(10)
 
         // Assert
-        assertNull(storage.getProtectedResource())
+        assertNull(storage.getProtectedResource(allowStale = false))
         assertEquals(
             "\"pr-etag\"",
             storage.getProtectedResourceETag(),
@@ -586,7 +590,7 @@ class ConfigurationStorageTest {
         clock.advanceSeconds(6)
 
         // Act
-        val result = storage.getAuthServer()
+        val result = storage.getAuthServer(allowStale = false)
 
         // Assert
         assertNull(result)
@@ -1012,6 +1016,98 @@ class ConfigurationStorageTest {
             "\"notification-new\"",
             storage.getProtectedResourceETag("notification-service"),
         )
+    }
+
+    @Test
+    fun getProtectedResource_returnsStaleEntry_whenAllowStale() = runTest {
+        val clock = TestClock()
+        val (storage, _) = buildStorage(clock = clock)
+        storage.saveProtectedResource(
+            protectedRes = getDummyProtectedResourceObject("https://api.example.com"),
+            maxAgeSeconds = 0,
+        )
+
+        clock.advanceSeconds(5)
+
+        assertNotNull(storage.getProtectedResource())
+        assertNull(storage.getProtectedResource(allowStale = false))
+    }
+
+    @Test
+    fun getAuthServer_returnsStaleEntry_whenAllowStale() = runTest {
+        val clock = TestClock()
+        val (storage, _) = buildStorage(clock = clock)
+        val metadata = getDummyAuthServerObject("https://auth.example.com")
+        storage.saveAuthServer(metadata = metadata, maxAgeSeconds = 0)
+        storage.linkResourceToAuthorizationServer(metadata)
+
+        clock.advanceSeconds(5)
+
+        assertNotNull(storage.getAuthServer())
+        assertNull(storage.getAuthServer(allowStale = false))
+    }
+
+    @Test
+    fun saveProtectedResource_capsMaxAgeAt24Hours() = runTest {
+        val clock = TestClock()
+        val (storage, _) = buildStorage(clock = clock)
+        storage.saveProtectedResource(
+            protectedRes = getDummyProtectedResourceObject("https://api.example.com"),
+            maxAgeSeconds = 2 * ConfigurationStorageImpl.DEFAULT_TTL_SECONDS,
+        )
+
+        clock.advanceSeconds(ConfigurationStorageImpl.DEFAULT_TTL_SECONDS + 1)
+
+        assertNull(storage.getProtectedResource(allowStale = false))
+    }
+
+    @Test
+    fun saveAuthServer_capsMaxAgeAt24Hours() = runTest {
+        val clock = TestClock()
+        val (storage, _) = buildStorage(clock = clock)
+        val metadata = getDummyAuthServerObject("https://auth.example.com")
+        storage.saveAuthServer(
+            metadata = metadata,
+            maxAgeSeconds = 2 * ConfigurationStorageImpl.DEFAULT_TTL_SECONDS,
+        )
+        storage.linkResourceToAuthorizationServer(metadata)
+
+        clock.advanceSeconds(ConfigurationStorageImpl.DEFAULT_TTL_SECONDS + 1)
+
+        assertNull(storage.getAuthServer(allowStale = false))
+    }
+
+    @Test
+    fun saveProtectedResource_treatsNegativeMaxAgeAsZero() = runTest {
+        val clock = TestClock()
+        val (storage, _) = buildStorage(clock = clock)
+        storage.saveProtectedResource(
+            protectedRes = getDummyProtectedResourceObject("https://api.example.com"),
+            maxAgeSeconds = -1,
+        )
+
+        assertNotNull(storage.getProtectedResource(allowStale = false))
+
+        clock.advanceSeconds(1)
+
+        assertNull(storage.getProtectedResource(allowStale = false))
+    }
+
+    @Test
+    fun touchProtectedResource_makesStaleEntryFreshAgain() = runTest {
+        val clock = TestClock()
+        val (storage, _) = buildStorage(clock = clock)
+        storage.saveProtectedResource(
+            protectedRes = getDummyProtectedResourceObject("https://api.example.com"),
+            maxAgeSeconds = 0,
+            eTag = "\"pr-etag\"",
+        )
+        clock.advanceSeconds(5)
+        assertNull(storage.getProtectedResource(allowStale = false))
+
+        storage.touchProtectedResource(maxAgeSeconds = 10, eTag = null)
+
+        assertNotNull(storage.getProtectedResource(allowStale = false))
     }
 
     private class TestClock(

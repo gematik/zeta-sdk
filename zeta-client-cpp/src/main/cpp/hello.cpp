@@ -356,7 +356,7 @@ int main() {
     }
 
     char* productId = "ZETA-Test-Client";
-    char* productVersion = "2.0.1";
+    char* productVersion = "2.0.4";
     char* clientName = "sdk-client";
     char* scopes[] = {"zero:audience"};
 

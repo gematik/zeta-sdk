@@ -60,12 +60,9 @@ internal class NotificationDiscovery(
     private val validator: WellKnownSchemaValidation = WellKnownSchemaValidationImpl(),
 ) {
     private val mutex = Mutex()
-    private var resolved: NotificationTokenRequest? = null
 
     suspend fun ensureDiscovered(): NotificationTokenRequest = mutex.withLock {
-        resolved?.let { return it }
-
-        val metadata = configurationStorage.getProtectedResource(PR_ENTRY_NAME) ?: fetchAndPersist()
+        val metadata = configurationStorage.getProtectedResource(PR_ENTRY_NAME, allowStale = false) ?: fetchAndPersist()
 
         validateAuthServerLink(metadata)
         if (!metadata.dpopBoundAccessTokensRequired) {
@@ -81,7 +78,7 @@ internal class NotificationDiscovery(
             )
         }
 
-        NotificationTokenRequest(audience = metadata.resource, scopes = requested).also { resolved = it }
+        NotificationTokenRequest(audience = metadata.resource, scopes = requested)
     }
 
     private suspend fun fetchAndPersist(): ProtectedResourceMetadata {

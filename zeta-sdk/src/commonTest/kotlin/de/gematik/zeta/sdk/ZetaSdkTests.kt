@@ -32,6 +32,9 @@ import de.gematik.zeta.sdk.authentication.AuthConfig
 import de.gematik.zeta.sdk.authentication.AuthenticationStorageImpl
 import de.gematik.zeta.sdk.authentication.identity.models.RegisteredClient
 import de.gematik.zeta.sdk.authentication.smb.SmbTokenProvider
+import de.gematik.zeta.sdk.configuration.models.ApiVersion
+import de.gematik.zeta.sdk.configuration.models.ApiVersionStatus
+import de.gematik.zeta.sdk.configuration.models.AuthorizationServerMetadata
 import de.gematik.zeta.sdk.network.http.client.CompositeCookieStorage
 import de.gematik.zeta.sdk.network.http.client.SdkCookieStorage
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
@@ -54,6 +57,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
@@ -556,87 +560,12 @@ class ZetaSdkTest {
     }
 
     @Test
-    fun regInfo_equality_reflexive() {
-        // Arrange
-        val info = RegInfo(clientName = "Client")
-
-        // Assert
-        assertEquals(info, info)
-    }
-
-    @Test
-    fun regInfo_equality_symmetric() {
-        // Arrange
-        val info1 = RegInfo(clientName = "Client")
-        val info2 = RegInfo(clientName = "Client")
-
-        // Assert
-        assertEquals(info1, info2)
-        assertEquals(info2, info1)
-    }
-
-    @Test
-    fun regInfo_copy_withNoChanges_createsEqualObject() {
-        // Arrange
-        val original = RegInfo(clientName = "Original")
-
-        // Act
-        val copy = original.copy()
-
-        // Assert
-        assertEquals(original, copy)
-        assertNotSame(original, copy)
-    }
-
-    @Test
-    fun regInfo_withSpecialCharacters_createsValidObject() {
-        // Arrange & Act
-        val regInfo = RegInfo(clientName = "Client-123!@#$%")
-
-        // Assert
-        assertEquals("Client-123!@#$%", regInfo.clientName)
-    }
-
-    @Test
-    fun regInfo_withUnicodeCharacters_createsValidObject() {
-        // Arrange & Act
-        val regInfo = RegInfo(clientName = "Cliente-ñáéíóú-客户端")
-
-        // Assert
-        assertEquals("Cliente-ñáéíóú-客户端", regInfo.clientName)
-    }
-
-    @Test
-    fun regInfo_hashCode_differentForDifferentValues() {
-        // Arrange
-        val info1 = RegInfo(clientName = "Client1")
-        val info2 = RegInfo(clientName = "Client2")
-
-        // Assert
-        assertNotEquals(info1.hashCode(), info2.hashCode())
-    }
-
-    @Test
-    fun regInfo_toString_validFormat() {
-        // Arrange
-        val regInfo = RegInfo(clientName = "TestClient")
-
-        // Act
-        val result = regInfo.toString()
-
-        // Assert
-        assertNotNull(result)
-        assertTrue(result.isNotEmpty())
-    }
-
-    @Test
     fun buildConfig_withNullOptionalFields_createsValidObject() {
         // Arrange & Act
         val config = createTestBuildConfig()
 
         // Assert
         assertNull(config.httpClientBuilder)
-        assertNull(config.registrationCallback)
     }
 
     @Test
@@ -745,20 +674,6 @@ class ZetaSdkTest {
     }
 
     @Test
-    fun buildConfig_copy_registrationCallback_updatesCorrectly() {
-        // Arrange
-        val original = createTestBuildConfig()
-        val callback = RegistrationCallback { RegInfo("new") }
-
-        // Act
-        val copy = original.copy(registrationCallback = callback)
-
-        // Assert
-        assertEquals(callback, copy.registrationCallback)
-        assertNull(original.registrationCallback)
-    }
-
-    @Test
     fun buildConfig_notEquals_differentStorageConfig() {
         // Arrange
         val config1 = createTestBuildConfig()
@@ -806,65 +721,6 @@ class ZetaSdkTest {
     }
 
     @Test
-    fun registrationCallback_capturesLambdaCorrectly() = runTest {
-        // Arrange
-        val expectedName = "ExpectedClient"
-        val callback = RegistrationCallback {
-            RegInfo(clientName = expectedName)
-        }
-
-        // Act
-        val result = callback.registrationCb()
-
-        // Assert
-        assertEquals(expectedName, result.clientName)
-    }
-
-    @Test
-    fun registrationCallback_withDifferentClientNames_returnsCorrectValues() = runTest {
-        // Arrange
-        val callback1 = RegistrationCallback { RegInfo("Client1") }
-        val callback2 = RegistrationCallback { RegInfo("Client2") }
-
-        // Act
-        val result1 = callback1.registrationCb()
-        val result2 = callback2.registrationCb()
-
-        // Assert
-        assertEquals("Client1", result1.clientName)
-        assertEquals("Client2", result2.clientName)
-    }
-
-    @Test
-    fun registrationCallback_withEmptyClientName_returnsEmpty() = runTest {
-        // Arrange
-        val callback = RegistrationCallback { RegInfo("") }
-
-        // Act
-        val result = callback.registrationCb()
-
-        // Assert
-        assertEquals("", result.clientName)
-    }
-
-    @Test
-    fun registrationCallback_withComplexLogic_executesCorrectly() = runTest {
-        // Arrange
-        var sideEffect = 0
-        val callback = RegistrationCallback {
-            sideEffect += 10
-            RegInfo("Client-$sideEffect")
-        }
-
-        // Act
-        val result = callback.registrationCb()
-
-        // Assert
-        assertEquals(10, sideEffect)
-        assertEquals("Client-10", result.clientName)
-    }
-
-    @Test
     fun forget_clearsClientManagementToken() = runTest {
         val client = buildClient() as ZetaSdkClientImpl
         client.seedClientManagementToken()
@@ -906,6 +762,59 @@ class ZetaSdkTest {
         assertTrue(ZetaSdk.build("https://api.example.com", createTestBuildConfig()).listClients().isFailure)
     }
 
+    @Test
+    fun omitApplePlatformProductId_isFalse_withoutDiscoveredAuthServer() = runTest {
+        val client = buildClient() as ZetaSdkClientImpl
+
+        assertFalse(client.omitApplePlatformProductIdInSoftwarePosture())
+    }
+
+    @Test
+    fun omitApplePlatformProductId_isTrue_forV1Guard() = runTest {
+        val client = buildClient() as ZetaSdkClientImpl
+        client.storeAuthServer(apiVersions = listOf(apiVersion(1)))
+
+        assertTrue(client.omitApplePlatformProductIdInSoftwarePosture())
+    }
+
+    @Test
+    fun omitApplePlatformProductId_isFalse_forV2Guard() = runTest {
+        val client = buildClient() as ZetaSdkClientImpl
+        client.storeAuthServer(apiVersions = listOf(apiVersion(1), apiVersion(2)))
+
+        assertFalse(client.omitApplePlatformProductIdInSoftwarePosture())
+    }
+
+    @Test
+    fun omitApplePlatformProductId_isTrue_whenGuardPublishesNoApiVersions() = runTest {
+        val client = buildClient() as ZetaSdkClientImpl
+        client.storeAuthServer(apiVersions = null)
+
+        assertTrue(client.omitApplePlatformProductIdInSoftwarePosture())
+    }
+
+    private fun apiVersion(major: Int) =
+        ApiVersion(majorVersion = major, version = "$major.0.0", status = ApiVersionStatus.STABLE)
+
+    private suspend fun ZetaSdkClientImpl.storeAuthServer(apiVersions: List<ApiVersion>?) {
+        val metadata = AuthorizationServerMetadata(
+            issuer = "https://auth.example.com/realms/zeta",
+            authorizationEndpoint = "https://auth.example.com/auth",
+            tokenEndpoint = "https://auth.example.com/token",
+            nonceEndpoint = "https://auth.example.com/nonce",
+            jwksUri = "https://auth.example.com/jwks",
+            scopesSupported = listOf(scope),
+            responseTypesSupported = listOf("code"),
+            grantTypesSupported = listOf("authorization_code"),
+            tokenEndpointAuthMethodsSupported = listOf("private_key_jwt"),
+            tokenEndpointAuthSigningAlgValuesSupported = listOf("ES256"),
+            codeChallengeMethodsSupported = listOf("S256"),
+            apiVersionsSupported = apiVersions,
+        )
+        flowContext.configurationStorage.saveAuthServer(metadata, maxAgeSeconds = 3600)
+        flowContext.configurationStorage.linkResourceToAuthorizationServer(metadata)
+    }
+
     private suspend fun ZetaSdkClientImpl.seedClientManagementToken() =
         clientManagementAuthStorage.saveAccessTokens(
             accessToken = "cm-token",
@@ -920,7 +829,6 @@ class ZetaSdkTest {
         clientName: String = "TestClient",
         storageConfig: StorageConfig = StorageConfig.Custom(provider = InMemoryStorage()),
         httpClientBuilder: ZetaHttpClientBuilder? = null,
-        registrationCallback: RegistrationCallback? = null,
     ): BuildConfig {
         val tpmConfig = object : TpmConfig {}
         val authConfig = AuthConfig(
@@ -941,7 +849,6 @@ class ZetaSdkTest {
             authConfig = authConfig,
             platformProductId = platformProductId,
             httpClientBuilder = httpClientBuilder,
-            registrationCallback = registrationCallback,
         )
     }
 

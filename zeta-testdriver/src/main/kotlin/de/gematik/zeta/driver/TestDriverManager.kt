@@ -24,12 +24,14 @@
 
 package de.gematik.zeta.driver
 
-import de.gematik.zeta.driver.model.ConfigureRequest
+import de.gematik.zeta.driver.core.ConfigurableDriver
+import de.gematik.zeta.driver.core.ConfigureRequest
 import de.gematik.zeta.driver.model.SdkInstanceConfig
 import de.gematik.zeta.driver.model.toKtorLogLevel
 import de.gematik.zeta.driver.oidc.TestDriverOtpCallback
 import de.gematik.zeta.logging.Log
 import de.gematik.zeta.sdk.InternalZetaApi
+import de.gematik.zeta.sdk.ZetaSdk.forget
 import de.gematik.zeta.sdk.ZetaSdkClient
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.notifications.NotificationClient
@@ -47,7 +49,7 @@ import kotlinx.serialization.json.buildJsonObject
 public open class TestDriverManager(
     initialConfig: SdkInstanceConfig = SdkInstanceConfig.fromFileOrEnv(),
     public val featureRunner: FeatureRunner = FeatureRunner(),
-) {
+) : ConfigurableDriver {
     private val store = InMemoryStorage()
     public val otpCallback: TestDriverOtpCallback = TestDriverOtpCallback(initialConfig.oidcBindingEmail)
     public var config: SdkInstanceConfig = initialConfig
@@ -59,7 +61,7 @@ public open class TestDriverManager(
     public var httpClient: ZetaHttpClient = createHttpClient()
         private set
 
-    public open fun configure(request: ConfigureRequest) {
+    override suspend fun configure(request: ConfigureRequest) {
         config = config.copy(
             disableTlsVerification = request.disableTlsVerification,
             fachdienstUrl = request.resource.takeIf { it.isNotEmpty() } ?: config.fachdienstUrl,
@@ -81,9 +83,16 @@ public open class TestDriverManager(
         rebuildClient()
     }
 
-    public fun reset(newConfig: SdkInstanceConfig = SdkInstanceConfig.fromFileOrEnv()) {
+    override suspend fun reset() {
+        resetTo(SdkInstanceConfig.fromFileOrEnv())
+    }
+
+    public open suspend fun resetTo(newConfig: SdkInstanceConfig) {
+        runCatching { sdk.forget().getOrThrow() }
+            .onFailure { Log.w(it) { "forget() failed during reset, continuing" } }
         config = newConfig
         customCaPems.clear()
+        otpCallback.setBoundEmail(newConfig.oidcBindingEmail)
         rebuildClient()
     }
 
