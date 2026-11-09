@@ -35,6 +35,8 @@ import de.gematik.zeta.sdk.clientregistration.ClientRegistrationApiImpl
 import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationResponse
 import de.gematik.zeta.sdk.clientregistration.model.Jwks
 import de.gematik.zeta.sdk.configuration.ConfigurationStorage
+import de.gematik.zeta.sdk.configuration.models.ApiVersion
+import de.gematik.zeta.sdk.configuration.models.ApiVersionStatus
 import de.gematik.zeta.sdk.configuration.models.AuthorizationServerMetadata
 import de.gematik.zeta.sdk.configuration.models.ProtectedResourceMetadata
 import de.gematik.zeta.sdk.configuration.models.ZetaAslUse
@@ -535,7 +537,7 @@ class ClientRegistrationHandlerTest {
     private class FakeConfigurationStorage(
         private val registrationEndpointValue: String = "",
     ) : ConfigurationStorage {
-        override suspend fun getProtectedResource(name: String): ProtectedResourceMetadata? {
+        override suspend fun getProtectedResource(name: String, allowStale: Boolean): ProtectedResourceMetadata? {
             error("not in scope of the test")
         }
 
@@ -555,7 +557,7 @@ class ClientRegistrationHandlerTest {
             error("not in scope of the test")
         }
 
-        override suspend fun getAuthServer(): AuthorizationServerMetadata {
+        override suspend fun getAuthServer(allowStale: Boolean): AuthorizationServerMetadata {
             return AuthorizationServerMetadata(
                 issuer = "issuer",
                 authorizationEndpoint = "",
@@ -573,6 +575,7 @@ class ClientRegistrationHandlerTest {
                 uiLocalesSupported = listOf(""),
                 codeChallengeMethodsSupported = listOf(""),
                 registrationEndpoint = registrationEndpointValue,
+                apiVersionsSupported = listOf(ApiVersion(majorVersion = 2, version = "2.0.0", status = ApiVersionStatus.STABLE)),
             )
         }
 

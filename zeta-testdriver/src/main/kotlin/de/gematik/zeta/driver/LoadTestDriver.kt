@@ -24,6 +24,7 @@
 
 package de.gematik.zeta.driver
 
+import de.gematik.zeta.driver.core.forward
 import de.gematik.zeta.driver.model.CreateInstancesRequest
 import de.gematik.zeta.driver.model.InstanceState
 import de.gematik.zeta.driver.model.SdkInstance
@@ -202,7 +203,9 @@ private fun Route.loadProxyRoutes(instanceManager: LoadInstanceManager) {
             val requestStart = TimeSource.Monotonic.markNow()
             call.withInstance(instanceManager) { instance ->
                 val path = call.parameters.getAll("path")?.joinToString("/") ?: ""
-                val (_, forwardTime) = measureTimedValue { forward(call, instance.httpClient, instance.config) }
+                val (_, forwardTime) = measureTimedValue {
+                    forward(call, instance.config.toProxyTarget(instance.client, instance.httpClient))
+                }
                 Log.i { "[LOAD-DRIVER-TIMING] instance=${instance.id} path=$path forward=$forwardTime total=${requestStart.elapsedNow()}" }
             }
         }

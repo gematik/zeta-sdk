@@ -44,6 +44,10 @@ import java.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 public class DeviceSteps {
+    private companion object {
+        const val TEST_EMAIL = "zeta-bs@zeta.test"
+    }
+
     private lateinit var driver: AppiumDriver
 
     private val mail by lazy {
@@ -91,6 +95,26 @@ public class DeviceSteps {
         } else {
             AppiumBy.androidUIAutomator("new UiSelector().textContains($v)")
         }
+    }
+
+    private val emailScreenLabel = "Enter your email"
+    private val emailSubmitLabel = "Continue"
+    private val otpScreenLabel = "OTP Code"
+    private val otpConfirmLabel = "Confirm"
+
+    private fun emailField(): By =
+        if (isIos) {
+            AppiumBy.iOSNsPredicateString("type == 'XCUIElementTypeTextField'")
+        } else {
+            By.className("android.widget.EditText")
+        }
+
+    private fun submitEmail(email: String) {
+        val field = wait.until(ExpectedConditions.elementToBeClickable(emailField()))
+        field.click()
+        field.sendKeys(email)
+        wait.until(ExpectedConditions.elementToBeClickable(byText(emailSubmitLabel))).click()
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(byText(emailScreenLabel)))
     }
 
     @Given("an Android device with the ZETA app")
@@ -148,5 +172,18 @@ public class DeviceSteps {
                 null
             }
         }
+    }
+
+    @When("I enter the test email if the app asks for it")
+    public fun enterEmailIfAsked() {
+        val emailScreen = WebDriverWait(driver, Duration.ofSeconds(90)).until { d ->
+            when {
+                d.findElements(byText(emailScreenLabel)).isNotEmpty() -> true
+                d.findElements(byText(otpScreenLabel)).isNotEmpty() ||
+                    d.findElements(byText(otpConfirmLabel)).isNotEmpty() -> false
+                else -> null
+            }
+        }
+        if (emailScreen) submitEmail(TEST_EMAIL)
     }
 }

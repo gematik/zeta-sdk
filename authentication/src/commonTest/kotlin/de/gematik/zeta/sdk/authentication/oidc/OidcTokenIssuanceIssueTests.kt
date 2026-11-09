@@ -40,9 +40,11 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Parameters
 import io.ktor.http.headersOf
 import io.ktor.http.parseQueryString
 import kotlinx.coroutines.test.runTest
+import secureRandom
 import kotlin.io.encoding.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -100,17 +102,22 @@ private fun fakeRequest(): TokenIssuanceRequest = TokenIssuanceRequest(
     ),
 )
 
+private fun Parameters.toSingleValueMap(): Map<String, String> =
+    names().associateWith { name -> this[name] ?: "" }
+
 private fun issueFlowEngine(
     tokenResponseBody: String,
     parRequestUri: String = "urn:ietf:params:oauth:request_uri:abc123",
+    onParRequest: (Map<String, String>) -> Unit = {},
     onTokenRequest: (Map<String, String>) -> Unit = {},
 ): Pair<MockEngine, () -> String> {
     var capturedState = ""
     val engine = MockEngine { request ->
         when (request.url.toString()) {
             PAR_ENDPOINT -> {
-                val body = request.body.toByteArray().decodeToString()
-                capturedState = parseQueryString(body)["state"] ?: ""
+                val params = parseQueryString(request.body.toByteArray().decodeToString())
+                capturedState = params["state"] ?: ""
+                onParRequest(params.toSingleValueMap())
                 respond(
                     content = """{"request_uri":"$parRequestUri","expires_in":60}""",
                     status = HttpStatusCode.Created,
@@ -118,12 +125,8 @@ private fun issueFlowEngine(
                 )
             }
             TOKEN_ENDPOINT -> {
-                val body = request.body.toByteArray().decodeToString()
-                onTokenRequest(
-                    parseQueryString(body).let { params ->
-                        params.names().associateWith { name -> params[name] ?: "" }
-                    },
-                )
+                val params = parseQueryString(request.body.toByteArray().decodeToString())
+                onTokenRequest(params.toSingleValueMap())
                 respond(
                     content = tokenResponseBody,
                     status = HttpStatusCode.OK,
@@ -139,6 +142,7 @@ private fun issueFlowEngine(
 private fun issuance(
     engine: MockEngine,
     storage: AuthenticationStorage = newAuthStorage(),
+    randomBytes: (ByteArray) -> ByteArray = ::secureRandom,
 ): OidcTokenIssuance = OidcTokenIssuance(
     authApi = AuthenticationApiImpl(createClient(engine), clock = SystemZetaClock),
     authStorage = storage,
@@ -147,9 +151,14 @@ private fun issuance(
     resolveResendEmailEndpoint = { error("not used") },
     resolveVerifyEmailEndpoint = { error("not used") },
     clock = { 1000L },
+    randomBytes = randomBytes,
 )
 
 class OidcTokenIssuanceIssueTest {
+    private val issuedBody =
+        """{"access_token":"a","expires_in":300,"token_type":"DPoP","scope":"openid","refresh_token":"r"}"""
+
+    private val base64UrlNoPadding = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
 
     @Test
     fun issue_returnsIssued_andSavesTokens_whenEmailVerificationNotPending() = runTest {
@@ -439,5 +448,51 @@ class OidcTokenIssuanceIssueTest {
 
         // Assert
         assertNull(storage.getRefreshTokenExpiration())
+    }
+
+    @Test
+    fun issue_generatesCodeVerifierAndState_fromRandomSource() = runTest {
+        val requestedSizes = mutableListOf<Int>()
+        val fakeRandom: (ByteArray) -> ByteArray = { buffer ->
+            requestedSizes += buffer.size
+            buffer.apply { fill(requestedSizes.size.toByte()) }
+        }
+        var par: Map<String, String>? = null
+        var token: Map<String, String>? = null
+        val (engine, capturedState) = issueFlowEngine(
+            tokenResponseBody = issuedBody,
+            onParRequest = { par = it },
+            onTokenRequest = { token = it },
+        )
+        val sut = issuance(engine, randomBytes = fakeRandom)
+
+        // Act
+        sut.issue(fakeRequest(), oidcProviderEchoingState(capturedState))
+
+        assertEquals(listOf(32, 16), requestedSizes)
+        assertEquals(base64UrlNoPadding.encode(ByteArray(32) { 1 }), token?.get("code_verifier"))
+        assertEquals(base64UrlNoPadding.encode(ByteArray(16) { 2 }), par?.get("state"))
+    }
+
+    @Test
+    fun issue_failsWithoutNetworkCall_whenRandomSourceFails() = runTest {
+        // Arrange
+        var parRequested = false
+        var tokenRequested = false
+        val (engine, capturedState) = issueFlowEngine(
+            tokenResponseBody = issuedBody,
+            onParRequest = { parRequested = true },
+            onTokenRequest = { tokenRequested = true },
+        )
+        val storage = newAuthStorage()
+        val sut = issuance(engine, storage, randomBytes = { throw IllegalStateException("RNG unavailable") })
+
+        // Act & Assert
+        assertFailsWith<IllegalStateException> {
+            sut.issue(fakeRequest(), oidcProviderEchoingState(capturedState))
+        }
+        assertFalse(parRequested)
+        assertFalse(tokenRequested)
+        assertNull(storage.getAccessToken())
     }
 }

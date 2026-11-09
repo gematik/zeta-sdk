@@ -38,6 +38,7 @@ import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
 import de.gematik.zeta.sdk.storage.SdkStorage
 import de.gematik.zeta.time.SystemZetaClock
+import de.gematik.zeta.time.ZetaClock
 import kotlinx.serialization.json.Json
 import kotlin.collections.Map
 
@@ -79,12 +80,15 @@ class FakeApi(
 /**
  * Test util.
  */
-fun getDummyFlowContext(scope: String = "https://auth.example.com"): FlowContext =
+fun getDummyFlowContext(
+    scope: String = "https://auth.example.com",
+    clock: ZetaClock = SystemZetaClock,
+): FlowContext =
     FlowContextImpl(
         ResourceScope("https://api.example.com", listOf(scope)),
         { TODO("Not need for test") },
         InMemoryStorage(),
-        clock = SystemZetaClock,
+        clock = clock,
     )
 
 /**
@@ -137,6 +141,7 @@ fun getDummyAuthServerObject(
         uiLocalesSupported = listOf(""),
         codeChallengeMethodsSupported = listOf(""),
         registrationEndpoint = registrationEndpoint,
+        apiVersionsSupported = listOf(ApiVersion(majorVersion = 2, version = "2.0.0", status = ApiVersionStatus.STABLE)),
     )
 
 /**

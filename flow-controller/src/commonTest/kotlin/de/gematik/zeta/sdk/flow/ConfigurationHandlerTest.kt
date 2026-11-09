@@ -34,6 +34,7 @@ import de.gematik.zeta.sdk.flow.getDummyFlowContext
 import de.gematik.zeta.sdk.flow.getDummyProtectedResourceObject
 import de.gematik.zeta.sdk.flow.handler.ConfigurationHandler
 import de.gematik.zeta.sdk.flow.handler.ConfigurationHandler.ConfigurationError
+import de.gematik.zeta.time.ZetaClock
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -43,6 +44,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 /**
  * Unit tests for [ConfigurationHandler].
@@ -276,7 +278,8 @@ class ConfigurationHandlerTest {
         val resource = "https://api.example.com"
         val issuer = "https://auth.example.com"
         val cachedETag = "\"pr-etag\""
-        val ctx = getDummyFlowContext()
+        val clock = TestClock()
+        val ctx = getDummyFlowContext(clock = clock)
 
         ctx.configurationStorage.saveProtectedResource(
             protectedRes = Json.encodeToString(
@@ -285,6 +288,8 @@ class ConfigurationHandlerTest {
             maxAgeSeconds = -1,
             eTag = cachedETag,
         )
+
+        clock.advanceSeconds(1)
 
         val api = RecordingConfigurationApi(
             resourceResult = DiscoveryFetchResult(
@@ -408,7 +413,8 @@ class ConfigurationHandlerTest {
         val issuer = "https://auth.example.com"
         val authFqdn = "auth.example.com"
         val cachedETag = "\"as-etag\""
-        val ctx = getDummyFlowContext()
+        val clock = TestClock()
+        val ctx = getDummyFlowContext(clock = clock)
 
         // PR is fresh, AS is stale but retains its ETag.
         ctx.configurationStorage.saveProtectedResource(
@@ -424,6 +430,8 @@ class ConfigurationHandlerTest {
             eTag = cachedETag,
         )
         ctx.configurationStorage.linkResourceToAuthorizationServer(asMetadata)
+
+        clock.advanceSeconds(1)
 
         val api = RecordingConfigurationApi(
             authorizationResult = DiscoveryFetchResult(
@@ -454,7 +462,8 @@ class ConfigurationHandlerTest {
         val resource = "https://api.example.com"
         val issuer = "https://auth.example.com"
         val authFqdn = "auth.example.com"
-        val ctx = getDummyFlowContext()
+        val clock = TestClock()
+        val ctx = getDummyFlowContext(clock = clock)
 
         ctx.configurationStorage.saveProtectedResource(
             protectedRes = Json.encodeToString(
@@ -470,6 +479,8 @@ class ConfigurationHandlerTest {
             eTag = "\"old-as-etag\"",
         )
         ctx.configurationStorage.linkResourceToAuthorizationServer(asMetadata)
+
+        clock.advanceSeconds(1)
 
         val api = RecordingConfigurationApi(
             authorizationResult = DiscoveryFetchResult(
@@ -767,4 +778,9 @@ class ConfigurationHandlerTest {
             "code_challenge_methods_supported": ["S256"]
         }
     """.trimIndent()
+}
+
+private class TestClock(private var epochSeconds: Long = 1_000_000L) : ZetaClock {
+    override fun now(): Instant = Instant.fromEpochSeconds(epochSeconds)
+    fun advanceSeconds(seconds: Long) { epochSeconds += seconds }
 }

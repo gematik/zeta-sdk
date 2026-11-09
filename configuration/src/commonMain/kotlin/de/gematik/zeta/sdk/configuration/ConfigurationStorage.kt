@@ -38,13 +38,20 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 interface ConfigurationStorage {
-    /** [name] selects a stored protected-resource document; the default is the primary resource. */
-    suspend fun getProtectedResource(name: String = DEFAULT_PR_NAME): ProtectedResourceMetadata?
+    /**
+     * [name] selects a stored protected-resource document; the default is the primary resource.
+     * With [allowStale] = false, an entry that is no longer fresh is reported as missing.
+     */
+    suspend fun getProtectedResource(name: String = DEFAULT_PR_NAME, allowStale: Boolean = true): ProtectedResourceMetadata?
     suspend fun getProtectedResourceETag(name: String = DEFAULT_PR_NAME): String?
     suspend fun saveProtectedResource(protectedRes: String, name: String = DEFAULT_PR_NAME, maxAgeSeconds: Long?, eTag: String? = null): ProtectedResourceMetadata
     suspend fun touchProtectedResource(name: String = DEFAULT_PR_NAME, maxAgeSeconds: Long?, eTag: String? = null)
+
+    /** Fresh authorization-server entries only; used by the service discovery to pick a cached AS. */
     suspend fun getAuthServers(): List<AuthorizationServerMetadata>
-    suspend fun getAuthServer(): AuthorizationServerMetadata?
+
+    /** The AS linked to the resource. With [allowStale] = false, an entry that is no longer fresh is reported as missing. */
+    suspend fun getAuthServer(allowStale: Boolean = true): AuthorizationServerMetadata?
     suspend fun getAuthServerETag(authFqdn: String): String?
     suspend fun saveAuthServer(metadata: AuthorizationServerMetadata, maxAgeSeconds: Long?, eTag: String? = null): AuthorizationServerMetadata
     suspend fun touchAuthServer(authFqdn: String, maxAgeSeconds: Long?, eTag: String? = null)
@@ -79,7 +86,14 @@ class ConfigurationStorageImpl(
     private fun prKey(name: String) = "$PR_PREFIX$name"
     private fun asKey(authFqdn: String) = "$AS_PREFIX$authFqdn"
 
-    override suspend fun getProtectedResource(name: String): ProtectedResourceMetadata? {
+    /**
+     * Effective freshness lifetime: the server's max-age, or 24h without one, capped at 24h (A_28426-02).
+     * Negative values are treated as 0, so the entry is revalidated on next use.
+     */
+    private fun effectiveTtl(maxAgeSeconds: Long?): Long =
+        (maxAgeSeconds ?: DEFAULT_TTL_SECONDS).coerceIn(0, DEFAULT_TTL_SECONDS)
+
+    override suspend fun getProtectedResource(name: String, allowStale: Boolean): ProtectedResourceMetadata? {
         val raw = storage.get(prKey(name))
         if (raw == null) {
             Log.d { "[ZETA-SDK] PR miss (no entry) name=$name key=${prKey(name)}" }
@@ -93,8 +107,12 @@ class ConfigurationStorageImpl(
         val now = clock.now().epochSeconds
         val age = now - entry.fetchedAtEpochSeconds
         if (age > entry.ttlSeconds) {
-            Log.i { "[ZETA-SDK] PR expired name=$name age=${age}s ttl=${entry.ttlSeconds}s fetchedAt=${entry.fetchedAtEpochSeconds} now=$now" }
-            return null
+            if (!allowStale) {
+                Log.i { "[ZETA-SDK] PR expired name=$name age=${age}s ttl=${entry.ttlSeconds}s fetchedAt=${entry.fetchedAtEpochSeconds} now=$now" }
+                return null
+            }
+            Log.d { "[ZETA-SDK] PR stale (allowed) name=$name age=${age}s ttl=${entry.ttlSeconds}s" }
+            return entry.data
         }
 
         Log.d { "[ZETA-SDK] PR hit name=$name age=${age}s ttl=${entry.ttlSeconds}s" }
@@ -118,7 +136,7 @@ class ConfigurationStorageImpl(
                 throw e
             }
 
-        val ttl = maxAgeSeconds ?: DEFAULT_TTL_SECONDS
+        val ttl = effectiveTtl(maxAgeSeconds)
         val fetchedAt = clock.now().epochSeconds
         Log.d {
             "[ZETA-SDK] Saving PR name=$name key=${prKey(name)} " +
@@ -146,7 +164,7 @@ class ConfigurationStorageImpl(
 
         val refreshed = entry.copy(
             fetchedAtEpochSeconds = clock.now().epochSeconds,
-            ttlSeconds = maxAgeSeconds ?: DEFAULT_TTL_SECONDS,
+            ttlSeconds = effectiveTtl(maxAgeSeconds),
             eTag = eTag ?: entry.eTag,
         )
 
@@ -202,7 +220,7 @@ class ConfigurationStorageImpl(
         eTag: String?,
     ): AuthorizationServerMetadata {
         val authFqdn = hostOf(metadata.issuer)
-        val ttl = maxAgeSeconds ?: DEFAULT_TTL_SECONDS
+        val ttl = effectiveTtl(maxAgeSeconds)
         val fetchedAt = clock.now().epochSeconds
         Log.d {
             "[ZETA-SDK] Saving AS issuer=${metadata.issuer} fqdn=$authFqdn " +
@@ -230,7 +248,7 @@ class ConfigurationStorageImpl(
 
         val refreshed = entry.copy(
             fetchedAtEpochSeconds = clock.now().epochSeconds,
-            ttlSeconds = maxAgeSeconds ?: DEFAULT_TTL_SECONDS,
+            ttlSeconds = effectiveTtl(maxAgeSeconds),
             eTag = eTag ?: entry.eTag,
         )
 
@@ -245,7 +263,7 @@ class ConfigurationStorageImpl(
         )
     }
 
-    override suspend fun getAuthServer(): AuthorizationServerMetadata? {
+    override suspend fun getAuthServer(allowStale: Boolean): AuthorizationServerMetadata? {
         val authFqdn = storage.getMap(RS_TO_AS)?.get("resource")
         if (authFqdn == null) {
             Log.i { "[ZETA-SDK] getAuthServer: no RS_TO_AS link" }
@@ -263,8 +281,12 @@ class ConfigurationStorageImpl(
         val now = clock.now().epochSeconds
         val age = now - entry.fetchedAtEpochSeconds
         if (age > entry.ttlSeconds) {
-            Log.i { "[ZETA-SDK] getAuthServer expired fqdn=$authFqdn age=${age}s ttl=${entry.ttlSeconds}s" }
-            return null
+            if (!allowStale) {
+                Log.i { "[ZETA-SDK] getAuthServer expired fqdn=$authFqdn age=${age}s ttl=${entry.ttlSeconds}s" }
+                return null
+            }
+            Log.d { "[ZETA-SDK] getAuthServer stale (allowed) fqdn=$authFqdn age=${age}s ttl=${entry.ttlSeconds}s" }
+            return entry.data
         }
 
         Log.d { "[ZETA-SDK] getAuthServer hit fqdn=$authFqdn age=${age}s ttl=${entry.ttlSeconds}s" }
@@ -320,6 +342,6 @@ class ConfigurationStorageImpl(
 data class CachedEntry<T>(
     val data: T,
     val fetchedAtEpochSeconds: Long,
-    val ttlSeconds: Long, // max-age
+    val ttlSeconds: Long, // effective max-age, capped at 24h
     val eTag: String? = null,
 )

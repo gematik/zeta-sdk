@@ -23,7 +23,8 @@
  */
 package de.gematik.zeta.driver
 
-import de.gematik.zeta.driver.model.ConfigureRequest
+import de.gematik.zeta.driver.core.proxyRoutes
+import de.gematik.zeta.driver.core.sessionRoutes
 import de.gematik.zeta.driver.model.KvnrEmailRequest
 import de.gematik.zeta.driver.oidc.TestDriverOtpCallback
 import de.gematik.zeta.logging.Log
@@ -41,7 +42,6 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
-import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.webSocket
 import kotlinx.serialization.Serializable
@@ -49,49 +49,37 @@ import kotlinx.serialization.json.Json
 
 public val customCaPems: MutableList<String> = mutableListOf()
 
-private const val NOTIFICATIONS_PUSHERS_PATH = "/testdriver-api/notifications/pushers"
-private const val CLIENT_MANAGEMENT_PATH = "/testdriver-api/client-management"
+private const val TEST_DRIVER_API_PATH = "/testdriver-api"
+private const val NOTIFICATIONS_PUSHERS_PATH = "$TEST_DRIVER_API_PATH/notifications/pushers"
+private const val CLIENT_MANAGEMENT_PATH = "$TEST_DRIVER_API_PATH/client-management"
+private const val OIDC_PATH = "/oidc"
 
 public fun Application.testDriverRouting(
     manager: TestDriverManager = TestDriverManager(),
 ) {
     routing {
-        route("/proxy/{path...}") {
-            handle {
-                forward(call, manager.httpClient, manager.config)
-            }
-        }
+        sessionRoutes(TEST_DRIVER_API_PATH, manager)
+        proxyRoutes("/proxy") { manager.config.toProxyTarget(manager.sdk, manager.httpClient) }
 
         webSocket("/proxy/{path...}") {
             val targetUrl = buildWsTargetUrl(call, manager.config)
             forwardWs(this, manager.sdk, targetUrl, manager.config)
         }
 
-        get("/testdriver-api/authenticate") {
+        get("$TEST_DRIVER_API_PATH/authenticate") {
             authenticate(call, manager.sdk)
         }
 
-        get("/testdriver-api/discover") {
+        get("$TEST_DRIVER_API_PATH/discover") {
             discover(call, manager.sdk)
         }
 
-        get("/testdriver-api/register") {
+        get("$TEST_DRIVER_API_PATH/register") {
             register(call, manager.sdk)
         }
 
-        get("/testdriver-api/storage") {
+        get("$TEST_DRIVER_API_PATH/storage") {
             storage(call, manager)
-        }
-        get("/testdriver-api/reset") {
-            resetDriver(call, manager)
-        }
-
-        post("/testdriver-api/configure") {
-            configure(call, manager)
-        }
-
-        post("/oidc/kvnr-email") {
-            setKvnrEmail(call, manager)
         }
 
         // Notification Service (push pusher/channel management)
@@ -99,16 +87,16 @@ public fun Application.testDriverRouting(
         post(NOTIFICATIONS_PUSHERS_PATH) { registerPusher(call, manager.notifications()) }
         put(NOTIFICATIONS_PUSHERS_PATH) { updatePusher(call, manager.notifications()) }
         delete(NOTIFICATIONS_PUSHERS_PATH) { deletePusher(call, manager.notifications()) }
-        get("/testdriver-api/notifications/channels") { getAvailableChannels(call, manager.notifications()) }
-        get("/testdriver-api/notifications/channels/local") { getLocalChannels(call, manager.notifications()) }
-        post("/testdriver-api/notifications/channels/local") { setLocalChannels(call, manager.notifications()) }
+        get("$TEST_DRIVER_API_PATH/notifications/channels") { getAvailableChannels(call, manager.notifications()) }
+        get("$TEST_DRIVER_API_PATH/notifications/channels/local") { getLocalChannels(call, manager.notifications()) }
+        post("$TEST_DRIVER_API_PATH/notifications/channels/local") { setLocalChannels(call, manager.notifications()) }
 
-        get("/testdriver-api/hellozeta/android") {
+        get("$TEST_DRIVER_API_PATH/hellozeta/android") {
             val r = manager.featureRunner.run("classpath:features/hello_zeta_android.feature")
             call.respond(if (r.passed) HttpStatusCode.OK else HttpStatusCode.InternalServerError, r)
         }
 
-        get("/testdriver-api/hellozeta/ios") {
+        get("$TEST_DRIVER_API_PATH/hellozeta/ios") {
             val r = manager.featureRunner.run("classpath:features/hello_zeta_ios.feature")
             call.respond(if (r.passed) HttpStatusCode.OK else HttpStatusCode.InternalServerError, r)
         }
@@ -121,25 +109,15 @@ public fun Application.testDriverRouting(
         delete("$CLIENT_MANAGEMENT_PATH/clients/{client_id}") { deleteClient(call, manager.sdk) }
 
         // OIDC
-        post("/oidc/collect-email") { collectEmail(call, manager.otpCallback) }
-        post("/oidc/resend-otp") { resendOtp(call, manager.otpCallback) }
-        post("/oidc/verify-otp") { verifyOtp(call, manager.otpCallback) }
-        post("/oidc/kvnr-email") { setKvnrEmail(call, manager) }
-        get("/oidc/status") { otpStatus(call, manager.otpCallback) }
+        post("$OIDC_PATH/collect-email") { collectEmail(call, manager.otpCallback) }
+        post("$OIDC_PATH/resend-otp") { resendOtp(call, manager.otpCallback) }
+        post("$OIDC_PATH/verify-otp") { verifyOtp(call, manager.otpCallback) }
+        post("$OIDC_PATH/kvnr-email") { setKvnrEmail(call, manager) }
+        get("$OIDC_PATH/status") { otpStatus(call, manager.otpCallback) }
 
         get("/health") {
             call.respondText("alive")
         }
-    }
-}
-
-private suspend fun resetDriver(call: ApplicationCall, manager: TestDriverManager) {
-    try {
-        manager.reset()
-        reset(call, manager.sdk)
-    } catch (e: Exception) {
-        Log.e(e) { "Failed to reset TestDriver" }
-        call.respond(HttpStatusCode.InternalServerError, "Failed to reset TestDriver: ${e.message}")
     }
 }
 
@@ -152,17 +130,6 @@ private suspend fun storage(call: ApplicationCall, manager: TestDriverManager) {
         )
     } catch (ex: Throwable) {
         call.respond(HttpStatusCode.InternalServerError, ex.message.toString())
-    }
-}
-
-private suspend fun configure(call: RoutingCall, manager: TestDriverManager) {
-    try {
-        val request = call.receive<ConfigureRequest>()
-        manager.configure(request)
-        call.respondText("Test driver configured successfully", ContentType.Text.Plain)
-    } catch (e: Exception) {
-        Log.e(e) { "Failed to configure TestDriver" }
-        call.respond(HttpStatusCode.BadRequest, "Failed to configure TestDriver: ${e.message}")
     }
 }
 

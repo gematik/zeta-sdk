@@ -951,13 +951,10 @@ sbom-csharp:
   needs: []
   before_script:
     - dotnet --info
-    - command -v jq || (apt-get update && apt-get install -y jq)
   script:
     - NUGET_VERSION="${CI_COMMIT_TAG:-$RELEASE_VERSION_WEB}"
-    - DOTNET_RT=$(dotnet msbuild zeta-csharp-nuget/ZetaSdk.csproj -getProperty:RuntimeFrameworkVersion)
     - dotnet tool install CycloneDX --tool-path .tools
     - .tools/dotnet-CycloneDX zeta-csharp-nuget/ZetaSdk.csproj --output sbom-csharp --output-format Json --spec-version 1.6 --set-name Zeta.Sdk --set-version "$NUGET_VERSION" --set-type Library
-    - jq --argjson rt "$(sed "s/__VERSION__/$DOTNET_RT/g" zeta-csharp-nuget/sbom/dotnet-runtime.json)" '.components += $rt | .dependencies[0].dependsOn += [$rt[]["bom-ref"]]' sbom-csharp/bom.json > sbom-csharp/bom.tmp && mv sbom-csharp/bom.tmp sbom-csharp/bom.json
   artifacts:
     expire_in: 1 week
     paths:

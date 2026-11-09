@@ -24,6 +24,8 @@
 
 package de.gematik.zeta.driver
 
+import de.gematik.zeta.driver.core.buildForwardHeaders
+import de.gematik.zeta.driver.core.shouldForwardHeader
 import de.gematik.zeta.driver.model.SdkInstanceConfig
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.storage.InMemoryStorage

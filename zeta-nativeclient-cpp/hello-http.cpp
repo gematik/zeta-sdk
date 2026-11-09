@@ -41,7 +41,7 @@
 static const char* POPP_HEADER     = "PoPP";
 static const char* API_EREZEPT     = "api/erezept";
 static const char* PRODUCT_ID      = "ZETA-Test-Client";
-static const char* PRODUCT_VERSION = "2.0.1";
+static const char* PRODUCT_VERSION = "2.0.4";
 static const char* CLIENT_NAME     = "cpp-client";
 
 // ── Custom SMC-B connector example ───────────────────────────

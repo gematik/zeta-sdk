@@ -27,6 +27,7 @@ import de.gematik.zeta.sdk.crypto.OcspRequestData
 import de.gematik.zeta.sdk.crypto.OcspValidity
 import de.gematik.zeta.sdk.crypto.RevocationHandler
 import de.gematik.zeta.sdk.network.http.client.CachedOcspResponse
+import de.gematik.zeta.sdk.network.http.client.MAX_CACHE_AGE_NO_NEXT_UPDATE_SECONDS
 import de.gematik.zeta.sdk.network.http.client.RevocationChecker
 import de.gematik.zeta.sdk.network.http.client.RevocationStorage
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
@@ -42,6 +43,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -246,8 +248,8 @@ class RevocationValidatorCacheTest {
                 issuerDer,
             )
         } returns OcspValidity(
-            thisUpdateEpochSeconds = Clock.System.now().epochSeconds,
-            nextUpdateEpochSeconds = Clock.System.now().epochSeconds + 3600,
+            thisUpdateEpochSeconds = now,
+            nextUpdateEpochSeconds = now + 3600,
         )
 
         val checker = RevocationChecker(
@@ -293,8 +295,8 @@ class RevocationValidatorCacheTest {
         every {
             handler.getCrlValidity(any())
         } returns CrlValidity(
-            thisUpdateEpochSeconds = Clock.System.now().epochSeconds,
-            nextUpdateEpochSeconds = Clock.System.now().epochSeconds + 3_600L,
+            thisUpdateEpochSeconds = now,
+            nextUpdateEpochSeconds = now + 3_600L,
         )
 
         val checker = RevocationChecker(
@@ -321,6 +323,135 @@ class RevocationValidatorCacheTest {
                 match { it.contentEquals(certDer) },
             )
         }
+    }
+
+    @Test
+    fun validate_rejectsStaple_whenThisUpdateIsInTheFuture() = runTest {
+        val staple = byteArrayOf(7, 7, 7)
+        val handler = mockk<RevocationHandler>(relaxed = true)
+        every { handler.getOcspValidity(staple, certDer, issuerDer) } returns OcspValidity(
+            thisUpdateEpochSeconds = now + 60,
+            nextUpdateEpochSeconds = now + 3600,
+        )
+
+        val checker = RevocationChecker(
+            storage = mockk(relaxed = true),
+            httpClient = mockk(relaxed = true),
+            handler = handler,
+            clock = clock,
+        )
+
+        assertFailsWith<IllegalStateException> {
+            checker.validate(stapledOcspResponse = staple, certDer = certDer, issuerDer = issuerDer)
+        }
+        verify(exactly = 0) { handler.validate(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun validate_rejectsStaple_whenNextUpdateHasPassed() = runTest {
+        val staple = byteArrayOf(7, 7, 7)
+        val handler = mockk<RevocationHandler>(relaxed = true)
+        every { handler.getOcspValidity(staple, certDer, issuerDer) } returns OcspValidity(
+            thisUpdateEpochSeconds = now - 7200,
+            nextUpdateEpochSeconds = now - 1,
+        )
+
+        val checker = RevocationChecker(
+            storage = mockk(relaxed = true),
+            httpClient = mockk(relaxed = true),
+            handler = handler,
+            clock = clock,
+        )
+
+        assertFailsWith<IllegalStateException> {
+            checker.validate(stapledOcspResponse = staple, certDer = certDer, issuerDer = issuerDer)
+        }
+    }
+
+    @Test
+    fun validate_acceptsStapleWithoutNextUpdate_within24h_andRejectsAfter() = runTest {
+        val staple = byteArrayOf(7, 7, 7)
+        val handler = mockk<RevocationHandler>(relaxed = true)
+        val checker = RevocationChecker(
+            storage = mockk(relaxed = true),
+            httpClient = mockk(relaxed = true),
+            handler = handler,
+            clock = clock,
+        )
+
+        every { handler.getOcspValidity(staple, certDer, issuerDer) } returns OcspValidity(
+            thisUpdateEpochSeconds = now - 3600,
+            nextUpdateEpochSeconds = null,
+        )
+        checker.validate(stapledOcspResponse = staple, certDer = certDer, issuerDer = issuerDer)
+
+        every { handler.getOcspValidity(staple, certDer, issuerDer) } returns OcspValidity(
+            thisUpdateEpochSeconds = now - MAX_CACHE_AGE_NO_NEXT_UPDATE_SECONDS - 1,
+            nextUpdateEpochSeconds = null,
+        )
+        assertFailsWith<IllegalStateException> {
+            checker.validate(stapledOcspResponse = staple, certDer = certDer, issuerDer = issuerDer)
+        }
+    }
+
+    @Test
+    fun validate_doesNotCacheDirectOcsp_whenThisUpdateIsInTheFuture() = runTest {
+        val storage = mockk<RevocationStorage>(relaxed = true)
+        coEvery { storage.getOcsp(any()) } returns null
+        coEvery { storage.getCrl(any()) } returns null
+
+        val handler = mockk<RevocationHandler>(relaxed = true)
+        coEvery { handler.prepareOcspRequest(certDer, issuerDer) } returns OcspRequestData(
+            url = "http://ocsp.example.com",
+            requestDer = byteArrayOf(1),
+        )
+        every { handler.getOcspValidity(fetchedOcspResponseDer, certDer, issuerDer) } returns OcspValidity(
+            thisUpdateEpochSeconds = now + 60,
+            nextUpdateEpochSeconds = now + 3600,
+        )
+        every { handler.extractCrlUrl(certDer) } returns null
+
+        val checker = RevocationChecker(
+            storage = storage,
+            httpClient = mockHttpClient(responseBytes = fetchedOcspResponseDer),
+            handler = handler,
+            clock = clock,
+        )
+
+        assertFailsWith<IllegalStateException> {
+            checker.validate(stapledOcspResponse = null, certDer = certDer, issuerDer = issuerDer)
+        }
+        verify(exactly = 0) { handler.validate(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { storage.setOcsp(any(), any()) }
+        verify(exactly = 1) { handler.extractCrlUrl(certDer) }
+    }
+
+    @Test
+    fun validate_rejectsCrl_whenThisUpdateIsInTheFuture() = runTest {
+        val crlDer = byteArrayOf(9, 9, 9)
+        val storage = mockk<RevocationStorage>(relaxed = true)
+        coEvery { storage.getOcsp(any()) } returns null
+        coEvery { storage.getCrl(any()) } returns null
+
+        val handler = mockk<RevocationHandler>(relaxed = true)
+        every { handler.extractCrlUrl(certDer) } returns "http://crl.example.com/crl.crl"
+        every { handler.getCrlValidity(any()) } returns CrlValidity(
+            thisUpdateEpochSeconds = now + 60,
+            nextUpdateEpochSeconds = now + 3600,
+        )
+
+        val checker = RevocationChecker(
+            storage = storage,
+            httpClient = mockHttpClient(crlDer),
+            handler = handler,
+            clock = clock,
+        )
+
+        assertFailsWith<IllegalStateException> {
+            checker.validate(stapledOcspResponse = null, certDer = certDer, issuerDer = issuerDer)
+        }
+        verify(exactly = 0) { handler.validateCrl(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { storage.setCrl(any(), any()) }
     }
 
     private fun mockHttpClient(

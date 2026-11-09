@@ -35,11 +35,13 @@ import de.gematik.zeta.sdk.clientregistration.ClientRegistrationException
 import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationRequest
 import de.gematik.zeta.sdk.clientregistration.model.ClientRegistrationResponse
 import de.gematik.zeta.sdk.clientregistration.model.Jwks
+import de.gematik.zeta.sdk.clientregistration.model.toJson
 import de.gematik.zeta.sdk.crypto.sha256PublicKeyPoint
 import de.gematik.zeta.sdk.flow.CapabilityHandler
 import de.gematik.zeta.sdk.flow.CapabilityResult
 import de.gematik.zeta.sdk.flow.FlowContext
 import de.gematik.zeta.sdk.flow.FlowNeed
+import de.gematik.zeta.sdk.flow.LegacyApiCompat
 import de.gematik.zeta.sdk.tpm.ClientKeyPoPSigner
 import de.gematik.zeta.sdk.tpm.TpmProvider
 import io.ktor.http.HttpStatusCode
@@ -84,7 +86,11 @@ open class ClientRegistrationHandler(
             return CapabilityResult.Done
         }
 
-        val registered = register(authServer.effectiveRegistrationEndpoint, authServer.nonceEndpoint, clientKey)
+        val compat = LegacyApiCompat.select(authServer.apiVersionsSupported)
+        Log.i {
+            "ZETA API: server offers ${authServer.apiVersionsSupported?.map { it.version } ?: "none (legacy)"}, compat=${compat ?: "none"}"
+        }
+        val registered = register(authServer.effectiveRegistrationEndpoint, authServer.nonceEndpoint, clientKey, compat)
 
         val response = registered.response.getOrElse { exception ->
             exception as ClientRegistrationException
@@ -99,14 +105,19 @@ open class ClientRegistrationHandler(
 
     private class Registered(val response: Result<ClientRegistrationResponse>, val type: RegisteredAttestationType)
 
-    private suspend fun register(endpoint: String, nonceEndpoint: String, clientKey: PublicKeyOut): Registered {
+    private suspend fun register(
+        endpoint: String,
+        nonceEndpoint: String,
+        clientKey: PublicKeyOut,
+        compat: LegacyApiCompat?,
+    ): Registered {
         val state = attestationState
         val attestor = deviceAttestor
 
         when {
             state != null && attestor != null && popSigner != null -> {
-                fastPath(endpoint, clientKey, attestor, popSigner, state)?.let { return it }
-                hardwarePath(endpoint, clientKey, attestor, popSigner, state)?.let { return it }
+                fastPath(endpoint, clientKey, attestor, popSigner, state, compat)?.let { return it }
+                hardwarePath(endpoint, clientKey, attestor, popSigner, state, compat)?.let { return it }
             }
             attestor != null && state == null ->
                 Log.w { "DeviceAttestor configured without AttestationStateStorage; hardware attestation disabled, using software registration" }
@@ -116,7 +127,7 @@ open class ClientRegistrationHandler(
         Log.i { "Registering with software attestation" }
         return Registered(
             // The guard accepts each nonce once, even when it rejects the request, so every attempt gets a fresh one.
-            attemptRegister(endpoint, SOFTWARE_NO_RETRY_STATUSES) { softwareRequest(nonceEndpoint, clientKey) },
+            attemptRegister(endpoint, SOFTWARE_NO_RETRY_STATUSES, compat) { softwareRequest(nonceEndpoint, clientKey) },
             RegisteredAttestationType.SOFTWARE,
         )
     }
@@ -134,6 +145,7 @@ open class ClientRegistrationHandler(
         attestor: DeviceAttestor,
         popSigner: ClientKeyPoPSigner,
         state: AttestationStateStorage,
+        compat: LegacyApiCompat?,
     ): Registered? {
         val token = state.getZetaAttestationToken() ?: return null
         if (!attestor.hasAttestedKey()) return null
@@ -149,7 +161,7 @@ open class ClientRegistrationHandler(
             return null
         }
         Log.i { "Registering via fast-path with ZETA attestation token" }
-        val result = attemptRegister(endpoint, ATTESTED_NO_RETRY_STATUSES) { request }
+        val result = attemptRegister(endpoint, ATTESTED_NO_RETRY_STATUSES, compat) { request }
         val status = result.exceptionOrNull()?.let { (it as? ClientRegistrationException)?.response?.status }
         if (status == HttpStatusCode.BadRequest || status == HttpStatusCode.Unauthorized) {
             Log.w { "Fast-path rejected with ${status.value}; dropping ZETA attestation token" }
@@ -165,6 +177,7 @@ open class ClientRegistrationHandler(
         attestor: DeviceAttestor,
         popSigner: ClientKeyPoPSigner,
         state: AttestationStateStorage,
+        compat: LegacyApiCompat?,
     ): Registered? {
         if (!tpmProvider.isHardwareBacked()) {
             Log.i { "Client instance key is not hardware-backed; using software registration" }
@@ -185,7 +198,7 @@ open class ClientRegistrationHandler(
             return null
         }
         Log.i { "Registering with ${attestor.attestationType} hardware attestation" }
-        val result = attemptRegister(endpoint, ATTESTED_NO_RETRY_STATUSES) { request }
+        val result = attemptRegister(endpoint, ATTESTED_NO_RETRY_STATUSES, compat) { request }
         val status = (result.exceptionOrNull() as? ClientRegistrationException)?.response?.status
         if (status == HttpStatusCode.BadRequest) {
             Log.w { "Guard rejected the hardware attestation; discarding the attested key" }
@@ -216,12 +229,15 @@ open class ClientRegistrationHandler(
     private suspend fun attemptRegister(
         endpoint: String,
         noRetryStatuses: Set<Int>,
+        compat: LegacyApiCompat?,
         buildRequest: suspend () -> ClientRegistrationRequest,
     ): Result<ClientRegistrationResponse> {
         var lastException: ClientRegistrationException? = null
         repeat(maxRetries) { attempt ->
             try {
-                return Result.success(regApi.register(endpoint, buildRequest()))
+                val request = buildRequest()
+                val body = compat?.registrationBody(request) ?: request.toJson()
+                return Result.success(regApi.register(endpoint, request, body))
             } catch (ex: ClientRegistrationException) {
                 lastException = ex
                 val status = ex.response?.status?.value

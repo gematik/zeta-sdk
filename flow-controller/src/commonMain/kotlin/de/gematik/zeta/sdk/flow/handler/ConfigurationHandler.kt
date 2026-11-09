@@ -93,8 +93,8 @@ class ConfigurationHandler(
      * Returns true if both the protected-resource and its auth-server link exist.
      */
     private suspend fun isMetadataAvailable(storage: ConfigurationStorage): Boolean {
-        val hasPr = storage.getProtectedResource() != null
-        val hasAuthLink = storage.getAuthServer() != null
+        val hasPr = storage.getProtectedResource(allowStale = false) != null
+        val hasAuthLink = storage.getAuthServer(allowStale = false) != null
         return hasPr && hasAuthLink
     }
 
@@ -106,7 +106,7 @@ class ConfigurationHandler(
         storage: ConfigurationStorage,
     ): ProtectedResourceMetadata {
         Log.i { "[ZETA-SDK] call getProtectedResource from storage: ${resourceScope.storageKey}" }
-        storage.getProtectedResource()?.let { return it }
+        storage.getProtectedResource(allowStale = false)?.let { return it }
 
         Log.i { "[ZETA-SDK] call getProtectedResource from api: ${resourceScope.fqdn}" }
         val cachedETag = storage.getProtectedResourceETag()

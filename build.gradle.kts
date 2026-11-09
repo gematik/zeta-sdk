@@ -68,6 +68,7 @@ sonar {
                 "attestation-service/**",
                 "zeta-client/**",
                 "zeta-client-java/**",
+                "zeta-testdriver-core/**",
                 "zeta-testdriver/**",
                 "zeta-nativetestdriver/**",
             ).joinToString(",")
