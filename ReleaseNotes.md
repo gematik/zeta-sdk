@@ -1,7 +1,7 @@
 
 # RELEASE NOTES
 
-## Version: v2.0.4
+## Version: v2.0.6
 
 This version implements the ZETA protocol for the ZETA client SDK.
 
@@ -59,6 +59,44 @@ runtime environments.
 
 - The SDK does not fully handle paths parts in the AS well-known URL. The AS well-known is defined
   as on the root path, so this is WONTFIX.
+
+### Changes in 2.0.6 (from 2.0.5)
+
+#### Breaking changes
+
+- N/A
+
+#### New
+
+- N/A
+
+#### Bug Fixes
+
+- Fixed missing ASL session recovery for PEP errors `403` with error code 9 ("unknown CID"), 3 or 8 now clears the session and triggers one new handshake instead of aborting.
+  The original error code is kept if recovery fails.
+- Mobile client flow (OIDC): the Pushed Authorization Request (PAR) now includes the `client_id`.
+
+### Behavioural Changes
+
+- `logout()` now also clears the ASL session.
+
+### Changes in 2.0.5 (from 2.0.4)
+
+#### Breaking changes
+
+- N/A
+
+#### New
+
+- N/A
+
+#### Bug Fixes
+
+- Fixed missing Gradle task dependencies between `commonizeCInterop` and Linux/MinGW metadata tasks, causing Windows CI builds to fail with implicit dependency errors.
+
+### Behavioural Changes
+
+- N/A
 
 ### Changes in 2.0.4 (from 2.0.3)
 

@@ -635,6 +635,7 @@ class ZetaSdkClientImpl(
     override suspend fun logout(): Result<Unit> = runCatching {
         flowContext.authenticationStorage.clear()
         flowContext.tpmStorage.deleteAllDpopKeys()
+        flowContext.aslStorage.clear()
         sdkCookieStorage.clearCookie()
         clientManagementAuthStorage.clear()
     }

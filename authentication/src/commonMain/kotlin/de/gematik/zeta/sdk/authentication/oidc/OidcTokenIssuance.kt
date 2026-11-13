@@ -70,7 +70,7 @@ class OidcTokenIssuance(
     companion object {
         private const val GRANT_TYPE_AUTHORIZATION_CODE = "authorization_code"
         private const val GRANT_TYPE_TOKEN_EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange"
-        private const val CLIENT_ASSERTION_TYPE_JWT_BEARER = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+        internal const val CLIENT_ASSERTION_TYPE_JWT_BEARER = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
         private const val SUBJECT_TOKEN_TYPE_ACCESS_TOKEN = "urn:ietf:params:oauth:token-type:access_token"
         private const val REQUESTED_TOKEN_TYPE_REFRESH_TOKEN = "urn:ietf:params:oauth:token-type:refresh_token"
         const val BINDING_MODE_COLLECT_EMAIL = "collect_email"
@@ -102,6 +102,7 @@ class OidcTokenIssuance(
 
         val requestUri = postPar(
             provider = provider,
+            clientId = request.params.clientId,
             codeChallenge = challenge,
             state = state,
             clientAssertion = request.clientAssertionProvider(),
@@ -171,12 +172,16 @@ class OidcTokenIssuance(
 
     suspend fun postPar(
         provider: OidcTokenProvider,
+        clientId: String,
         codeChallenge: String,
         state: String,
         clientAssertion: String,
         scope: String,
     ): String {
+        require(clientId.isNotBlank()) { "clientId must not be blank for PAR" }
+
         val parameters = Parameters.build {
+            append("client_id", clientId)
             append("response_type", "code")
             append("redirect_uri", provider.config.redirectUri)
             append("oidc_redirect_uri", provider.config.oidcRedirectUri)

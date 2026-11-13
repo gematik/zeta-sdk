@@ -26,6 +26,7 @@ package de.gematik.zeta.sdk
 
 import de.gematik.zeta.sdk.ZetaSdk.clearRegistration
 import de.gematik.zeta.sdk.ZetaSdk.forget
+import de.gematik.zeta.sdk.asl.EstablishedSession
 import de.gematik.zeta.sdk.attestation.RegisteredAttestationType
 import de.gematik.zeta.sdk.attestation.model.PlatformProductId
 import de.gematik.zeta.sdk.authentication.AuthConfig
@@ -748,6 +749,28 @@ class ZetaSdkTest {
         client.logout()
 
         assertNull(client.clientManagementAuthStorage.getAccessToken())
+    }
+
+    @Test
+    fun logout_clearsAslSession() = runTest {
+        // Arrange
+        val client = buildClient() as ZetaSdkClientImpl
+        client.flowContext.aslStorage.saveSession(
+            EstablishedSession(
+                keyId = ByteArray(32) { it.toByte() },
+                c2sAppDataKey = ByteArray(32) { 1 },
+                s2cAppDataKey = ByteArray(32) { 2 },
+                requestCounter = 0L,
+                encCounter = 0L,
+            ),
+        )
+        assertNotNull(client.flowContext.aslStorage.getCurrentSession())
+
+        // Act
+        client.logout()
+
+        // Assert
+        assertNull(client.flowContext.aslStorage.getCurrentSession())
     }
 
     @Test

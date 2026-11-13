@@ -129,7 +129,7 @@ public class MainActivity : ComponentActivity() {
             resource = fachdienst,
             config = BuildConfig(
                 clientName = "sdk-client",
-                productVersion = "2.0.4",
+                productVersion = "2.0.6",
                 productId = "ZETA-Test-Client",
                 storageConfig = StorageConfig.Custom(InMemoryStorage()),
                 authConfig = AuthConfig(

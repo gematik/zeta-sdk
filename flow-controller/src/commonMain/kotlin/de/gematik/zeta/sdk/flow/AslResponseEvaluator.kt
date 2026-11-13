@@ -45,30 +45,29 @@ class AslResponseEvaluator : ResponseEvaluator {
         retryState: FlowOrchestrator.RetryState,
     ): FlowDirective {
         val status = call.response.status.value
-        return when {
-            status == 200 -> evaluateInner(call, ctx, retryState)
+        if (status == 200) return evaluateInner(call, ctx, retryState)
 
-            isPepAslSessionExpired(call.response) -> {
-                Log.w { "ASL: PEP reports AslSessionExpired. Re-establishing channel" }
-                reestablishAsl(call, ctx, retryState, "ASL session expired or unknown")
+        if (isPepAslSessionExpired(call.response)) {
+            Log.w { "ASL: PEP reports AslSessionExpired. Re-establishing channel" }
+            return reestablishAsl(call, ctx, retryState, "ASL session expired or unknown", -1)
+        }
+
+        val decoded = runCatching { decodeAslError(call.response) }
+        val aslError = decoded.getOrNull()
+        return when (status) {
+            403 if aslError != null && aslError.errorCode in RECOVERABLE_ASL_ERRORS -> {
+                Log.w { "ASL: 403 [${aslError.errorCode}] ${aslError.errorMessage}. Re-establishing channel" }
+                reestablishAsl(call, ctx, retryState, "ASL session invalid [${aslError.errorCode}] ${aslError.errorMessage}", aslError.errorCode)
             }
-
-            status == 500 -> {
-                val error = runCatching { decodeAslError(call.response) }.getOrNull()
-                Log.w { "ASL: 500 response [${error?.errorCode}] ${error?.errorMessage}. Re-establishing channel" }
-                reestablishAsl(call, ctx, retryState, error?.errorMessage ?: "HTTP 500 from server")
+            500 -> {
+                Log.w { "ASL: 500 response [${aslError?.errorCode}] ${aslError?.errorMessage}. Re-establishing channel" }
+                reestablishAsl(call, ctx, retryState, aslError?.errorMessage ?: "HTTP 500 from server")
             }
-
             else -> {
-                val error = runCatching { decodeAslError(call.response) }
-                    .getOrElse { cause ->
-                        Log.e(cause) { "Failed to decode ASL error body (status=$status)" }
-                        AslErrorMessage(
-                            messageType = "Error",
-                            errorCode = -1,
-                            errorMessage = "Unparseable ASL error response (HTTP $status)",
-                        )
-                    }
+                val error = aslError ?: run {
+                    Log.e(decoded.exceptionOrNull()) { "Failed to decode ASL error body (status=$status)" }
+                    AslErrorMessage(messageType = "Error", errorCode = -1, errorMessage = "Unparseable ASL error response (HTTP $status)")
+                }
                 Log.e { "Establishing ASL error [${error.errorCode}] ${error.errorMessage}" }
                 FlowDirective.Abort(call.response, ZetaClientError.AslError(error.errorCode, error.errorMessage))
             }
@@ -118,18 +117,20 @@ class AslResponseEvaluator : ResponseEvaluator {
         ctx: FlowContext,
         retryState: FlowOrchestrator.RetryState,
         reason: String,
+        errorCode: Int = -1,
     ): FlowDirective {
+        ctx.aslStorage.clear()
         if (retryState.hasAttemptedAslReestablish) {
             Log.e { "ASL: $reason, but channel was already re-established once. Giving up" }
-            return FlowDirective.Abort(call.response, ZetaClientError.AslError(-1, reason))
+            return FlowDirective.Abort(call.response, ZetaClientError.AslError(errorCode, reason))
         }
         retryState.hasAttemptedAslReestablish = true
-        ctx.aslStorage.clear()
         return FlowDirective.Perform(FlowNeed.Asl)
     }
 
     private companion object {
         const val PEP_ERROR_ORIGIN = "pep"
         const val ASL_SESSION_EXPIRED = "AslSessionExpired"
+        val RECOVERABLE_ASL_ERRORS = setOf(3, 8, 9)
     }
 }

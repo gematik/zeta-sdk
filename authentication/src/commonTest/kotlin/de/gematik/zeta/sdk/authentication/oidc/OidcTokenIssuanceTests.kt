@@ -31,6 +31,7 @@ import de.gematik.zeta.sdk.authentication.AuthenticationException
 import de.gematik.zeta.sdk.authentication.AuthenticationStorage
 import de.gematik.zeta.sdk.authentication.AuthenticationStorageImpl
 import de.gematik.zeta.sdk.authentication.OidcTokenProvider
+import de.gematik.zeta.sdk.authentication.oidc.OidcTokenIssuance.Companion.CLIENT_ASSERTION_TYPE_JWT_BEARER
 import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.storage.InMemoryStorage
 import de.gematik.zeta.sdk.storage.ResourceScope
@@ -39,15 +40,19 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
 import io.ktor.http.Url
 import io.ktor.http.headersOf
+import io.ktor.http.parseQueryString
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class OidcTokenIssuanceTests {
@@ -467,7 +472,7 @@ class OidcTokenIssuanceTests {
         // Arrange
         val engine = MockEngine {
             respond(
-                content = """{"request_uri":"urn:ietf:params:oauth:request_uri:abc123","expires_in":60}""",
+                content = PAR_SUCCESS_BODY,
                 status = HttpStatusCode.Created,
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
@@ -492,7 +497,7 @@ class OidcTokenIssuanceTests {
         val engine = MockEngine { request ->
             capturedUrl = request.url.toString()
             respond(
-                content = """{"request_uri":"urn:...","expires_in":60}""",
+                content = PAR_SUCCESS_BODY,
                 status = HttpStatusCode.Created,
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
@@ -507,6 +512,37 @@ class OidcTokenIssuanceTests {
 
         // Assert
         assertEquals(PAR_ENDPOINT, capturedUrl)
+    }
+
+    @Test
+    fun requestPar_sendsParametersAsFormUrlEncodedBody() = runTest {
+        // Arrange
+        var capturedContentType: ContentType? = null
+        var capturedForm: Parameters? = null
+        val engine = MockEngine { request ->
+            capturedContentType = request.body.contentType
+            capturedForm = parseQueryString(request.body.toByteArray().decodeToString())
+            respond(
+                content = PAR_SUCCESS_BODY,
+                status = HttpStatusCode.Created,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val api = AuthenticationApiImpl(createClient(engine), SystemZetaClock)
+
+        // Act
+        api.requestPar(
+            endpoint = PAR_ENDPOINT,
+            parameters = Parameters.build {
+                append("client_id", TEST_CLIENT_ID)
+                append("response_type", "code")
+            },
+        )
+
+        // Assert
+        assertEquals(ContentType.Application.FormUrlEncoded, capturedContentType?.withoutParameters())
+        assertEquals(TEST_CLIENT_ID, capturedForm?.get("client_id"))
+        assertEquals("code", capturedForm?.get("response_type"))
     }
 
     @Test
@@ -562,7 +598,7 @@ class OidcTokenIssuanceTests {
         // Arrange
         val engine = MockEngine {
             respond(
-                content = """{"request_uri":"urn:ietf:params:oauth:request_uri:abc123","expires_in":60}""",
+                content = PAR_SUCCESS_BODY,
                 status = HttpStatusCode.Created,
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
@@ -572,6 +608,7 @@ class OidcTokenIssuanceTests {
         // Act
         val requestUri = sut.postPar(
             provider = oidcProvider(),
+            clientId = TEST_CLIENT_ID,
             codeChallenge = "challenge-value",
             state = "state-value",
             clientAssertion = "assertion-jwt",
@@ -580,6 +617,76 @@ class OidcTokenIssuanceTests {
 
         // Assert
         assertEquals("urn:ietf:params:oauth:request_uri:abc123", requestUri)
+    }
+
+    // A_29660 / RFC 9126 §2.1: client_id is mandatory in the PAR request;
+    // client_assertion does not replace it.
+    @Test
+    fun postPar_sendsClientIdAlongsideClientAssertion() = runTest {
+        // Arrange
+        var capturedForm: Parameters? = null
+        val engine = MockEngine { request ->
+            capturedForm = parseQueryString(request.body.toByteArray().decodeToString())
+            respond(
+                content = PAR_SUCCESS_BODY,
+                status = HttpStatusCode.Created,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val sut = issuance(engine)
+
+        // Act
+        sut.postPar(
+            provider = oidcProvider(),
+            clientId = TEST_CLIENT_ID,
+            codeChallenge = "challenge-value",
+            state = "state-value",
+            clientAssertion = "assertion-jwt",
+            scope = "openid",
+        )
+
+        // Assert
+        val form = assertNotNull(capturedForm)
+        assertEquals(TEST_CLIENT_ID, form["client_id"])
+        assertEquals(1, form.getAll("client_id")?.size, "client_id must be sent exactly once")
+        assertEquals("assertion-jwt", form["client_assertion"])
+        assertEquals(CLIENT_ASSERTION_TYPE_JWT_BEARER, form["client_assertion_type"])
+    }
+
+    @Test
+    fun postPar_throwsIllegalArgumentException_whenClientIdIsEmpty() = runTest {
+        // Arrange
+        val sut = issuance(MockEngine { error("PAR endpoint must not be called") })
+
+        // Act & Assert
+        assertFailsWith<IllegalArgumentException> {
+            sut.postPar(
+                provider = oidcProvider(),
+                clientId = "",
+                codeChallenge = "challenge-value",
+                state = "state-value",
+                clientAssertion = "assertion-jwt",
+                scope = "openid",
+            )
+        }
+    }
+
+    @Test
+    fun postPar_throwsIllegalArgumentException_whenClientIdIsBlank() = runTest {
+        // Arrange
+        val sut = issuance(MockEngine { error("PAR endpoint must not be called") })
+
+        // Act & Assert
+        assertFailsWith<IllegalArgumentException> {
+            sut.postPar(
+                provider = oidcProvider(),
+                clientId = "   ",
+                codeChallenge = "challenge-value",
+                state = "state-value",
+                clientAssertion = "assertion-jwt",
+                scope = "openid",
+            )
+        }
     }
 
     @Test
@@ -598,6 +705,7 @@ class OidcTokenIssuanceTests {
         assertFailsWith<AuthenticationException> {
             sut.postPar(
                 provider = oidcProvider(),
+                clientId = TEST_CLIENT_ID,
                 codeChallenge = "challenge-value",
                 state = "state-value",
                 clientAssertion = "assertion-jwt",
@@ -637,6 +745,8 @@ private const val AUTHORIZATION_ENDPOINT = "https://zeta-kind.local/protocol/ope
 private const val BROKER_ENDPOINT = "https://zeta-kind.local/broker/zeta-sekidp-oidc/endpoint"
 private const val REDIRECT_URI = "http://localhost:8090/cb/demo/app"
 private const val OIDC_REDIRECT_URI = "http://localhost:8090/cb/demo/oidc"
+private const val TEST_CLIENT_ID = "test-client-id"
+private const val PAR_SUCCESS_BODY = """{"request_uri":"urn:ietf:params:oauth:request_uri:abc123","expires_in":60}"""
 
 private val unusedOtpCallback = object : OtpCallback {
     override suspend fun awaitEmail(): String = error("not used")
