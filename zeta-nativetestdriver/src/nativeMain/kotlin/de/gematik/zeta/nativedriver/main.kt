@@ -151,7 +151,7 @@ private fun buildSdk(fachdienstUrl: String, disableTlsVerification: Boolean, caP
         resource = fachdienstUrl,
         BuildConfig(
             productId = "test-proxy",
-            productVersion = "2.0.4",
+            productVersion = "2.0.6",
             clientName = "sdk-client",
             storageConfig = StorageConfig.Custom(InMemoryStorage()),
             tpmConfig = object : TpmConfig {},

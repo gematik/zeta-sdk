@@ -23,6 +23,7 @@
  */
 package de.gematik.zeta.sdk.flow
 
+import de.gematik.zeta.sdk.asl.EstablishedSession
 import de.gematik.zeta.sdk.flow.RequestEvaluatorImplTest.FakeForwardingClient
 import de.gematik.zeta.sdk.network.http.client.InnerHeadersKey
 import de.gematik.zeta.sdk.network.http.client.InnerStatusKey
@@ -46,6 +47,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class AslResponseEvaluatorTest {
@@ -773,6 +776,218 @@ class AslResponseEvaluatorTest {
         assertIs<FlowDirective.Perform>(firstDirective)
         assertIs<FlowDirective.Abort>(secondDirective)
     }
+
+    @Test
+    fun evaluate_performsAsl_whenOuter403CborUnknownCid() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState()
+        val response = aslResponseWith(
+            status = HttpStatusCode.Forbidden,
+            body = aslErrorCbor(9, "unknown CID"),
+        )
+
+        // Act
+        val directive = evaluator.evaluate(response.call, dummyCtx(), retryState)
+
+        // Assert
+        val perform = assertIs<FlowDirective.Perform>(directive)
+        assertEquals(FlowNeed.Asl, perform.need)
+        assertTrue(retryState.hasAttemptedAslReestablish)
+    }
+
+    @Test
+    fun evaluate_performsAsl_whenOuter403CborUnknownCidComesWithPepOrigin() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState()
+        val response = aslResponseWith(
+            status = HttpStatusCode.Forbidden,
+            body = aslErrorCbor(9, "unknown CID"),
+            outerHeaders = mapOf("zeta-error-origin" to "pep"),
+        )
+
+        // Act
+        val directive = evaluator.evaluate(response.call, dummyCtx(), retryState)
+
+        // Assert
+        val perform = assertIs<FlowDirective.Perform>(directive)
+        assertEquals(FlowNeed.Asl, perform.need)
+        assertTrue(retryState.hasAttemptedAslReestablish)
+    }
+
+    @Test
+    fun evaluate_performsAsl_whenOuter403CborGcmFail() = runTest {
+        assertReestablishOn403(errorCode = 3, message = "GCM returns FAIL")
+    }
+
+    @Test
+    fun evaluate_performsAsl_whenOuter403CborUnknownKeyId() = runTest {
+        assertReestablishOn403(errorCode = 8, message = "unknow KeyID")
+    }
+
+    @Test
+    fun evaluate_clearsAslStorage_whenOuter403CborUnknownCid() = runTest {
+        // Arrange
+        val ctx = dummyCtx()
+        seedAslSession(ctx)
+        val response = aslResponseWith(
+            status = HttpStatusCode.Forbidden,
+            body = aslErrorCbor(9, "unknown CID"),
+        )
+
+        // Act
+        AslResponseEvaluator().evaluate(response.call, ctx, FlowOrchestrator.RetryState())
+
+        // Assert
+        assertNull(ctx.aslStorage.getCurrentSession())
+    }
+
+    @Test
+    fun evaluate_aborts_whenOuter403CborUnknownCidAndReestablishAlreadyAttempted() = runTest {
+        // Arrange
+        val ctx = dummyCtx()
+        seedAslSession(ctx)
+        val retryState = FlowOrchestrator.RetryState().apply { hasAttemptedAslReestablish = true }
+        val response = aslResponseWith(
+            status = HttpStatusCode.Forbidden,
+            body = aslErrorCbor(9, "unknown CID"),
+        )
+
+        // Act
+        val directive = AslResponseEvaluator().evaluate(response.call, ctx, retryState)
+
+        // Assert
+        val abort = assertIs<FlowDirective.Abort>(directive)
+        val error = assertIs<ZetaClientError.AslError>(abort.error)
+
+        assertEquals(9, error.errorCode)
+        assertNull(ctx.aslStorage.getCurrentSession())
+    }
+
+    @Test
+    fun evaluate_reestablishesOnlyOnce_acrossTwoUnknownCid() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState()
+        val first = aslResponseWith(HttpStatusCode.Forbidden, body = aslErrorCbor(9, "unknown CID"))
+        val second = aslResponseWith(HttpStatusCode.Forbidden, body = aslErrorCbor(9, "unknown CID"))
+
+        // Act
+        val firstDirective = evaluator.evaluate(first.call, dummyCtx(), retryState)
+        val secondDirective = evaluator.evaluate(second.call, dummyCtx(), retryState)
+
+        // Assert
+        assertIs<FlowDirective.Perform>(firstDirective)
+        assertIs<FlowDirective.Abort>(secondDirective)
+    }
+
+    @Test
+    fun evaluate_reestablishesOnlyOnce_across500ThenUnknownCid() = runTest {
+        // Arrange
+        val evaluator = AslResponseEvaluator()
+        val retryState = FlowOrchestrator.RetryState()
+        val first = aslResponseWith(status = HttpStatusCode.InternalServerError)
+        val second = aslResponseWith(HttpStatusCode.Forbidden, body = aslErrorCbor(9, "unknown CID"))
+
+        // Act
+        val firstDirective = evaluator.evaluate(first.call, dummyCtx(), retryState)
+        val secondDirective = evaluator.evaluate(second.call, dummyCtx(), retryState)
+
+        // Assert
+        assertIs<FlowDirective.Perform>(firstDirective)
+        assertIs<FlowDirective.Abort>(secondDirective)
+    }
+
+    @Test
+    fun evaluate_aborts_whenOuter403CborTranscriptError() = runTest {
+        assertAbortWithoutReestablish(HttpStatusCode.Forbidden, errorCode = 5, message = "Transscript Error")
+    }
+
+    @Test
+    fun evaluate_aborts_whenOuter403CborIsNotARequest() = runTest {
+        assertAbortWithoutReestablish(HttpStatusCode.Forbidden, errorCode = 7, message = "is not a request")
+    }
+
+    @Test
+    fun evaluate_aborts_whenOuter400CborBadFormatExtendedCiphertext() = runTest {
+        assertAbortWithoutReestablish(
+            HttpStatusCode.BadRequest,
+            errorCode = 6,
+            message = "bad format: extended ciphertext",
+        )
+    }
+
+    @Test
+    fun evaluate_aborts_whenOuter400CborDecodingError() = runTest {
+        assertAbortWithoutReestablish(HttpStatusCode.BadRequest, errorCode = 1, message = "Decoding Error")
+    }
+
+    @Test
+    fun evaluate_aborts_whenUnknownCidCodeComesWithNon403Status() = runTest {
+        assertAbortWithoutReestablish(HttpStatusCode.BadRequest, errorCode = 9, message = "unknown CID")
+    }
+
+    private suspend fun assertReestablishOn403(errorCode: Int, message: String) {
+        val retryState = FlowOrchestrator.RetryState()
+        val response = aslResponseWith(HttpStatusCode.Forbidden, body = aslErrorCbor(errorCode, message))
+
+        val directive = AslResponseEvaluator().evaluate(response.call, dummyCtx(), retryState)
+
+        val perform = assertIs<FlowDirective.Perform>(directive)
+        assertEquals(FlowNeed.Asl, perform.need)
+        assertTrue(retryState.hasAttemptedAslReestablish)
+    }
+
+    private suspend fun assertAbortWithoutReestablish(status: HttpStatusCode, errorCode: Int, message: String) {
+        val retryState = FlowOrchestrator.RetryState()
+        val response = aslResponseWith(status, body = aslErrorCbor(errorCode, message))
+
+        val directive = AslResponseEvaluator().evaluate(response.call, dummyCtx(), retryState)
+
+        val abort = assertIs<FlowDirective.Abort>(directive)
+        val error = assertIs<ZetaClientError.AslError>(abort.error)
+        assertEquals(errorCode, error.errorCode)
+        assertEquals(message, error.detail)
+        assertFalse(retryState.hasAttemptedAslReestablish)
+    }
+
+    private fun aslErrorCbor(code: Int, message: String): ByteArray {
+        require(code in 0..23) { "only CBOR small ints supported here" }
+        val msg = message.encodeToByteArray()
+        require(msg.size < 256) { "message too long for this helper" }
+        val msgHeader = if (msg.size < 24) {
+            byteArrayOf((0x60 + msg.size).toByte())
+        } else {
+            byteArrayOf(0x78, msg.size.toByte())
+        }
+        return byteArrayOf(
+            0xa3.toByte(),
+            0x6b, *"MessageType".encodeToByteArray(),
+            0x65, *"Error".encodeToByteArray(),
+            0x69, *"ErrorCode".encodeToByteArray(),
+            code.toByte(),
+            0x6c, *"ErrorMessage".encodeToByteArray(),
+            *msgHeader, *msg,
+        )
+    }
+
+    private suspend fun seedAslSession(ctx: FlowContext) {
+        ctx.aslStorage.saveSession(buildSession())
+        assertNotNull(ctx.aslStorage.getCurrentSession())
+    }
+
+    private fun buildSession(
+        keyId: ByteArray = ByteArray(32) { it.toByte() },
+        requestCounter: Long = 0L,
+        encCounter: Long = 0L,
+    ): EstablishedSession = EstablishedSession(
+        keyId = keyId,
+        c2sAppDataKey = ByteArray(32) { 1 },
+        s2cAppDataKey = ByteArray(32) { 2 },
+        requestCounter = requestCounter,
+        encCounter = encCounter,
+    )
 
     private suspend fun aslResponseWith(
         status: HttpStatusCode,

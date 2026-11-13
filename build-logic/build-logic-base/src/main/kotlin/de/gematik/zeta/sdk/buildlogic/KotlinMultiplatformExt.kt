@@ -66,6 +66,17 @@ fun Project.setupKmp(
         }
     }
 
+    val commonizeCInterop = tasks.matching {
+        it.name == "commonizeCInterop"
+    }
+
+    tasks.matching {
+        it.name == "linuxX64MetadataElements" ||
+            it.name == "mingwX64MetadataElements"
+    }.configureEach {
+        dependsOn(commonizeCInterop)
+    }
+
     configure<KotlinMultiplatformExtension> {
         explicitApi = ExplicitApiMode.Strict
         jvmToolchain {

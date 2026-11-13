@@ -1055,24 +1055,24 @@ depending on the state of the implementation according to the project milestones
 
 The ZETA API offers the following public API:
 
-| Operation                    | Description                                                                                                                                                                            | Return value   | Errors      |
-|------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------|-------------|
-| getVersion()                 | static method that returns the ZETA SDK version string                                                                                                                                  | String         |             |
-| build(resource, BuildConfig) | static method to create a new SDK client instance                                                                                                                                      |                |             |
-| forget()                     | static method to clear all cached information for the FQDN, like instance key, well-known files, or access tokens. This method is mostly used for testing and unregistration scenarios |                |             |
-| discover()                   | Perform discovery and configuration, i.e. mainly reading the well-known files                                                                                                          |                |             |
-| register()                   | Perform client registration; includes discovery and configuration if not already done                                                                                                  |                |             |
-| authenticate()               | perform the authentication; includes client registration and discovery and configuration if not alreaady done                                                                          |                |             |
-| httpClient()                 | Returns an HttpClient with overloaded method that implement the ZETA specific protocol; this includes authentication etc if not already done                                           |                |             |
-| status()                     | Returns the current state of the client instance                                                                                                                                       | SdkStatus enum |             |
-| logout()                     | Clears the stored authentication tokens and deletes the DPoP keys                                                                                                                      |                |             |
-| changeEmail(newEmail)        | Starts an e-mail change: the guard sends a one-time code to the new address. Returns `Pending` (code sent) or `Verified` (address already verified)                                    | ChangeEmailResponse |        |
-| resendEmailChangeCode()      | Re-sends the one-time code of the pending e-mail change                                                                                                                                | EmailChallenge      |        |
-| verifyEmailChange(code)      | Submits the one-time code; the new address then applies to all clients of the identity                                                                                                 | -                   |        |
-| listClients()                | Lists all registered clients (devices) of the identity at this guard, including this one                                                                                               | List<RegisteredClient>|        |
-| deleteClient(id)             | De-registers a client of the identity; deleting this client also clears its local registration                                                                                         | -                   |        |
-| clearRegistration()          | Clear the client registration without clearing the client instance key                                                                                                                 |                |             |
-| close()                      | Closing the ZETA SDK client without forgetting the cached information and cookies                                                                                                      | -              | error codes |
+| Operation                    | Description                                                                                                                                                                            | Return value           | Errors      |
+|------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------|-------------|
+| getVersion()                 | static method that returns the ZETA SDK version string                                                                                                                                 | String                 |             |
+| build(resource, BuildConfig) | static method to create a new SDK client instance                                                                                                                                      |                        |             |
+| forget()                     | static method to clear all cached information for the FQDN, like instance key, well-known files, or access tokens. This method is mostly used for testing and unregistration scenarios |                        |             |
+| discover()                   | Perform discovery and configuration, i.e. mainly reading the well-known files                                                                                                          |                        |             |
+| register()                   | Perform client registration; includes discovery and configuration if not already done                                                                                                  |                        |             |
+| authenticate()               | perform the authentication; includes client registration and discovery and configuration if not alreaady done                                                                          |                        |             |
+| httpClient()                 | Returns an HttpClient with overloaded method that implement the ZETA specific protocol; this includes authentication etc if not already done                                           |                        |             |
+| status()                     | Returns the current state of the client instance                                                                                                                                       | SdkStatus enum         |             |
+| logout()                     | Clears the stored authentication tokens, the ASL session and deletes the DPoP keys                                                                                                     |                        |             |
+| changeEmail(newEmail)        | Starts an e-mail change: the guard sends a one-time code to the new address. Returns `Pending` (code sent) or `Verified` (address already verified)                                    | ChangeEmailResponse    |             |
+| resendEmailChangeCode()      | Re-sends the one-time code of the pending e-mail change                                                                                                                                | EmailChallenge         |             |
+| verifyEmailChange(code)      | Submits the one-time code; the new address then applies to all clients of the identity                                                                                                 | -                      |             |
+| listClients()                | Lists all registered clients (devices) of the identity at this guard, including this one                                                                                               | List<RegisteredClient> |             |
+| deleteClient(id)             | De-registers a client of the identity; deleting this client also clears its local registration                                                                                         | -                      |             |
+| clearRegistration()          | Clear the client registration without clearing the client instance key                                                                                                                 |                        |             |
+| close()                      | Closing the ZETA SDK client without forgetting the cached information and cookies                                                                                                      | -                      | error codes |
 
 Inside the HTTP operations as provided by the HttpClient, the discovery, client registration and authentication are performed automatically.
 The methods discover(), register(), and authenticate() are idempotent.
@@ -1496,13 +1496,13 @@ Status codes: `0` NOT_REGISTERED · `1` REGISTERED_NO_VALID_TOKENS · `2` HAS_RE
 
 **Auth & registration:**
 
-| Function                    | Returns on failure | Description              |
-|-----------------------------|--------------------|--------------------------|
-| `ZetaSdk_discover`          | `-1`               | Runs discovery           |
-| `ZetaSdk_register`          | `-1`               | Runs client registration |
-| `ZetaSdk_authenticate`      | `-1`               | Runs authentication      |
-| `ZetaSdk_logout`            | `-1`               | Clears tokens            |
-| `ZetaSdk_clearRegistration` | `-1`               | Clears registration only |
+| Function                    | Returns on failure | Description                |
+|-----------------------------|--------------------|----------------------------|
+| `ZetaSdk_discover`          | `-1`               | Runs discovery             |
+| `ZetaSdk_register`          | `-1`               | Runs client registration   |
+| `ZetaSdk_authenticate`      | `-1`               | Runs authentication        |
+| `ZetaSdk_logout`            | `-1`               | Clears tokens, ASL session |
+| `ZetaSdk_clearRegistration` | `-1`               | Clears registration only   |
 
 **HTTP (sync):**
 
