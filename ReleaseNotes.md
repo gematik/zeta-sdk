@@ -1,7 +1,7 @@
 
 # RELEASE NOTES
 
-## Version: v1.3.2
+## Version: v1.3.5
 
 This version implements the ZETA protocol for the ZETA client SDK.
 
@@ -61,6 +61,72 @@ runtime environments.
 - The SDK does not fully handle paths parts in the AS well-known URL. The AS well-known is defined
   as on the root path, so this is WONTFIX.
 
+## Changes in 1.3.5 (from 1.3.4)
+
+### New Features
+
+- N/A
+
+### Bug Fixes
+
+- N/A
+-
+### Security
+
+- Updated Bouncy Castle (bcprov-jdk18on, bcpkix-jdk18on) from 1.86 to 1.87, fixing:
+  CVE-2026-103606, CVE-2026-103610, CVE-2026-103611, CVE-2026-103612,
+  CVE-2026-103613, CVE-2026-103614, CVE-2026-103615, CVE-2026-103616,
+  CVE-2026-103617
+
+### Behavioural Changes
+
+- N/A
+
+## Changes in 1.3.4 (from 1.3.3)
+
+### New Features
+
+- N/A
+
+### Bug Fixes
+
+- N/A
+-
+### Security
+
+- Mitigate CVE-2026-114938 (Java4Shell) in testdriver image.
+  Disable the vulnerable HotSpot Base64 intrinsic via -XX:-UseBASE64Intrinsics in the testdriver ENTRYPOINT
+
+### Behavioural Changes
+
+- N/A
+
+## Changes in 1.3.3 (from 1.3.2)
+
+### New Features
+
+- N/A
+
+### Bug Fixes
+
+- N/A
+-
+### Security
+
+Updated third-party dependencies to fix vulnerabilities reported by Dependency-Track:
+
+- Bouncy Castle (`bcprov-jdk18on`, `bcpkix-jdk18on`): 1.85.2 / 1.85 -> 1.86
+  - CVE-2026-17508, CVE-2026-18036, CVE-2026-18040, CVE-2026-71888,
+    CVE-2026-71889, CVE-2026-71891, CVE-2026-71892, CVE-2026-97873
+- Netty (`netty-codec-http`, `netty-codec-http2`): 4.2.17.Final -> 4.2.19
+  - CVE-2026-89044, CVE-2026-93488, CVE-2026-93491, CVE-2026-93492,
+    CVE-2026-93558, CVE-2026-93562, CVE-2026-93565, CVE-2026-93566,
+    CVE-2026-93567, CVE-2026-93568, CVE-2026-93573, CVE-2026-93574,
+    CVE-2026-93579
+
+### Behavioural Changes
+
+- N/A
 
 ## Changes in 1.3.2 (from 1.3.0)
 
