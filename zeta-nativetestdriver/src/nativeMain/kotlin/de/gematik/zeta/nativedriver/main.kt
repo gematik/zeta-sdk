@@ -28,8 +28,14 @@ import de.gematik.zeta.driver.core.DriverConfig
 import de.gematik.zeta.driver.core.DriverSession
 import de.gematik.zeta.driver.core.ProxyConfig
 import de.gematik.zeta.driver.core.ProxyTarget
+import de.gematik.zeta.driver.core.popp.PoppGeneratorConfig
+import de.gematik.zeta.driver.core.popp.SmcbActorReader
+import de.gematik.zeta.driver.core.popp.defaultPoppTokenProvider
+import de.gematik.zeta.driver.core.popp.logStaticPoppTokenFallback
 import de.gematik.zeta.driver.core.proxyRoutes
 import de.gematik.zeta.driver.core.sessionRoutes
+import de.gematik.zeta.logging.Log
+import de.gematik.zeta.logging.ZetaLogLevel
 import de.gematik.zeta.platform.Platform
 import de.gematik.zeta.platform.platform
 import de.gematik.zeta.sdk.BuildConfig
@@ -55,6 +61,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import kotlinx.cinterop.toKString
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import platform.posix.getenv
 
@@ -62,6 +69,7 @@ private const val NATIVE_PROXY_PREFIX = "/nativeproxy"
 private const val NATIVE_DRIVER_API_PREFIX = "/nativedriver-api"
 
 public fun main() {
+    Log.setLogLevel(ZetaLogLevel.WARN)
     val fachdienstUrl = requireNotNull(getenv("FACHDIENST_URL")?.toKString()) {
         "FACHDIENST_URL is required"
     }
@@ -70,6 +78,8 @@ public fun main() {
         ?.toKString()
         ?.toBooleanStrictOrNull()
         ?: false
+
+    val poppToken = startupPoppToken(disableTlsVerification)
 
     embeddedServer(CIO, port = 8091) {
         install(ContentNegotiation) {
@@ -93,7 +103,7 @@ public fun main() {
                     httpClient = session.httpClient,
                     config = ProxyConfig(
                         targetBaseUrl = session.config.resource,
-                        poppToken = getenv("POPP_TOKEN")?.toKString(),
+                        poppToken = poppToken.ifBlank { null },
                         filterHostHeaders = true,
                     ),
                 )
@@ -101,7 +111,7 @@ public fun main() {
             route(NATIVE_DRIVER_API_PREFIX) {
                 get("/health") { call.respond(HttpStatusCode.OK, "alive") }
                 get("/hellonative") {
-                    val poppHeader = call.request.headers["PoPP"]
+                    val poppHeader = call.request.headers["PoPP"] ?: poppToken.ifBlank { null }
 
                     val result = runCatching {
                         session.httpClient.get("hellozeta") {
@@ -128,6 +138,33 @@ public fun main() {
     }.start(wait = true)
 }
 
+private fun env(name: String): String = getenv(name)?.toKString() ?: ""
+
+private fun startupPoppToken(disableServerValidation: Boolean): String {
+    val static = env("POPP_TOKEN")
+    if (env("POPP_TOKEN_GENERATOR_URL").isBlank()) {
+        logStaticPoppTokenFallback("", static)
+        return static
+    }
+    val config = PoppGeneratorConfig(
+        generatorUrl = env("POPP_TOKEN_GENERATOR_URL"),
+        proofMethod = env("POPP_PROOF_METHOD"),
+        patientId = env("POPP_PATIENT_ID"),
+        insurerId = env("POPP_INSURER_ID"),
+    )
+    val generated = runBlocking {
+        defaultPoppTokenProvider(disableServerValidation).tokenFor(config) {
+            SmcbActorReader.fromKeystoreFile(
+                env("SMB_KEYSTORE_FILE"),
+                env("SMB_KEYSTORE_ALIAS"),
+                env("SMB_KEYSTORE_PASSWORD"),
+            )
+        }
+    }
+    if (generated == null) logStaticPoppTokenFallback(config.generatorUrl, static)
+    return generated ?: static
+}
+
 private fun getPlatformProduct(): PlatformProductId {
     return when (val plat = platform()) {
         is Platform.Jvm.Macos, Platform.Native.Macos -> PlatformProductId.AppleProductId("apple", "macos", listOf())
@@ -151,7 +188,7 @@ private fun buildSdk(fachdienstUrl: String, disableTlsVerification: Boolean, caP
         resource = fachdienstUrl,
         BuildConfig(
             productId = "test-proxy",
-            productVersion = "2.0.6",
+            productVersion = "2.0.8",
             clientName = "sdk-client",
             storageConfig = StorageConfig.Custom(InMemoryStorage()),
             tpmConfig = object : TpmConfig {},

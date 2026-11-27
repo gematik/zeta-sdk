@@ -17,4 +17,6 @@ COPY zeta-testdriver/build/libs/zeta-testdriver.jar /app/zeta-testdriver.jar
 COPY zeta-testdriver/build/runtime-libs/ /app/lib/
 
 EXPOSE 8080
-ENTRYPOINT ["java","-cp","/app/zeta-testdriver.jar:/app/lib/*","de.gematik.zeta.driver.MainKt"]
+
+# CVE-2026-114938 (Java4Shell): disable vulnerable Base64 intrinsic until base image has a fixed JRE (>= 21.0.13.1)
+ENTRYPOINT ["java","-XX:-UseBASE64Intrinsics","-cp","/app/zeta-testdriver.jar:/app/lib/*","de.gematik.zeta.driver.MainKt"]

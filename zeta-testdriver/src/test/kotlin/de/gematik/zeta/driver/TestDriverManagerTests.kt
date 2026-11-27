@@ -357,4 +357,49 @@ class TestDriverManagerTest {
         assertNotNull(manager.sdk)
         assertNotNull(manager.httpClient)
     }
+
+    private class CountingSource(private val token: String?) : PoppTokenSource {
+        var calls = 0
+        override suspend fun generatedTokenFor(config: SdkInstanceConfig): String? {
+            calls++
+            return token
+        }
+    }
+
+    @Test
+    fun init_usesGeneratedPoppToken_overStaticToken() {
+        val m = TestDriverManager(initialConfig.copy(poppToken = "static"), poppTokenSource = CountingSource("gen"))
+
+        assertEquals("gen", m.config.poppToken)
+    }
+
+    @Test
+    fun init_keepsStaticPoppToken_whenNoGeneratedToken() {
+        val m = TestDriverManager(initialConfig.copy(poppToken = "static"), poppTokenSource = CountingSource(null))
+
+        assertEquals("static", m.config.poppToken)
+    }
+
+    @Test
+    fun resetTo_keepsGeneratedPoppToken_withoutCallingSourceAgain() = runTest {
+        val source = CountingSource("gen")
+        val m = TestDriverManager(initialConfig, poppTokenSource = source)
+
+        m.resetTo(initialConfig.copy(poppToken = "other"))
+
+        assertEquals("gen", m.config.poppToken)
+        assertEquals(1, source.calls)
+    }
+
+    @Test
+    fun configure_keepsGeneratedPoppToken() = runTest {
+        customCaPems.clear()
+        val source = CountingSource("gen")
+        val m = TestDriverManager(initialConfig, poppTokenSource = source)
+
+        m.configure(ConfigureRequest("", "https://new.example.com", false))
+
+        assertEquals("gen", m.config.poppToken)
+        assertEquals(1, source.calls)
+    }
 }

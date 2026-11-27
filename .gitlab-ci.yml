@@ -21,9 +21,10 @@ spec:
       type: boolean
       default: false
     do_client_tests_only:
-      description: "Fast lane: run ONLY the client build+test jobs (C#, Java), skipping all other stages"
-      type: boolean
-      default: false
+      description: "Fast lane: run ONLY the client build+test jobs, skipping all other stages. [true] = all platforms, or pick one: [linux] / [windows] / [macos] / [java]"
+      type: string
+      default: "false"
+      options: [ "false", "true", "linux", "windows", "macos", "java" ]
     do_nuget_only:
       description: "Fast lane: build, test and publish only the C# NuGet package"
       type: boolean
@@ -59,7 +60,6 @@ variables:
   DOCKER_TLS_VERIFY: "1"
   ANDROID_EMULATOR_IMAGE: "$CI_REGISTRY_IMAGE/android-emulator-image:latest"
   ANDROIDTESTDRIVER_IMAGE: "$CI_REGISTRY_IMAGE/android-testdriver-image"
-  GRADLE_USER_HOME: $CI_PROJECT_DIR/.gradle
 
 include:
   # adds job dependency-check-gradle
@@ -88,25 +88,28 @@ workflow:
     - when: never
 
 default:
-  image: $CI_REGISTRY/zeta/zeta-client/zeta-sdk/android-image:latest
+  image: $CI_REGISTRY/zeta/zeta-client/zeta-sdk/android-image:latest # restored image
   tags: [ zeta ]
   before_script:
     - chmod +x ./gradlew
   cache:
     # cache valid only for a specific pipeline instance
-    - key: $CI_PIPELINE_ID
+    - &pipeline-cache
+      key: $CI_PIPELINE_ID
       paths:
         - "**/build"
         - "**/build/**"
         - "build-cache"
     # Gradle dependencies + wrapper, shared across pipelines
-    - key:
+    - &gradle-deps-cache
+      key:
         files:
           - gradle/libs.versions.toml
           - gradle/wrapper/gradle-wrapper.properties
       paths:
         - .gradle-home/caches/modules-2/
         - .gradle-home/wrapper/
+      policy: pull
   services:
     - name: docker:24.0.5-dind
       variables:
@@ -144,7 +147,7 @@ stages:
 # Fast-lane skip: when do_client_tests_only is set, every non-client-test job is disabled,
 # regardless of any other condition. This must be the FIRST rule wherever it's included.
 .skip-if-client-tests-only: &skip-if-client-tests-only
-  - if: '"$[[ inputs.do_client_tests_only ]]" == "true"'
+  - if: '"$[[ inputs.do_client_tests_only ]]" != "false"'
     when: never
 
 # Fast-lane skip: any android mode (full, test-only, base-image) runs ONLY the android jobs.
@@ -155,6 +158,11 @@ stages:
 # Fast-lane skip: browserstack != off runs ONLY the BrowserStack build+upload jobs.
 .skip-if-browserstack: &skip-if-browserstack
   - if: '"$[[ inputs.browserstack ]]" != "off"'
+    when: never
+
+# Reports, scans and publishing: only on tags and on staging/release (pushes and MRs into them).
+.skip-unless-tag-staging-release: &skip-unless-tag-staging-release
+  - if: $CI_COMMIT_TAG == null && $CI_COMMIT_BRANCH !~ /^(staging|release)$/ && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME !~ /^(staging|release)$/
     when: never
 
 # Runs on git tags, or when the pipeline is started with android=full|base-image.
@@ -256,7 +264,6 @@ stages:
     - if: '$CI_COMMIT_BRANCH == "staging"'
     - if: '$CI_COMMIT_BRANCH == "release"'
     - if: '"$[[ inputs.do_pre_release_checks ]]" == "true"'
-    - if: '"$[[ inputs.do_client_tests_only ]]" == "true"'
 
 # NuGet jobs (pack, test, publish)
 .nuget-rules: &nuget-rules
@@ -264,6 +271,26 @@ stages:
     - if: '$CI_COMMIT_TAG'
     - if: '"$[[ inputs.do_nuget_only ]]" == "true"'
     - when: never
+
+.client-tests-linux: &client-tests-linux
+  - if: '"$[[ inputs.do_client_tests_only ]]" == "true" || "$[[ inputs.do_client_tests_only ]]" == "linux"'
+  - if: '"$[[ inputs.do_client_tests_only ]]" != "false"'
+    when: never
+
+.client-tests-windows: &client-tests-windows
+  - if: '"$[[ inputs.do_client_tests_only ]]" == "true" || "$[[ inputs.do_client_tests_only ]]" == "windows"'
+  - if: '"$[[ inputs.do_client_tests_only ]]" != "false"'
+    when: never
+
+.client-tests-macos: &client-tests-macos
+  - if: '"$[[ inputs.do_client_tests_only ]]" == "true" || "$[[ inputs.do_client_tests_only ]]" == "macos"'
+  - if: '"$[[ inputs.do_client_tests_only ]]" != "false"'
+    when: never
+
+.client-tests-java: &client-tests-java
+  - if: '"$[[ inputs.do_client_tests_only ]]" == "true" || "$[[ inputs.do_client_tests_only ]]" == "java"'
+  - if: '"$[[ inputs.do_client_tests_only ]]" != "false"'
+    when: never
 
 # gradle jobs
 
@@ -277,6 +304,10 @@ check-copyright:
 test:
   <<: *gradle_template
   stage: testAndAnalysis
+  cache:
+    - *pipeline-cache
+    - <<: *gradle-deps-cache
+      policy: pull-push
   script:
     - echo "value of RUNNING_ON_CI is -$RUNNING_ON_CI-"
     - echo "value of TF_BUILD is -$TF_BUILD-"
@@ -366,6 +397,7 @@ dependency-updates:
   <<: *gradle_template
   stage: testAndAnalysis
   rules:
+    - !reference [ .skip-unless-tag-staging-release ]
     - !reference [ .skip-if-browserstack ]
     - !reference [ .skip-if-nuget-only ]
     - !reference [ .skip-if-client-tests-only ]
@@ -398,31 +430,17 @@ dependency-check-gradle:
 build:
   <<: *gradle_template
   stage: build
+  needs: []
   script:
     - ./gradlew assemblePullRequest
-
-test-linux-shared-lib:
-  stage: build
-  image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
-  rules:
-    - !reference [ .skip-if-nuget-only ]
-    - !reference [ .skip-if-client-tests-only ]
-    - !reference [ .skip-if-sbom-csharp-only ]
-    - !reference [ .skip-if-android-test-only ]
-    - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "staging"'
-    - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "release"'
-  script:
-    - apt-get update && apt-get install -y libunistring-dev
-    - ./gradlew :zeta-sdk:linkReleaseSharedLinuxX64
-  artifacts:
-    expire_in: 1 week
-    when: always
-    paths:
-      - "zeta-sdk/build/bin/linuxX64/releaseShared/*"
 
 build_dokka:
   <<: *gradle_template
   stage: build
+  needs: []
+  rules:
+    - !reference [ .skip-unless-tag-staging-release ]
+    - !reference [ .gradle_template, rules ]
   script:
     - ./gradlew dokkaGeneratePublicationHtml
   artifacts:
@@ -433,6 +451,10 @@ build_dokka:
 sbom:
   <<: *gradle_template
   stage: build
+  needs: []
+  rules:
+    - !reference [ .skip-unless-tag-staging-release ]
+    - !reference [ .gradle_template, rules ]
   script:
     - ./gradlew cyclonedxDirectBom --info
     - ./gradlew cyclonedxBom
@@ -702,10 +724,15 @@ browserstack-ios-upload:
 
 build-sdk-linux:
   stage: native_build
+  needs: []
+  variables:
+    GRADLE_USER_HOME: $CI_BUILDS_DIR/gradle-home
+  cache: []
   image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
   tags:
     - attestation-vm-linux
   rules:
+    - !reference [ .client-tests-linux ]
     - !reference [ .skip-if-sbom-csharp-only ]
     - !reference [ .skip-if-android-test-only ]
     - if: '$CI_COMMIT_TAG'
@@ -718,10 +745,7 @@ build-sdk-linux:
   script:
     - export SMB_KEYSTORE_FILE=/tmp/smcb.p12
     - apt-get update && apt-get install -y libunistring-dev
-    - ./gradlew :zeta-sdk:linkReleaseSharedLinuxX64
-  after_script:
-    # shell executor: stop Gradle daemons so they don't accumulate memory between jobs
-    - ./gradlew --stop || true
+    - ./gradlew --no-daemon :zeta-sdk:linkReleaseSharedLinuxX64
   artifacts:
     expire_in: 1 week
     paths:
@@ -729,9 +753,14 @@ build-sdk-linux:
 
 build-sdk-windows:
   stage: native_build
+  needs: []
+  variables:
+    GRADLE_USER_HOME: $CI_BUILDS_DIR/gradle-home
+  cache: []
   tags:
     - attestation-vm-win
   rules:
+    - !reference [ .client-tests-windows ]
     - !reference [ .skip-if-sbom-csharp-only ]
     - !reference [ .skip-if-android-test-only ]
     - if: '$CI_COMMIT_TAG'
@@ -744,7 +773,7 @@ build-sdk-windows:
     - "[System.Convert]::FromBase64String($env:SMB_KEYSTORE_FILE_B64) | Set-Content -Path 'C:\\tmp\\smcb.p12' -AsByteStream"
   script:
     - $env:SMB_KEYSTORE_FILE = "C:\\tmp\\smcb.p12"
-    - .\gradlew.bat :zeta-sdk:linkReleaseSharedMingwX64
+    - .\gradlew.bat --no-daemon :zeta-sdk:linkReleaseSharedMingwX64
   artifacts:
     expire_in: 1 week
     paths:
@@ -752,9 +781,14 @@ build-sdk-windows:
 
 build-sdk-macos:
   stage: native_build
+  needs: []
+  variables:
+    GRADLE_USER_HOME: $CI_BUILDS_DIR/gradle-home
+  cache: []
   tags:
     - attestation-vm-macos
   rules:
+    - !reference [ .client-tests-macos ]
     - !reference [ .skip-if-sbom-csharp-only ]
     - !reference [ .skip-if-android-test-only ]
     - if: '$CI_COMMIT_TAG'
@@ -766,9 +800,7 @@ build-sdk-macos:
     - echo "$SMB_KEYSTORE_FILE_B64" | base64 --decode > /tmp/smcb.p12
   script:
     - export SMB_KEYSTORE_FILE=/tmp/smcb.p12
-    - ./gradlew :zeta-sdk:linkReleaseSharedMacosArm64
-  after_script:
-    - ./gradlew --stop || true
+    - ./gradlew --no-daemon :zeta-sdk:linkReleaseSharedMacosArm64
   artifacts:
     expire_in: 1 week
     paths:
@@ -796,6 +828,7 @@ client-test-csharp-macos:
   tags:
     - attestation-vm-macos
   rules:
+    - !reference [ .client-tests-macos ]
     - !reference [ .skip-if-nuget-only ]
     - !reference [ .skip-if-sbom-csharp-only ]
     - !reference [ .skip-if-android-test-only ]
@@ -899,6 +932,7 @@ client-test-csharp-linux:
   tags:
     - attestation-vm-linux
   rules:
+    - !reference [ .client-tests-linux ]
     - !reference [ .skip-if-nuget-only ]
     - !reference [ .skip-if-sbom-csharp-only ]
     - !reference [ .skip-if-android-test-only ]
@@ -923,6 +957,7 @@ client-test-csharp-windows:
   tags:
     - attestation-vm-win
   rules:
+    - !reference [ .client-tests-windows ]
     - !reference [ .skip-if-nuget-only ]
     - !reference [ .skip-if-sbom-csharp-only ]
     - !reference [ .skip-if-android-test-only ]
@@ -1092,6 +1127,10 @@ publish-nuget:
     - job: unit-test-csharp-linux
     - job: unit-test-csharp-windows
     - job: unit-test-csharp-macos
+    - job: test
+      optional: true
+    - job: sonar
+      optional: true
   before_script:
     - dotnet --info
   script:
@@ -1101,11 +1140,13 @@ publish-nuget:
 
 client-test-java:
   stage: client_tests
+  needs: []
   image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
   allow_failure: true
   tags:
     - zeta
   rules:
+    - !reference [ .client-tests-java ]
     - !reference [ .skip-if-nuget-only ]
     - !reference [ .skip-if-sbom-csharp-only ]
     - !reference [ .skip-if-android-test-only ]
@@ -1179,6 +1220,9 @@ client-test-java:
 publish:
   <<: *gradle_template
   stage: publish
+  rules:
+    - !reference [ .skip-unless-tag-staging-release ]
+    - !reference [ .gradle_template, rules ]
   script:
     - ./gradlew publish
   dependencies:
@@ -1281,6 +1325,7 @@ build-package-testdriver:
   <<: *image_template
   image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
   stage: image_build
+  needs: [build, test, sonar]
   script:
     - ./gradlew publishJvmPublicationToMavenLocal
     - ./gradlew publishKotlinMultiplatformPublicationToMavenLocal
@@ -1306,6 +1351,7 @@ build-package-nativetestdriver:
   <<: *image_template
   image: $CI_REGISTRY/zeta/devops/ci-images/mirror/eclipse-temurin:21-jdk
   stage: image_build
+  needs: [build, test, sonar]
   script:
     - apt-get update && apt-get install -y libunistring-dev
     - ./gradlew :zeta-nativetestdriver:linkReleaseExecutableLinuxX64
@@ -1400,25 +1446,14 @@ container_scan:
     TRIVY_CACHE_DIR: ".trivycache/"
     FULL_IMAGE_NAME: $CI_REGISTRY/zeta/zeta-client/zeta-sdk/$PLATFORM-image:$RELEASE_VERSION-$CI_COMMIT_SHORT_SHA
     # default, esp, when merging to main, fail on these severities.
-    # May still pass if allow_failure set to true (only when merging to develop)
     SEVERITIES: "UNKNOWN,MEDIUM,HIGH,CRITICAL"
   rules:
+    - !reference [ .skip-unless-tag-staging-release ]
     - !reference [ .skip-if-browserstack ]
     - !reference [ .skip-if-nuget-only ]
     - !reference [ .skip-if-client-tests-only ]
     - !reference [ .skip-if-sbom-csharp-only ]
     - !reference [ .skip-if-android-test-only ]
-    # when merging to develop, only warn on trivy failures (for MEDIUM and up)
-    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "develop" && $RELEASE_VERSION_WEB == "latest"
-      variables:
-        SONAR_QUALITY_GATE_ENABLED: "false"
-        RELEASE_VERSION: "develop-mr-$CI_COMMIT_SHORT_SHA"
-      allow_failure: true
-    - if: $CI_COMMIT_BRANCH == "develop" && $RELEASE_VERSION_WEB == "latest"
-      variables:
-        SONAR_QUALITY_GATE_ENABLED: "false"
-        RELEASE_VERSION: "develop"
-      allow_failure: true
     # when merging to staging and release, allow medium and even high, as testdriver is only used in
     # test environments and not in production systems
     - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "staging" && $RELEASE_VERSION_WEB == "latest"
@@ -1442,9 +1477,14 @@ container_scan:
 publish_to_dependencytrack:
   stage: publish
   <<: *gradle_template
+  rules:
+    - !reference [ .skip-unless-tag-staging-release ]
+    - !reference [ .gradle_template, rules ]
   needs:
     - job: sbom
       artifacts: true
+    - job: test
+    - job: sonar
   script:
     - find . -path ./reporting -prune -o -name 'bom.json';
     - >-

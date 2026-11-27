@@ -129,4 +129,46 @@ class EnvConfigProviderTest {
         assertEquals("", result.smbKeystoreFile)
         assertEquals("base64data", result.smbKeystoreB64)
     }
+
+    @Test
+    fun buildConfigFromProperties_readsPoppGeneratorKeys_withInstanceFallback() {
+        // Arrange
+        val props = Properties().apply {
+            setProperty("FACHDIENST_URL_1", "https://test1.example.com")
+            setProperty("POPP_TOKEN_GENERATOR_URL_1", "https://gen")
+            setProperty("POPP_PROOF_METHOD_2", "m2")
+            setProperty("POPP_PATIENT_ID_1", "X1")
+            setProperty("POPP_INSURER_ID_1", "I1")
+        }
+
+        // Act
+        val result = EnvConfigProvider().buildConfigFromProperties(props, 2)
+
+        // Assert
+        assertEquals("https://gen", result.poppTokenGeneratorUrl)
+        assertEquals("m2", result.proofMethod)
+        assertEquals("X1", result.patientId)
+        assertEquals("I1", result.insurerId)
+    }
+
+    @Test
+    fun mergeWithEnvFallback_keepsProvidedPoppGeneratorFields() {
+        // Arrange
+        val provided = SdkInstanceConfig(
+            fachdienstUrl = "https://test.com",
+            poppTokenGeneratorUrl = "https://gen",
+            proofMethod = "m",
+            patientId = "P",
+            insurerId = "I",
+        )
+
+        // Act
+        val result = EnvConfigProvider().mergeWithEnvFallback(provided)
+
+        // Assert
+        assertEquals("https://gen", result.poppTokenGeneratorUrl)
+        assertEquals("m", result.proofMethod)
+        assertEquals("P", result.patientId)
+        assertEquals("I", result.insurerId)
+    }
 }

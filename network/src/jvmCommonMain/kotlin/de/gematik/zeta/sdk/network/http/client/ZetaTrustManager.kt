@@ -146,20 +146,25 @@ internal class ZetaTrustManager(
         }
     }
 
-    private fun resolveRevocationChain(
+    internal fun resolveRevocationChain(
         chain: Array<out X509Certificate>,
     ): List<ByteArray> {
         require(chain.isNotEmpty()) { "Certificate chain must not be empty" }
 
-        val certificates = chain.toMutableList()
-        val lastCertificate = certificates.last()
+        // Servers may send extra certs after the path (RFC 8446 §4.4.2).
+        // Cut at the first cert from our trust store: it's the trust anchor and ends the path (RFC 5280 §6.1).
+        val anchors = delegate.acceptedIssuers
+        val firstAnchor = chain.indexOfFirst { isTrustAnchor(it, anchors) }
+        val certificates = (if (firstAnchor >= 0) chain.take(firstAnchor + 1) else chain.toList()).toMutableList()
 
-        if (!lastCertificate.isSelfSigned()) {
-            val issuer = findIssuer(lastCertificate)
+        if (certificates.size < chain.size) {
+            Log.d { "[REVOCATION] ignoring ${chain.size - certificates.size} certificate(s) after trust anchor" }
+        }
 
-            if (issuer != null) {
+        // Anchor not sent by the server: append it from our trust store so the last cert has an issuer
+        if (firstAnchor < 0) {
+            findIssuer(certificates.last())?.let { issuer ->
                 certificates += issuer
-
                 Log.d {
                     "OCSP JVM: issuer resolved from trust store; " +
                         "chain extended from ${chain.size} to ${certificates.size}"
@@ -168,6 +173,7 @@ internal class ZetaTrustManager(
         }
 
         if (certificates.size < 2) {
+            val lastCertificate = certificates.last()
             throw CertificateException(
                 "Could not resolve issuer for revocation validation: " +
                     "chainSize=${chain.size}, " +
@@ -180,6 +186,12 @@ internal class ZetaTrustManager(
             certificate.encoded
         }
     }
+
+    private fun isTrustAnchor(
+        cert: X509Certificate,
+        anchors: Array<X509Certificate>,
+    ): Boolean =
+        anchors.any { it.subjectX500Principal == cert.subjectX500Principal && it.publicKey == cert.publicKey }
 
     internal fun findIssuer(
         cert: X509Certificate,

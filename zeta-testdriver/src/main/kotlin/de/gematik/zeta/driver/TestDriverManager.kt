@@ -37,6 +37,7 @@ import de.gematik.zeta.sdk.network.http.client.ZetaHttpClient
 import de.gematik.zeta.sdk.notifications.NotificationClient
 import de.gematik.zeta.sdk.notificationsForTesting
 import de.gematik.zeta.sdk.storage.InMemoryStorage
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -49,10 +50,12 @@ import kotlinx.serialization.json.buildJsonObject
 public open class TestDriverManager(
     initialConfig: SdkInstanceConfig = SdkInstanceConfig.fromFileOrEnv(),
     public val featureRunner: FeatureRunner = FeatureRunner(),
+    poppTokenSource: PoppTokenSource = defaultPoppTokenSource,
 ) : ConfigurableDriver {
     private val store = InMemoryStorage()
     public val otpCallback: TestDriverOtpCallback = TestDriverOtpCallback(initialConfig.oidcBindingEmail)
-    public var config: SdkInstanceConfig = initialConfig
+    private val generatedPoppToken: String? = runBlocking { poppTokenSource.generatedTokenFor(initialConfig) }
+    public var config: SdkInstanceConfig = initialConfig.withPoppToken(generatedPoppToken)
         private set
 
     public var sdk: ZetaSdkClient = createSdk()
@@ -90,7 +93,7 @@ public open class TestDriverManager(
     public open suspend fun resetTo(newConfig: SdkInstanceConfig) {
         runCatching { sdk.forget().getOrThrow() }
             .onFailure { Log.w(it) { "forget() failed during reset, continuing" } }
-        config = newConfig
+        config = newConfig.withPoppToken(generatedPoppToken)
         customCaPems.clear()
         otpCallback.setBoundEmail(newConfig.oidcBindingEmail)
         rebuildClient()
