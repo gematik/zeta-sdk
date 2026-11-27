@@ -80,6 +80,10 @@ public data class SdkInstanceConfig(
     val oidcIdpAlias: String? = null,
     val oidcTestKvnr: String? = null,
     val oidcBindingEmail: String? = null,
+    public val poppTokenGeneratorUrl: String = "",
+    public val proofMethod: String = "",
+    public val patientId: String = "",
+    public val insurerId: String = "",
 ) {
 
     public companion object Companion {
@@ -101,6 +105,10 @@ public data class SdkInstanceConfig(
                 oidcBindingEmail = System.getenv("OIDC_BINDING_EMAIL") ?: "",
                 authMode = parseAuthMode(System.getenv("AUTH_MODE")),
                 filterHostHeaders = "true".equals(System.getenv("FILTER_HOST_HEADERS"), ignoreCase = true),
+                poppTokenGeneratorUrl = System.getenv("POPP_TOKEN_GENERATOR_URL") ?: "",
+                proofMethod = System.getenv("POPP_PROOF_METHOD") ?: "",
+                patientId = System.getenv("POPP_PATIENT_ID") ?: "",
+                insurerId = System.getenv("POPP_INSURER_ID") ?: "",
             )
         }
 
@@ -136,6 +144,10 @@ public data class SdkInstanceConfig(
                     oidcBindingEmail = props.getProperty("OIDC_BINDING_EMAIL_1") ?: "",
                     authMode = parseAuthMode(props.getProperty("AUTH_MODE_1")),
                     requiredOid = props.getProperty("REQUIRED_ROLE_OID_1") ?: "",
+                    poppTokenGeneratorUrl = props.getProperty("POPP_TOKEN_GENERATOR_URL_1") ?: "",
+                    proofMethod = props.getProperty("POPP_PROOF_METHOD_1") ?: "",
+                    patientId = props.getProperty("POPP_PATIENT_ID_1") ?: "",
+                    insurerId = props.getProperty("POPP_INSURER_ID_1") ?: "",
                 )
             } else {
                 Log.i { "Loading test driver configuration from environment variables" }

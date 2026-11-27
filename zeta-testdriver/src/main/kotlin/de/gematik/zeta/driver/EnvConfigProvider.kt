@@ -78,6 +78,10 @@ public class EnvConfigProvider(
             smbKeystoreAlias = provided.smbKeystoreAlias.ifBlank { env("SMB_KEYSTORE_ALIAS") },
             smbKeystorePassword = provided.smbKeystorePassword.ifBlank { env("SMB_KEYSTORE_PASSWORD") },
             poppToken = provided.poppToken.ifBlank { env("POPP_TOKEN") },
+            poppTokenGeneratorUrl = provided.poppTokenGeneratorUrl.ifBlank { env("POPP_TOKEN_GENERATOR_URL") },
+            proofMethod = provided.proofMethod.ifBlank { env("POPP_PROOF_METHOD") },
+            patientId = provided.patientId.ifBlank { env("POPP_PATIENT_ID") },
+            insurerId = provided.insurerId.ifBlank { env("POPP_INSURER_ID") },
             aslProdEnv = System.getenv("ASL_PROD")?.toBoolean() ?: provided.aslProdEnv,
         )
     }
@@ -99,6 +103,10 @@ public class EnvConfigProvider(
             aslProdEnv = getConfigValue("ASL_PROD")?.toBoolean() ?: true,
             poppToken = getConfigValue("POPP_TOKEN") ?: "",
             requiredOid = getConfigValue("REQUIRED_ROLE_OID") ?: "",
+            poppTokenGeneratorUrl = getConfigValue("POPP_TOKEN_GENERATOR_URL") ?: "",
+            proofMethod = getConfigValue("POPP_PROOF_METHOD") ?: "",
+            patientId = getConfigValue("POPP_PATIENT_ID") ?: "",
+            insurerId = getConfigValue("POPP_INSURER_ID") ?: "",
         )
     }
 }

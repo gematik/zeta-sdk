@@ -31,10 +31,6 @@ namespace ZetaSdk.Http;
 /// Asynchronous HTTP client for making ZETA-authenticated requests against the
 /// configured resource server. Obtained via <see cref="ZetaSdk.ZetaClient.CreateHttpClientAsync"/>.
 /// </summary>
-/// <remarks>
-/// Note: unlike <see cref="ZetaHttpClient"/>, responses returned by this client
-/// currently do not populate <see cref="ZetaHttpResponse.Headers"/>.
-/// </remarks>
 public sealed class ZetaHttpClientAsync : IDisposable
 {
     private readonly IntPtr _ptr;
@@ -123,7 +119,7 @@ public sealed class ZetaHttpClientAsync : IDisposable
         => ExecuteAsync(relativeUrl, body: null, headers, ZetaSdkNative.ZetaHttpClient_optionsAsync, ct);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate void OnSuccessDelegate(int status, IntPtr body);
+    private delegate void OnSuccessDelegate(IntPtr response);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void OnErrorDelegate(IntPtr error);
@@ -162,33 +158,48 @@ public sealed class ZetaHttpClientAsync : IDisposable
             headersCount = hdrLen
         };
 
-        OnSuccessDelegate onSuccess = (status, bodyPtr) =>
+        GCHandle hSuccess = default;
+        GCHandle hError   = default;
+
+        void Release()
         {
-            var bodyStr = bodyPtr != IntPtr.Zero
-                ? Marshal.PtrToStringAnsi(bodyPtr) ?? ""
-                : "";
-            tcs.TrySetResult(new ZetaHttpResponse(status, bodyStr, new Dictionary<string, string>()));
+            if (hSuccess.IsAllocated) hSuccess.Free();
+            if (hError.IsAllocated) hError.Free();
+        }
+
+        OnSuccessDelegate onSuccess = responsePtr =>
+        {
+            try
+            {
+                tcs.TrySetResult(ZetaHttpClient.ReadAndDestroy(responsePtr));
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
+            }
+            finally
+            {
+                Release();
+            }
         };
 
         OnErrorDelegate onError = errorPtr =>
         {
             var error = errorPtr != IntPtr.Zero
-                ? Marshal.PtrToStringAnsi(errorPtr) ?? "unknown"
+                ? Marshal.PtrToStringUTF8(errorPtr) ?? "unknown"
                 : "unknown";
             tcs.TrySetException(new ZetaSdkException($"HTTP error: {error}"));
+            Release();
         };
+
+        hSuccess = GCHandle.Alloc(onSuccess);
+        hError   = GCHandle.Alloc(onError);
 
         nativeCall(
             _ptr,
             ref req,
             Marshal.GetFunctionPointerForDelegate(onSuccess),
             Marshal.GetFunctionPointerForDelegate(onError));
-
-        _ = tcs.Task.ContinueWith(_ =>
-        {
-            GC.KeepAlive(onSuccess);
-            GC.KeepAlive(onError);
-        });
 
         return tcs.Task;
     }

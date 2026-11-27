@@ -161,7 +161,7 @@ public sealed class ZetaHttpClient : IDisposable
         return ReadAndDestroy(nativeCall(_ptr, ref req));
     }
 
-    private static ZetaHttpResponse ReadAndDestroy(IntPtr respPtr)
+    internal static ZetaHttpResponse ReadAndDestroy(IntPtr respPtr)
     {
         if (respPtr == IntPtr.Zero)
             throw new ZetaSdkException("Native HTTP call returned null.");

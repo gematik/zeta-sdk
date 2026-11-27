@@ -267,7 +267,11 @@ Here are the items you need to adapt:
 | SMB_KEYSTORE_ALIAS                  | Alias of the key in the SM-B Certificate file                                                                                                                  |                                                             |
 | SMB_KEYSTORE_PASSWORD               | Password for the private key                                                                                                                                   |                                                             |
 | SMB_KEYSTORE_B64                    | base64-encoded Keystore being used in the load driver; must be present, empty string if not used.                                                              |                                                             |
-| POPP_TOKEN                          | Value of a PoPP Tokens, which is given to the PEP (optional)                                                                                                   | eyJhbGciOiJFUzI1NiI......                                   |
+| POPP_TOKEN                          | Value of a PoPP Token, which is given to the PEP (optional). Fallback if the generator is not configured or fails                                              | eyJhbGciOiJFUzI1NiI......                                   |
+| POPP_TOKEN_GENERATOR_URL            | URL of the PoPP test token generator (optional). If set, the driver requests a PoPP token at startup; actorId and actorProfessionOid are read from the SM(C)-B certificate. Priority: incoming PoPP header (HTTP proxy only; the WebSocket proxy always uses the configured/generated token) > generated token > POPP_TOKEN. Not called with AUTH_MODE=OIDC. Fetched once at startup and never refreshed: restart the driver after the quarter boundary. Honours DISABLE_SERVER_VALIDATION| https://zeta-staging.spree.de/popp-token-generator/popp/test/api/v1/token-generator|
+| POPP_PROOF_METHOD                   | proofMethod sent to the PoPP token generator. Default ehc-practitioner-user-x509                                                                               | ehc-practitioner-user-x509                                  |
+| POPP_PATIENT_ID                     | patientId sent to the PoPP token generator. Default X110639491                                                                                                 | X110639491                                                  |
+| POPP_INSURER_ID                     | insurerId sent to the PoPP token generator. Default 109500969                                                                                                  | 109500969                                                   |
 | DISABLE_SERVER_VALIDATION           | If set to "true", TLS server TLS certificate checks are disabled (for testing only!)                                                                           |                                                             |
 | WS_SERVER_CONTEXT_PATH              | Specifies the base context to target the resource server. It is used in the Java client to prefix STOMP Websockets destinations                                | /testfachdienst                                             |
 | WS_BASE_URL                         | Defines the Websocket base URL (including protocol: ws/wss)                                                                                                    | wss://host/resource/ws                                      |
@@ -611,6 +615,7 @@ This folder includes examples for the ingress and the service definitions.
 
 The continuous integration pipeline can be set up with the
 included .gitlab-ci.yml file, that you need to adapt to your development process.
+See [CI pipeline](#ci-pipeline) for which jobs run when and how they depend on each other.
 
 ````
 .gitlab-ci.yml
@@ -658,7 +663,11 @@ curl -X POST http://0.0.0.0:8080/load/create_instances \
         "fachdienstUrl": "https://example/pep/resource1/",
         "smbKeystoreFile": "/keystores/keystore1.p12",
         "smbKeystoreAlias": "cert1",
-        "smbKeystorePassword": "secret1"
+        "smbKeystorePassword": "secret1",
+        "poppTokenGeneratorUrl": "https://example/popp-token-generator/token",
+        "proofMethod": "ehc-practitioner-user-x509",
+        "patientId": "X110639491",
+        "insurerId": "109500969"
       },
       {
         "id": 2,
@@ -686,6 +695,8 @@ You can then access instances using their IDs:
 
 **NOTE**: Custom instance IDs can be specified (optional)
 
+If `poppTokenGeneratorUrl` is set, the PoPP token is requested when the instance is created, using the instance's SM(C)-B, with one generator call per unique card and parameters. The generated token is used when generation succeeds, otherwise the instance's static `poppToken`. The token is fetched once at creation and never refreshed; recreate the instances after the quarter boundary. The generator call honours `DISABLE_SERVER_VALIDATION`.
+
 #### Configuration file
 The location of the config file can be configured via the `CONFIG_FILE` environment variable.
 
@@ -697,6 +708,10 @@ FACHDIENST_URL_1=https://example/pep/resource1/
 SMB_FILE_1=/keystores/keystore1.p12
 SMB_ALIAS_1=cert1
 SMB_PASSWORD_1=secret1
+POPP_TOKEN_GENERATOR_URL_1=https://example/popp-token-generator/token
+POPP_PROOF_METHOD_1=ehc-practitioner-user-x509
+POPP_PATIENT_ID_1=X110639491
+POPP_INSURER_ID_1=109500969
 
 # Instance 2 configuration
 FACHDIENST_URL_2=https://example/pep/resource1/
@@ -1558,6 +1573,153 @@ On Windows, the SDK additionally injects CAs from the Windows Certificate Store 
 #### MonitoringConfig
 
 This object determines the log level for backend requests.
+
+## CI pipeline
+
+The pipeline is defined in `.gitlab-ci.yml`. A job with `needs` starts as soon as the jobs listed there have finished.
+A job without `needs` waits for all jobs of the earlier stages.
+
+A merge request pipeline uses the `.gitlab-ci.yml` of the MR's source branch. For example, an MR from `develop` to
+`staging` follows the rules as they are in `develop`.
+
+### Which jobs run in which pipeline
+
+| Jobs | MR to / push to `develop` | MR to `staging` / `release` | Push to `staging` / `release` | Tag |
+|---|:-:|:-:|:-:|:-:|
+| `check-copyright`, `test`, `lint`, `detekt`, `sonar`, `unit-test-csharp-*`, `build` | ✓ | ✓ | ✓ | ✓ |
+| `build-package-testdriver`, `build-package-nativetestdriver`, `build-image-testdriver`, `build-image-nativetestdriver` (test driver images) | ✓ | ✓ | ✓ | ✓ |
+| `trigger_helm` (deploys the test driver images) | ✓ | | | |
+| `dependency-updates`, `build_dokka`, `sbom`, `publish`, `publish_to_dependencytrack` | | ✓ | ✓ | ✓ |
+| `build-sdk-linux`, `build-sdk-macos`, `build-sdk-windows`, `container_scan` | | ✓ | ✓ | ✓ |
+| `dependency-check-gradle`, `client-test-csharp-*`, `client-test-java` | | ✓ | ✓ | |
+| `publish_artifacts` | | | ✓ | ✓ |
+| `pack-nuget-*`, `test-nuget-*`, `publish-nuget`, `sbom-csharp`, `publish-sbom-csharp` | | | | ✓ |
+| `android-testdriver-apk`, `build-android-testdriver-image`, `hellozeta-android` | | | | ✓ |
+
+A name ending in `-*` means one job per platform. For example, `unit-test-csharp-*` stands for
+`unit-test-csharp-linux`, `unit-test-csharp-macos` and `unit-test-csharp-windows`.
+
+Pipelines started manually (Build → Pipelines → Run pipeline) take the inputs defined in `spec:inputs` at the top of
+`.gitlab-ci.yml`. The fast lanes `do_nuget_only`, `do_client_tests_only`, `do_sbom_csharp_only`, `android` and
+`browserstack` run only their own jobs.
+
+### Job dependencies
+
+An arrow points from a job to the jobs that wait for it. A dashed arrow is an optional dependency: it applies only
+if that job is part of the pipeline. Jobs without an incoming arrow start as soon as the pipeline starts.
+
+#### MR to `develop` and push to `develop`
+
+```mermaid
+flowchart LR
+    copyright["check-copyright"]
+    csunit["unit-test-csharp-*"]
+
+    test --> sonar
+    lint --> sonar
+    detekt --> sonar
+
+    build --> pkg["build-package-testdriver<br/>build-package-nativetestdriver"]
+    test --> pkg
+    sonar --> pkg
+    pkg --> img["build-image-testdriver<br/>build-image-nativetestdriver"]
+    img -.-> helm["trigger_helm"]
+```
+
+#### `staging`, `release` and tags
+
+Jobs marked "staging/release only" do not run on tags. The groups marked "tags only" run only on tags.
+`publish_artifacts` runs on pushes to `staging` / `release` and on tags, not in MR pipelines.
+
+```mermaid
+flowchart LR
+    subgraph kotlin["Kotlin SDK and analysis"]
+        test
+        lint
+        detekt
+        depcheck["dependency-check-gradle<br/>(staging/release only)"]
+        sonar
+        build
+        copyright["check-copyright"]
+        updates["dependency-updates"]
+        dokka["build_dokka"]
+        sbom
+    end
+    subgraph images["Test driver images"]
+        pkg["build-package-testdriver<br/>build-package-nativetestdriver"]
+        img["build-image-testdriver<br/>build-image-nativetestdriver"]
+        scan["container_scan"]
+    end
+    subgraph native["Native SDK and C# tests"]
+        sdk["build-sdk-linux<br/>build-sdk-macos<br/>build-sdk-windows"]
+        csunit["unit-test-csharp-*"]
+        cstest["client-test-csharp-*<br/>(staging/release only)"]
+        javatest["client-test-java<br/>(staging/release only)"]
+    end
+    subgraph nugetgroup["NuGet (tags only)"]
+        pack["pack-nuget-*"]
+        testnuget["test-nuget-*"]
+        nuget["publish-nuget"]
+        sbomcs["sbom-csharp"]
+        pubsbomcs["publish-sbom-csharp"]
+    end
+    subgraph android["Android test driver (tags only)"]
+        apk["android-testdriver-apk"]
+        androidimg["build-android-testdriver-image"]
+        hello["hellozeta-android"]
+    end
+    subgraph publishing["Publishing and reports"]
+        dtrack["publish_to_dependencytrack"]
+        report["publish_artifacts<br/>(not in MR pipelines)"]
+    end
+
+    test --> sonar
+    lint --> sonar
+    detekt --> sonar
+    depcheck -.-> sonar
+
+    build --> pkg
+    test --> pkg
+    sonar --> pkg
+    pkg --> img
+    img --> scan
+
+    sdk --> cstest
+    sdk --> pack
+    pack --> testnuget
+    pack --> nuget
+    testnuget --> nuget
+    csunit --> nuget
+    test -.-> nuget
+    sonar -.-> nuget
+    sbomcs --> pubsbomcs
+
+    apk --> androidimg
+    androidimg -.-> hello
+
+    sbom --> dtrack
+    test --> dtrack
+    sonar --> dtrack
+
+    test --> report
+    lint --> report
+    detekt --> report
+    depcheck -.-> report
+    sbom --> report
+    scan --> report
+```
+
+Per-platform jobs depend only on their own platform: `client-test-csharp-linux` waits for `build-sdk-linux`,
+`build-image-testdriver` waits for `build-package-testdriver`, and so on.
+
+`publish` (Maven publication) is not in the diagrams: it has no `needs` and starts only after every job of the stages
+`testAndAnalysis`, `build`, `native_build`, `client_tests` and `nuget` has finished.
+
+- `sonar` waits for `test`, `lint` and `detekt` because it imports their reports (coverage, ktlint, detekt).
+- The test driver images, the Helm deployment, the Kotlin SBOM upload to Dependency-Track, the NuGet package and the
+  Maven publication wait for `test` and `sonar`. The C# SBOM upload (`publish-sbom-csharp`) and the Android test
+  driver image (`build-android-testdriver-image`) do not wait for them.
+- Builds and `unit-test-csharp-*` start right away.
 
 ## License
 

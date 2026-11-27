@@ -37,22 +37,23 @@ import kotlin.time.measureTimedValue
 
 public open class LoadInstanceManager(
     private val configProvider: ConfigProvider = EnvConfigProvider(),
+    private val poppTokenSource: PoppTokenSource = defaultPoppTokenSource,
 ) {
     private val instances = ConcurrentHashMap<Int, SdkInstance>()
     private val idGenerator = AtomicInteger(0)
 
-    public fun createInstances(
+    public suspend fun createInstances(
         count: Int,
         providedConfigs: List<SdkInstanceConfig>? = null,
     ): List<Int> {
         val created = mutableListOf<Int>()
-        repeat(count.coerceAtLeast(0)) { index ->
+        for (index in 0 until count.coerceAtLeast(0)) {
             createInstance(index, providedConfigs, created)
         }
         return created
     }
 
-    public fun createInstance(
+    public suspend fun createInstance(
         index: Int,
         providedConfigs: List<SdkInstanceConfig>?,
         created: MutableList<Int>,
@@ -66,20 +67,25 @@ public open class LoadInstanceManager(
         }
 
         if (instances.containsKey(id)) {
-            Log.w { "[LOAD-DRIVER-CONFIG] Instance $id already exists, skipping" }
-            return null
+            return skipExisting(id)
         }
 
-        val config = when {
+        val baseConfig = when {
             providedConfig != null -> configProvider.mergeWithEnvFallback(providedConfig)
             else -> configProvider.loadConfig(id)
         }
+        val config = baseConfig.withPoppToken(poppTokenSource.generatedTokenFor(baseConfig))
 
         val store = InMemoryStorage()
         val instance = SdkInstance(id, config, store)
-        instances[id] = instance
+        if (instances.putIfAbsent(id, instance) != null) return skipExisting(id)
         created += id
         return id
+    }
+
+    private fun skipExisting(id: Int): Int? {
+        Log.w { "[LOAD-DRIVER-CONFIG] Instance $id already exists, skipping" }
+        return null
     }
 
     public open suspend fun initializeInstance(id: Int): Boolean {

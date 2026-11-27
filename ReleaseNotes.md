@@ -1,13 +1,11 @@
 
 # RELEASE NOTES
 
-## Version: v2.0.6
+## Version: v2.0.8
 
 This version implements the ZETA protocol for the ZETA client SDK.
 
 It provides SDK bindings for kotlin (as original implementation), Java, C++, and C#
-
-### Included Features:
 
 #### General Protocol:
 
@@ -59,6 +57,57 @@ runtime environments.
 
 - The SDK does not fully handle paths parts in the AS well-known URL. The AS well-known is defined
   as on the root path, so this is WONTFIX.
+
+### Changes in 2.0.8 (from 2.0.7)
+
+#### Breaking changes
+
+- N/A
+
+#### New
+
+- Test driver and native test driver request a PoPP token from the test generator
+    on startup (load-test instances: on creation) via `POPP_TOKEN_GENERATOR_URL`,
+    `POPP_PROOF_METHOD`, `POPP_PATIENT_ID` and `POPP_INSURER_ID`. `actorId` and
+    `actorProfessionOid` are read from the SM(C)-B certificate. Unset
+    `POPP_PROOF_METHOD` / `POPP_PATIENT_ID` / `POPP_INSURER_ID` fall back to
+    `ehc-practitioner-user-x509` / `X110639491` / `109500969` with a warning. `POPP_TOKEN`
+    is the fallback when no generator is configured or the call fails; the switch is logged.
+
+#### Bug Fixes
+
+- ANFTI2-1098: OCSP revocation check no longer fails when the server sends extra certificates after the trust anchor in the chain.
+- ANFTI2-1094: The async HTTP path now returns the response headers. Before, they were missing.
+
+### Security
+
+- Updated Bouncy Castle (bcprov-jdk18on, bcpkix-jdk18on) from 1.86 to 1.87, fixing:
+  CVE-2026-103606, CVE-2026-103610, CVE-2026-103611, CVE-2026-103612,
+  CVE-2026-103613, CVE-2026-103614, CVE-2026-103615, CVE-2026-103616,
+  CVE-2026-103617
+
+### Behavioural Changes
+
+- N/A
+
+## Changes in 2.0.7 (from 2.0.6)
+
+### New Features
+
+- N/A
+
+### Bug Fixes
+
+- N/A
+-
+### Security
+
+- Mitigate CVE-2026-114938 (Java4Shell) in testdriver image.
+  Disable the vulnerable HotSpot Base64 intrinsic via -XX:-UseBASE64Intrinsics in the testdriver ENTRYPOINT
+
+### Behavioural Changes
+
+- N/A
 
 ### Changes in 2.0.6 (from 2.0.5)
 

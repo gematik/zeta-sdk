@@ -42,7 +42,7 @@ class LoadInstanceManagerTest {
     @BeforeTest
     fun setup() {
         configProvider = FakeConfigProvider()
-        manager = LoadInstanceManager(configProvider)
+        manager = LoadInstanceManager(configProvider, PoppTokenSource { null })
     }
 
     @AfterTest
@@ -51,7 +51,7 @@ class LoadInstanceManagerTest {
     }
 
     @Test
-    fun createInstances_createsRequestedCount_whenValidCountProvided() {
+    fun createInstances_createsRequestedCount_whenValidCountProvided() = runTest {
         // Arrange
         val count = 3
 
@@ -64,7 +64,7 @@ class LoadInstanceManagerTest {
     }
 
     @Test
-    fun createInstances_createsZeroInstances_whenCountIsZero() {
+    fun createInstances_createsZeroInstances_whenCountIsZero() = runTest {
         // Act
         val created = manager.createInstances(0)
 
@@ -74,7 +74,7 @@ class LoadInstanceManagerTest {
     }
 
     @Test
-    fun createInstances_createsZeroInstances_whenCountIsNegative() {
+    fun createInstances_createsZeroInstances_whenCountIsNegative() = runTest {
         // Act
         val created = manager.createInstances(-5)
 
@@ -83,7 +83,7 @@ class LoadInstanceManagerTest {
     }
 
     @Test
-    fun createInstances_usesProvidedConfigs_whenConfigsProvided() {
+    fun createInstances_usesProvidedConfigs_whenConfigsProvided() = runTest {
         // Arrange
         val config = createTestConfig(id = 100, url = "https://custom.com")
         val providedConfigs = listOf(config)
@@ -100,7 +100,7 @@ class LoadInstanceManagerTest {
     }
 
     @Test
-    fun createInstances_skipsExistingInstances_whenIdAlreadyExists() {
+    fun createInstances_skipsExistingInstances_whenIdAlreadyExists() = runTest {
         // Arrange
         val config = createTestConfig(id = 50)
         manager.createInstances(1, listOf(config))
@@ -114,7 +114,7 @@ class LoadInstanceManagerTest {
     }
 
     @Test
-    fun createInstances_incrementsIdGenerator_whenNoIdProvided() {
+    fun createInstances_incrementsIdGenerator_whenNoIdProvided() = runTest {
         // Act
         val created1 = manager.createInstances(1)
         val created2 = manager.createInstances(1)
@@ -125,7 +125,7 @@ class LoadInstanceManagerTest {
     }
 
     @Test
-    fun getInstance_returnsInstance_whenInstanceExists() {
+    fun getInstance_returnsInstance_whenInstanceExists() = runTest {
         // Arrange
         val created = manager.createInstances(1)
         val id = created[0]
@@ -157,7 +157,7 @@ class LoadInstanceManagerTest {
     }
 
     @Test
-    fun listInstances_returnsSortedList_whenMultipleInstancesExist() {
+    fun listInstances_returnsSortedList_whenMultipleInstancesExist() = runTest {
         // Arrange
         val config1 = createTestConfig(id = 3)
         val config2 = createTestConfig(id = 1)
@@ -242,7 +242,7 @@ class LoadInstanceManagerTest {
     }
 
     @Test
-    fun clear_removesAllInstances_andResetsIdGenerator() {
+    fun clear_removesAllInstances_andResetsIdGenerator() = runTest {
         // Arrange
         manager.createInstances(5)
 
@@ -258,7 +258,7 @@ class LoadInstanceManagerTest {
     }
 
     @Test
-    fun createInstances_usesConfigProvider_whenNoConfigsProvided() {
+    fun createInstances_usesConfigProvider_whenNoConfigsProvided() = runTest {
         // Arrange
         configProvider.configToReturn = createTestConfig(url = "https://from-provider.com")
 
@@ -273,7 +273,7 @@ class LoadInstanceManagerTest {
     }
 
     @Test
-    fun createInstances_callsMergeWithEnvFallback_whenConfigsProvided() {
+    fun createInstances_callsMergeWithEnvFallback_whenConfigsProvided() = runTest {
         // Arrange
         val config = createTestConfig(url = "https://original.com")
         configProvider.mergedConfigToReturn = config.copy(fachdienstUrl = "https://merged.com")
@@ -283,6 +283,36 @@ class LoadInstanceManagerTest {
 
         // Assert
         assertTrue(configProvider.mergeWithEnvFallbackCalled)
+    }
+
+    @Test
+    fun createInstances_appliesGeneratedTokenPerInstance() = runTest {
+        // Arrange
+        val perCard = LoadInstanceManager(configProvider) { "token-for-${it.smbKeystoreFile}" }
+        val configs = listOf(
+            createTestConfig(id = 1).copy(smbKeystoreFile = "/k1.p12"),
+            createTestConfig(id = 2).copy(smbKeystoreFile = "/k2.p12"),
+        )
+
+        // Act
+        perCard.createInstances(2, configs)
+
+        // Assert
+        assertEquals("token-for-/k1.p12", perCard.getInstance(1)!!.config.poppToken)
+        assertEquals("token-for-/k2.p12", perCard.getInstance(2)!!.config.poppToken)
+        perCard.clear()
+    }
+
+    @Test
+    fun createInstances_keepsStaticToken_whenNoGeneratedToken() = runTest {
+        // Arrange
+        val config = createTestConfig(id = 7).copy(poppToken = "static")
+
+        // Act
+        manager.createInstances(1, listOf(config))
+
+        // Assert
+        assertEquals("static", manager.getInstance(7)!!.config.poppToken)
     }
 
     // Helper functions

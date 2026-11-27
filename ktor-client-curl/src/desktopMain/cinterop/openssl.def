@@ -150,23 +150,25 @@ static int zeta_c_verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
     if (!cert) {
         return 0;
     }
-    STACK_OF(X509) *chain = X509_STORE_CTX_get0_untrusted(ctx);
-    X509 *issuer = (chain && sk_X509_num(chain) > depth + 1)
-        ? sk_X509_value(chain, depth + 1)
-        : NULL;
-    int issuer_from_store = (issuer == NULL);
-    if (issuer_from_store && X509_STORE_CTX_get1_issuer(&issuer, ctx, cert) <= 0)
-        issuer = NULL;
+    /* Use the VERIFIED path (leaf .. trust anchor), not the server-sent list (RFC 8446 §4.4.2) */
+    STACK_OF(X509) *chain = X509_STORE_CTX_get0_chain(ctx);
+    int chain_len = chain ? sk_X509_num(chain) : 0;
+    if (chain_len == 0) {
+        return 0;   /* should never happen with preverify_ok=1: fail closed */
+    }
 
-    int is_self_signed = (issuer != NULL) && (X509_cmp(cert, issuer) == 0);
-    if (issuer == NULL || is_self_signed) {
-        if (issuer_from_store && issuer != NULL) X509_free(issuer);
+    /* Last element is the trust anchor: not revocation-checked (RFC 5280 §6.1) */
+    if (depth >= chain_len - 1) {
         return 1;
+    }
+
+    X509 *issuer = sk_X509_value(chain, depth + 1);
+    if (!issuer) {
+        return 0;   /* should never happen: fail closed */
     }
 
     SSL *ssl = (SSL*)X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
     if (!ssl) {
-        if (issuer_from_store) X509_free(issuer);
         return 1;
     }
 
@@ -192,7 +194,6 @@ static int zeta_c_verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
         }
     }
 
-    if (issuer_from_store) X509_free(issuer);
     return 1;
 }
 

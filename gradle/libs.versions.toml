@@ -1,7 +1,7 @@
 [versions]
 # Project
-bouncycastle = "1.86"
-bouncycastle-prov = "1.86"
+bouncycastle = "1.87"
+bouncycastle-prov = "1.87"
 compileSdk = "37"
 conscrypt = "2.7.0"
 cryptographyCore = "0.6.0"

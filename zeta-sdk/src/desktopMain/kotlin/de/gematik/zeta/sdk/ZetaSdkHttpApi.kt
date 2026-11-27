@@ -49,13 +49,13 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.asStableRef
+import kotlinx.cinterop.cstr
 import kotlinx.cinterop.get
 import kotlinx.cinterop.invoke
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.nativeHeap
 import kotlinx.cinterop.pointed
 import kotlinx.cinterop.ptr
-import kotlinx.cinterop.toCValues
 import kotlinx.cinterop.toKString
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -113,14 +113,13 @@ private inline fun executeRequest(
 private fun executeRequestAsync(
     httpClient: CPointer<ZetaSdk_HttpClient>,
     httpRequest: CPointer<ZetaSdk_HttpRequest>,
-    onSuccess: CPointer<CFunction<(Int, CPointer<ByteVar>?) -> Unit>>,
+    onSuccess: CPointer<CFunction<(CPointer<ZetaSdk_HttpResponse>?) -> Unit>>,
     onError: CPointer<CFunction<(CPointer<ByteVar>?) -> Unit>>,
     block: suspend (ZetaHttpClient, String, String?, Map<String, String>) -> HttpResponseWrapper,
 ) {
     try {
         val client = httpClient.pointed.zetaHttpClient!!.asStableRef<ZetaHttpClient>().get()
         val req = httpRequest.pointed
-
         val url = req.url?.toKString() ?: ""
         val body = req.body?.toKString()
         val headers = req.parseHeaders()
@@ -128,20 +127,13 @@ private fun executeRequestAsync(
         GlobalScope.launch(Dispatchers.IO) {
             try {
                 val response = block(client, url, body, headers)
-                val bodyBytes = response.body.encodeToByteArray()
-                memScoped {
-                    onSuccess.invoke(response.status, bodyBytes.toCValues().ptr)
-                }
+                onSuccess.invoke(response.toNative())
             } catch (e: Throwable) {
-                memScoped {
-                    onError.invoke((e.message ?: "unknown").encodeToByteArray().toCValues().ptr)
-                }
+                memScoped { onError.invoke((e.message ?: "unknown").cstr.ptr) }
             }
         }
     } catch (e: Throwable) {
-        memScoped {
-            onError.invoke((e.message ?: "unknown").encodeToByteArray().toCValues().ptr)
-        }
+        memScoped { onError.invoke((e.message ?: "unknown").cstr.ptr) }
     }
 }
 
@@ -205,7 +197,7 @@ fun ZetaHttpClient_delete(
 fun ZetaHttpClient_getAsync(
     httpClient: CPointer<ZetaSdk_HttpClient>,
     httpRequest: CPointer<ZetaSdk_HttpRequest>,
-    onSuccess: CPointer<CFunction<(Int, CPointer<ByteVar>?) -> Unit>>,
+    onSuccess: CPointer<CFunction<(CPointer<ZetaSdk_HttpResponse>?) -> Unit>>,
     onError: CPointer<CFunction<(CPointer<ByteVar>?) -> Unit>>,
 ) = executeRequestAsync(httpClient, httpRequest, onSuccess, onError) { client, url, _, headers ->
     client.delegate.get(url, headers)
@@ -215,7 +207,7 @@ fun ZetaHttpClient_getAsync(
 fun ZetaHttpClient_postAsync(
     httpClient: CPointer<ZetaSdk_HttpClient>,
     httpRequest: CPointer<ZetaSdk_HttpRequest>,
-    onSuccess: CPointer<CFunction<(Int, CPointer<ByteVar>?) -> Unit>>,
+    onSuccess: CPointer<CFunction<(CPointer<ZetaSdk_HttpResponse>?) -> Unit>>,
     onError: CPointer<CFunction<(CPointer<ByteVar>?) -> Unit>>,
 ) = executeRequestAsync(httpClient, httpRequest, onSuccess, onError) { client, url, body, headers ->
     client.delegate.post(url, body, headers)
@@ -225,7 +217,7 @@ fun ZetaHttpClient_postAsync(
 fun ZetaHttpClient_putAsync(
     httpClient: CPointer<ZetaSdk_HttpClient>,
     httpRequest: CPointer<ZetaSdk_HttpRequest>,
-    onSuccess: CPointer<CFunction<(Int, CPointer<ByteVar>?) -> Unit>>,
+    onSuccess: CPointer<CFunction<(CPointer<ZetaSdk_HttpResponse>?) -> Unit>>,
     onError: CPointer<CFunction<(CPointer<ByteVar>?) -> Unit>>,
 ) = executeRequestAsync(httpClient, httpRequest, onSuccess, onError) { client, url, body, headers ->
     client.delegate.put(url, body, headers)
@@ -235,7 +227,7 @@ fun ZetaHttpClient_putAsync(
 fun ZetaHttpClient_patchAsync(
     httpClient: CPointer<ZetaSdk_HttpClient>,
     httpRequest: CPointer<ZetaSdk_HttpRequest>,
-    onSuccess: CPointer<CFunction<(Int, CPointer<ByteVar>?) -> Unit>>,
+    onSuccess: CPointer<CFunction<(CPointer<ZetaSdk_HttpResponse>?) -> Unit>>,
     onError: CPointer<CFunction<(CPointer<ByteVar>?) -> Unit>>,
 ) = executeRequestAsync(httpClient, httpRequest, onSuccess, onError) { client, url, body, headers ->
     client.delegate.patch(url, body, headers)
@@ -245,7 +237,7 @@ fun ZetaHttpClient_patchAsync(
 fun ZetaHttpClient_deleteAsync(
     httpClient: CPointer<ZetaSdk_HttpClient>,
     httpRequest: CPointer<ZetaSdk_HttpRequest>,
-    onSuccess: CPointer<CFunction<(Int, CPointer<ByteVar>?) -> Unit>>,
+    onSuccess: CPointer<CFunction<(CPointer<ZetaSdk_HttpResponse>?) -> Unit>>,
     onError: CPointer<CFunction<(CPointer<ByteVar>?) -> Unit>>,
 ) = executeRequestAsync(httpClient, httpRequest, onSuccess, onError) { client, url, _, headers ->
     client.delegate.delete(url, headers)
@@ -255,7 +247,7 @@ fun ZetaHttpClient_deleteAsync(
 fun ZetaHttpClient_optionsAsync(
     httpClient: CPointer<ZetaSdk_HttpClient>,
     httpRequest: CPointer<ZetaSdk_HttpRequest>,
-    onSuccess: CPointer<CFunction<(Int, CPointer<ByteVar>?) -> Unit>>,
+    onSuccess: CPointer<CFunction<(CPointer<ZetaSdk_HttpResponse>?) -> Unit>>,
     onError: CPointer<CFunction<(CPointer<ByteVar>?) -> Unit>>,
 ) = executeRequestAsync(httpClient, httpRequest, onSuccess, onError) { client, url, _, headers ->
     client.delegate.options(url, headers)
@@ -265,7 +257,7 @@ fun ZetaHttpClient_optionsAsync(
 fun ZetaHttpClient_headAsync(
     httpClient: CPointer<ZetaSdk_HttpClient>,
     httpRequest: CPointer<ZetaSdk_HttpRequest>,
-    onSuccess: CPointer<CFunction<(Int, CPointer<ByteVar>?) -> Unit>>,
+    onSuccess: CPointer<CFunction<(CPointer<ZetaSdk_HttpResponse>?) -> Unit>>,
     onError: CPointer<CFunction<(CPointer<ByteVar>?) -> Unit>>,
 ) = executeRequestAsync(httpClient, httpRequest, onSuccess, onError) { client, url, _, headers ->
     client.delegate.head(url, headers)

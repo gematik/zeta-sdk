@@ -35,7 +35,7 @@ var config = new ZetaClientConfig
 {
     Resource       = Env("FACHDIENST_URL"),
     ProductId      = "ZETA-Test-Client",
-    ProductVersion = "2.0.6",
+    ProductVersion = "2.0.8",
     ClientName     = "sdk-client",
     Storage = new ZetaStorageConfig
     {
@@ -118,7 +118,28 @@ using var http = client.CreateHttpClientAsync();
 var headers = new Dictionary<string, string> { ["PoPP"] = poppToken };
 
 // GET
-try { Console.WriteLine($"[GET] - {await http.GetAsync("hellozeta", headers)}"); }
+try
+{
+    var resp = await http.GetAsync("hellozeta", headers);
+    Console.WriteLine($"[GET] - {resp}");
+    Console.WriteLine($"[GET] - headers={resp.Headers.Count}");
+    foreach (var (key, value) in resp.Headers)
+        Console.WriteLine($"    {key}: {value}");
+
+    if (resp.Headers.Count == 0)
+    {
+        Console.Error.WriteLine("[FAIL] GET: no response headers in async path");
+        failed = true;
+    }
+
+    // Conditional GET (ETag / If-None-Match -> 304)
+    if (resp.Headers.TryGetValue("ETag", out var etag))
+    {
+        var condHeaders = new Dictionary<string, string>(headers) { ["If-None-Match"] = etag };
+        var cond = await http.GetAsync("hellozeta", condHeaders);
+        Console.WriteLine($"[GET conditional] - status={cond.Status} (expected 304)");
+    }
+}
 catch (Exception ex) { Console.Error.WriteLine($"[FAIL] GET: {ex.Message}"); failed = true; }
 
 // POST
